@@ -1,0 +1,10 @@
+[package]
+name = "halo2-playground"
+version = "0.1.0"
+authors = ["kilic <kiliconu@itu.edu.tr>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+halo2 = { git = "https://github.com/zcash/halo2.git", rev = "27c4187673a9c6ade13fbdbd4f20955530c22d7f" }
