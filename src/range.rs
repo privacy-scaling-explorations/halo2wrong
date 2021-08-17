@@ -2,7 +2,7 @@
 #![allow(clippy::op_ref)]
 
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Layouter, Region};
+use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
@@ -18,34 +18,50 @@ use std::marker::PhantomData;
 // * `a_i + b_i << b + c_i << 2b + d_i << 3b == d_(i-1)`
 // * `a_i < 2^b`, `b_i < 2^b`, `c_i < 2^b`, `d_i < 2^b`
 
+const LIMB_SIZE: usize = 4;
+
 #[derive(Copy, Clone, Debug)]
 pub struct Variable(Column<Advice>, usize);
 
 #[derive(Clone, Debug)]
-struct RangeConfig {
+pub struct RangeConfig<F: FieldExt> {
     a: Column<Advice>,
     b: Column<Advice>,
     c: Column<Advice>,
     d: Column<Advice>,
     s_range: Selector,
     small_range_table: TableColumn,
+
+    small_range_table_values: Vec<F>,
 }
 
-trait RangeInstructions<FF: FieldExt> {
+trait RangeInstructions<FF: FieldExt>: Chip<FF> {
     fn load_small_range_table(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
 
     fn decomposition(
         &self,
         region: &mut Region<'_, FF>,
         value_integer: Option<FF>,
-        value_limbs: Option<[FF; 4]>,
+        value_limbs: Option<[FF; LIMB_SIZE]>,
     ) -> Result<(), Error>;
 }
 
 pub struct RangeChip<F: FieldExt, const BASE: usize> {
-    config: RangeConfig,
-    small_range_table: Vec<F>,
+    config: RangeConfig<F>,
     _marker: PhantomData<F>,
+}
+
+impl<F: FieldExt, const BASE: usize> Chip<F> for RangeChip<F, BASE> {
+    type Config = RangeConfig<F>;
+    type Loaded = ();
+
+    fn config(&self) -> &Self::Config {
+        &self.config
+    }
+
+    fn loaded(&self) -> &Self::Loaded {
+        &()
+    }
 }
 
 impl<FF: FieldExt, const BASE: usize> RangeInstructions<FF> for RangeChip<FF, BASE> {
@@ -53,7 +69,7 @@ impl<FF: FieldExt, const BASE: usize> RangeInstructions<FF> for RangeChip<FF, BA
         &self,
         mut region: &mut Region<'_, FF>,
         value_integer: Option<FF>,
-        value_limbs: Option<[FF; 4]>,
+        value_limbs: Option<[FF; LIMB_SIZE]>,
     ) -> Result<(), Error> {
         let offset_integer = 0;
         let offset_limbs = offset_integer + 1;
@@ -101,7 +117,7 @@ impl<FF: FieldExt, const BASE: usize> RangeInstructions<FF> for RangeChip<FF, BA
         layouter.assign_table(
             || "",
             |mut table| {
-                for (index, &value) in self.small_range_table.iter().enumerate() {
+                for (index, &value) in self.config.small_range_table_values.iter().enumerate() {
                     table.assign_cell(
                         || "small range table",
                         self.config.small_range_table,
@@ -117,21 +133,23 @@ impl<FF: FieldExt, const BASE: usize> RangeInstructions<FF> for RangeChip<FF, BA
 }
 
 impl<F: FieldExt, const BASE: usize> RangeChip<F, BASE> {
-    fn new(config: RangeConfig) -> Self {
-        let small_range_table: Vec<F> = (0..1 << BASE).map(|e| F::from_u64(e)).collect();
-
+    pub fn new(config: RangeConfig<F>) -> Self {
         RangeChip {
             config,
-            small_range_table,
             _marker: PhantomData,
         }
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> RangeConfig {
-        let a = meta.advice_column();
-        let b = meta.advice_column();
-        let c = meta.advice_column();
-        let d = meta.advice_column();
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        limbs: [Column<Advice>; LIMB_SIZE],
+    ) -> RangeConfig<F> {
+        let small_range_table_values: Vec<F> = (0..1 << BASE).map(|e| F::from_u64(e)).collect();
+
+        let a = limbs[0];
+        let b = limbs[1];
+        let c = limbs[2];
+        let d = limbs[3];
 
         let s_range = meta.complex_selector();
         let small_range_table = meta.lookup_table_column();
@@ -184,6 +202,8 @@ impl<F: FieldExt, const BASE: usize> RangeChip<F, BASE> {
             d,
             s_range,
             small_range_table,
+
+            small_range_table_values,
         }
     }
 }
@@ -191,7 +211,7 @@ impl<F: FieldExt, const BASE: usize> RangeChip<F, BASE> {
 #[cfg(test)]
 mod tests {
 
-    use super::{RangeChip, RangeConfig, RangeInstructions};
+    use super::{RangeChip, RangeConfig, RangeInstructions, LIMB_SIZE};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -199,8 +219,8 @@ mod tests {
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
 
     #[derive(Clone, Debug)]
-    struct TestCircuitConfig {
-        range_config: RangeConfig,
+    struct TestCircuitConfig<F: FieldExt> {
+        range_config: RangeConfig<F>,
     }
 
     #[derive(Default)]
@@ -209,7 +229,7 @@ mod tests {
     }
 
     impl<F: FieldExt, const BASE: usize> Circuit<F> for TestCircuit<F, BASE> {
-        type Config = TestCircuitConfig;
+        type Config = TestCircuitConfig<F>;
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -217,7 +237,12 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let range_config = RangeChip::<F, BASE>::configure(meta);
+            let a = meta.advice_column();
+            let b = meta.advice_column();
+            let c = meta.advice_column();
+            let d = meta.advice_column();
+
+            let range_config = RangeChip::<F, BASE>::configure(meta, [a, b, c, d]);
             TestCircuitConfig { range_config }
         }
 
@@ -226,12 +251,11 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let decompose = |e: F, base: usize| -> [F; 4] {
+            let decompose = |e: F, base: usize| -> [F; LIMB_SIZE] {
                 use num_bigint::BigUint;
-                const LIMB_SIZE: usize = 4;
                 let mut e = BigUint::from_bytes_le(&e.to_bytes()[..]);
                 let n = (1 << base) as usize;
-                let mut limbs: [F; 4] = [F::zero(); 4];
+                let mut limbs: [F; LIMB_SIZE] = [F::zero(); LIMB_SIZE];
                 for i in 0..LIMB_SIZE {
                     let u = BigUint::from(n - 1) & e.clone();
                     let u = F::from_str(&u.to_str_radix(10)).unwrap();
