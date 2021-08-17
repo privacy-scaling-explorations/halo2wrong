@@ -2,7 +2,7 @@
 #![allow(clippy::op_ref)]
 
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Layouter;
+use halo2::circuit::{Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
@@ -32,11 +32,14 @@ struct RangeConfig {
 }
 
 trait RangeInstructions<FF: FieldExt> {
-    fn load(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
-    fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<(), Error>
-    where
-        F: FnMut() -> Result<(FF, FF, FF, FF, FF), Error>;
-    fn no_op(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
+    fn load_small_range_table(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
+
+    fn decomposition(
+        &self,
+        region: &mut Region<'_, FF>,
+        value_integer: Option<FF>,
+        value_limbs: Option<[FF; 4]>,
+    ) -> Result<(), Error>;
 }
 
 pub struct RangeChip<F: FieldExt, const BASE: usize> {
@@ -46,82 +49,61 @@ pub struct RangeChip<F: FieldExt, const BASE: usize> {
 }
 
 impl<FF: FieldExt, const BASE: usize> RangeInstructions<FF> for RangeChip<FF, BASE> {
-    fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, mut f: F) -> Result<(), Error>
-    where
-        F: FnMut() -> Result<(FF, FF, FF, FF, FF), Error>,
-    {
-        layouter.assign_region(
-            || "assign decomposition",
-            |mut region| {
-                let offset = 0;
+    fn decomposition(
+        &self,
+        mut region: &mut Region<'_, FF>,
+        value_integer: Option<FF>,
+        value_limbs: Option<[FF; 4]>,
+    ) -> Result<(), Error> {
+        let offset_integer = 0;
+        let offset_limbs = offset_integer + 1;
 
-                self.config.s_range.enable(&mut region, offset)?;
+        self.config.s_range.enable(&mut region, offset_limbs)?;
 
-                let mut value = None;
-
-                let _ = region.assign_advice(
-                    || "integer",
-                    self.config.d,
-                    offset - 1,
-                    || {
-                        value = Some(f()?);
-                        Ok(value.ok_or(Error::SynthesisError)?.0)
-                    },
-                )?;
-
-                let _ = region.assign_advice(
-                    || "limb 0",
-                    self.config.a,
-                    offset,
-                    || {
-                        value = Some(f()?);
-                        Ok(value.ok_or(Error::SynthesisError)?.1)
-                    },
-                )?;
-                let _ = region.assign_advice(
-                    || "limb 1",
-                    self.config.b,
-                    offset,
-                    || Ok(value.ok_or(Error::SynthesisError)?.2),
-                )?;
-                let _ = region.assign_advice(
-                    || "limb 2",
-                    self.config.c,
-                    offset,
-                    || Ok(value.ok_or(Error::SynthesisError)?.3),
-                )?;
-                let _ = region.assign_advice(
-                    || "limb 3",
-                    self.config.d,
-                    offset,
-                    || Ok(value.ok_or(Error::SynthesisError)?.4),
-                )?;
-                Ok(())
-            },
-        )
+        let zero = FF::zero();
+        let _ = region.assign_advice(|| "0 a", self.config.a, 0, || Ok(zero))?;
+        let _ = region.assign_advice(|| "0 b", self.config.b, 0, || Ok(zero))?;
+        let _ = region.assign_advice(|| "0 c", self.config.c, 0, || Ok(zero))?;
+        let _ = region.assign_advice(
+            || "integer",
+            self.config.d,
+            offset_integer,
+            || Ok(value_integer.ok_or(Error::SynthesisError)?),
+        )?;
+        let _ = region.assign_advice(
+            || "limb 0",
+            self.config.a,
+            offset_limbs,
+            || Ok(value_limbs.ok_or(Error::SynthesisError)?[0]),
+        )?;
+        let _ = region.assign_advice(
+            || "limb 1",
+            self.config.b,
+            offset_limbs,
+            || Ok(value_limbs.ok_or(Error::SynthesisError)?[1]),
+        )?;
+        let _ = region.assign_advice(
+            || "limb 2",
+            self.config.c,
+            offset_limbs,
+            || Ok(value_limbs.ok_or(Error::SynthesisError)?[2]),
+        )?;
+        let _ = region.assign_advice(
+            || "limb 3",
+            self.config.d,
+            offset_limbs,
+            || Ok(value_limbs.ok_or(Error::SynthesisError)?[3]),
+        )?;
+        Ok(())
     }
 
-    fn no_op(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error> {
-        layouter.assign_region(
-            || "no op",
-            |mut region| {
-                let zero = FF::zero();
-                let _ = region.assign_advice(|| "0 a", self.config.a, 0, || Ok(zero))?;
-                let _ = region.assign_advice(|| "0 b", self.config.b, 0, || Ok(zero))?;
-                let _ = region.assign_advice(|| "0 c", self.config.c, 0, || Ok(zero))?;
-
-                Ok(())
-            },
-        )
-    }
-
-    fn load(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error> {
+    fn load_small_range_table(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error> {
         layouter.assign_table(
             || "",
             |mut table| {
                 for (index, &value) in self.small_range_table.iter().enumerate() {
                     table.assign_cell(
-                        || "table 1",
+                        || "small range table",
                         self.config.small_range_table,
                         index,
                         || Ok(value),
@@ -244,36 +226,34 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<F>,
         ) -> Result<(), Error> {
-            let decompose = |e: F, base: usize| -> (F, F, F, F) {
+            let decompose = |e: F, base: usize| -> [F; 4] {
                 use num_bigint::BigUint;
                 const LIMB_SIZE: usize = 4;
                 let mut e = BigUint::from_bytes_le(&e.to_bytes()[..]);
                 let n = (1 << base) as usize;
-                let mut limbs: Vec<F> = Vec::new();
-                for _ in 0..LIMB_SIZE {
+                let mut limbs: [F; 4] = [F::zero(); 4];
+                for i in 0..LIMB_SIZE {
                     let u = BigUint::from(n - 1) & e.clone();
                     let u = F::from_str(&u.to_str_radix(10)).unwrap();
-                    limbs.push(u);
+                    limbs[i] = u;
                     e = e >> base;
                 }
-                let a0 = limbs[0];
-                let a1 = limbs[1];
-                let a2 = limbs[2];
-                let a3 = limbs[3];
-                (a0, a1, a2, a3)
+                limbs
             };
-
             let range_chip = RangeChip::<F, BASE>::new(config.range_config);
-            range_chip.load(&mut layouter)?;
-
-            range_chip.no_op(&mut layouter)?;
 
             let integer = self.integer.ok_or(Error::SynthesisError)?;
             let limbs = decompose(integer, BASE);
 
-            range_chip.decomposition(&mut layouter, || {
-                Ok((integer, limbs.0, limbs.1, limbs.2, limbs.3))
-            })?;
+            layouter.assign_region(
+                || "decomposition",
+                |mut region| {
+                    range_chip.decomposition(&mut region, Some(integer), Some(limbs))?;
+                    Ok(())
+                },
+            )?;
+
+            range_chip.load_small_range_table(&mut layouter)?;
 
             Ok(())
         }
@@ -284,7 +264,7 @@ mod tests {
         const K: u32 = 5;
         const BASE: usize = 4;
 
-        let integer = Some(Fp::from_u64(21554));
+        let integer = Some(Fp::from_u64(0xabcd));
         let circuit = TestCircuit::<Fp, BASE> { integer };
 
         let prover = match MockProver::run(K, &circuit, vec![]) {
