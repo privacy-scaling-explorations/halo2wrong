@@ -27,7 +27,7 @@ mod tests {
 
     #[test]
     fn test_range() {
-        const K: u32 = 6;
+        const K: u32 = 5;
         const BASE: usize = 4;
 
         let small_range_table: Vec<Fp> = (0..1 << BASE).map(|e| Fp::from_u64(e)).collect();
@@ -51,7 +51,7 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        println!("{:?}", prover);
+        // println!("{:?}", prover);
         assert_eq!(prover.verify(), Ok(()));
     }
 }
@@ -76,12 +76,13 @@ trait RangeInstructions<FF: FieldExt>: Chip<FF> {
         layouter: &mut impl Layouter<FF>,
         values: &[FF],
     ) -> Result<(), Error>;
-    fn integer<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<(), Error>
-    where
-        F: FnMut() -> Result<FF, Error>;
+    // fn integer<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<(), Error>
+    // where
+    //     F: FnMut() -> Result<FF, Error>;
     fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<(), Error>
     where
-        F: FnMut() -> Result<(FF, FF, FF, FF), Error>;
+        F: FnMut() -> Result<(FF, FF, FF, FF, FF), Error>;
+    fn no_op(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
 }
 
 struct RangePlonk<F: FieldExt> {
@@ -112,65 +113,70 @@ impl<FF: FieldExt> RangePlonk<FF> {
 }
 
 impl<FF: FieldExt> RangeInstructions<FF> for RangePlonk<FF> {
-    fn integer<F>(&self, layouter: &mut impl Layouter<FF>, mut f: F) -> Result<(), Error>
+    fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, mut f: F) -> Result<(), Error>
     where
-        F: FnMut() -> Result<FF, Error>,
+        F: FnMut() -> Result<(FF, FF, FF, FF, FF), Error>,
     {
         layouter.assign_region(
-            || "assign integer",
+            || "assign decomposition",
             |mut region| {
+                let offset = 0;
+
+                self.config.s_range.enable(&mut region, offset)?;
+
                 let mut value = None;
+
                 let _ = region.assign_advice(
                     || "integer",
                     self.config.d,
-                    0,
+                    offset - 1,
                     || {
                         value = Some(f()?);
-                        Ok(value.ok_or(Error::SynthesisError)?)
+                        Ok(value.ok_or(Error::SynthesisError)?.0)
                     },
+                )?;
+
+                let _ = region.assign_advice(
+                    || "limb 0",
+                    self.config.a,
+                    offset,
+                    || {
+                        value = Some(f()?);
+                        Ok(value.ok_or(Error::SynthesisError)?.1)
+                    },
+                )?;
+                let _ = region.assign_advice(
+                    || "limb 1",
+                    self.config.b,
+                    offset,
+                    || Ok(value.ok_or(Error::SynthesisError)?.2),
+                )?;
+                let _ = region.assign_advice(
+                    || "limb 2",
+                    self.config.c,
+                    offset,
+                    || Ok(value.ok_or(Error::SynthesisError)?.3),
+                )?;
+                let _ = region.assign_advice(
+                    || "limb 3",
+                    self.config.d,
+                    offset,
+                    || Ok(value.ok_or(Error::SynthesisError)?.4),
                 )?;
                 Ok(())
             },
         )
     }
 
-    fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, mut f: F) -> Result<(), Error>
-    where
-        F: FnMut() -> Result<(FF, FF, FF, FF), Error>,
-    {
+    fn no_op(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error> {
         layouter.assign_region(
-            || "assign decomposition",
+            || "no op",
             |mut region| {
-                self.config.s_range.enable(&mut region, 0)?;
+                let zero = FF::zero();
+                let _ = region.assign_advice(|| "0 a", self.config.a, 0, || Ok(zero))?;
+                let _ = region.assign_advice(|| "0 b", self.config.b, 0, || Ok(zero))?;
+                let _ = region.assign_advice(|| "0 c", self.config.c, 0, || Ok(zero))?;
 
-                let mut value = None;
-                let _ = region.assign_advice(
-                    || "limb 0",
-                    self.config.a,
-                    0,
-                    || {
-                        value = Some(f()?);
-                        Ok(value.ok_or(Error::SynthesisError)?.0)
-                    },
-                )?;
-                let _ = region.assign_advice(
-                    || "limb 1",
-                    self.config.b,
-                    0,
-                    || Ok(value.ok_or(Error::SynthesisError)?.1),
-                )?;
-                let _ = region.assign_advice(
-                    || "limb 2",
-                    self.config.c,
-                    0,
-                    || Ok(value.ok_or(Error::SynthesisError)?.2),
-                )?;
-                let _ = region.assign_advice(
-                    || "limb 3",
-                    self.config.d,
-                    0,
-                    || Ok(value.ok_or(Error::SynthesisError)?.3),
-                )?;
                 Ok(())
             },
         )
@@ -263,10 +269,10 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             let a = meta.query_advice(a, Rotation::cur());
             let b = meta.query_advice(b, Rotation::cur());
             let c = meta.query_advice(c, Rotation::cur());
-            let d_prev = meta.query_advice(d, Rotation::prev());
+            let d_next = meta.query_advice(d, Rotation::prev());
             let d = meta.query_advice(d, Rotation::cur());
 
-            let expression = s_range * (a + b + c + d - d_prev);
+            let expression = s_range * (a + b + c + d - d_next);
             vec![expression]
         });
 
@@ -283,12 +289,11 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
     fn synthesize(&self, config: RangeConfig, mut layouter: impl Layouter<F>) -> Result<(), Error> {
         let cs = RangePlonk::new(config);
 
-        cs.integer(&mut layouter, || {
-            Ok(self.integer.ok_or(Error::SynthesisError)?)
-        })?;
+        cs.no_op(&mut layouter)?;
 
         cs.decomposition(&mut layouter, || {
             Ok((
+                self.integer.ok_or(Error::SynthesisError)?,
                 self.limb_0.ok_or(Error::SynthesisError)?,
                 self.limb_1.ok_or(Error::SynthesisError)?,
                 self.limb_2.ok_or(Error::SynthesisError)?,
