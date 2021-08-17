@@ -2,8 +2,8 @@
 #![allow(clippy::op_ref)]
 
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Chip, Layouter, SimpleFloorPlanner};
-use halo2::plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Selector, TableColumn};
+use halo2::circuit::Layouter;
+use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
 
@@ -13,50 +13,11 @@ use std::marker::PhantomData;
 // | a_i | b_i | c_i | d_i     |
 
 // __Goal__:
+// b: bit len of a limb
 
-// * `a_i + b_i + c_i + d_i == d_(i-1)`
-// * `a_i < 2^4`, `b_i < 2^4`, `c_i < 2^4`, `d_i < 2^4`
+// * `a_i + b_i << b + c_i << 2b + d_i << 3b == d_(i-1)`
+// * `a_i < 2^b`, `b_i < 2^b`, `c_i < 2^b`, `d_i < 2^b`
 
-#[cfg(test)]
-mod tests {
-
-    use super::MyCircuit;
-    use halo2::arithmetic::FieldExt;
-    use halo2::dev::MockProver;
-    use halo2::pasta::Fp;
-
-    #[test]
-    fn test_range() {
-        const K: u32 = 5;
-        const BASE: usize = 4;
-
-        let small_range_table: Vec<Fp> = (0..1 << BASE).map(|e| Fp::from_u64(e)).collect();
-
-        let integer = Fp::from_u64(10);
-        let limb_0 = Fp::from_u64(1);
-        let limb_1 = Fp::from_u64(2);
-        let limb_2 = Fp::from_u64(3);
-        let limb_3 = Fp::from_u64(4);
-
-        let circuit: MyCircuit<Fp> = MyCircuit {
-            integer: Some(integer),
-            limb_0: Some(limb_0),
-            limb_1: Some(limb_1),
-            limb_2: Some(limb_2),
-            limb_3: Some(limb_3),
-            small_range_table,
-        };
-
-        let prover = match MockProver::run(K, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        // println!("{:?}", prover);
-        assert_eq!(prover.verify(), Ok(()));
-    }
-}
-
-/// This represents an advice column at a certain row in the ConstraintSystem
 #[derive(Copy, Clone, Debug)]
 pub struct Variable(Column<Advice>, usize);
 
@@ -70,49 +31,21 @@ struct RangeConfig {
     small_range_table: TableColumn,
 }
 
-trait RangeInstructions<FF: FieldExt>: Chip<FF> {
-    fn small_range_table(
-        &self,
-        layouter: &mut impl Layouter<FF>,
-        values: &[FF],
-    ) -> Result<(), Error>;
-    // fn integer<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<(), Error>
-    // where
-    //     F: FnMut() -> Result<FF, Error>;
+trait RangeInstructions<FF: FieldExt> {
+    fn load(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
     fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<(), Error>
     where
         F: FnMut() -> Result<(FF, FF, FF, FF, FF), Error>;
     fn no_op(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error>;
 }
 
-struct RangePlonk<F: FieldExt> {
+pub struct RangeChip<F: FieldExt, const BASE: usize> {
     config: RangeConfig,
+    small_range_table: Vec<F>,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> Chip<F> for RangePlonk<F> {
-    type Config = RangeConfig;
-    type Loaded = ();
-
-    fn config(&self) -> &Self::Config {
-        &self.config
-    }
-
-    fn loaded(&self) -> &Self::Loaded {
-        &()
-    }
-}
-
-impl<FF: FieldExt> RangePlonk<FF> {
-    fn new(config: RangeConfig) -> Self {
-        RangePlonk {
-            config,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<FF: FieldExt> RangeInstructions<FF> for RangePlonk<FF> {
+impl<FF: FieldExt, const BASE: usize> RangeInstructions<FF> for RangeChip<FF, BASE> {
     fn decomposition<F>(&self, layouter: &mut impl Layouter<FF>, mut f: F) -> Result<(), Error>
     where
         F: FnMut() -> Result<(FF, FF, FF, FF, FF), Error>,
@@ -182,15 +115,11 @@ impl<FF: FieldExt> RangeInstructions<FF> for RangePlonk<FF> {
         )
     }
 
-    fn small_range_table(
-        &self,
-        layouter: &mut impl Layouter<FF>,
-        values: &[FF],
-    ) -> Result<(), Error> {
+    fn load(&self, layouter: &mut impl Layouter<FF>) -> Result<(), Error> {
         layouter.assign_table(
             || "",
             |mut table| {
-                for (index, &value) in values.iter().enumerate() {
+                for (index, &value) in self.small_range_table.iter().enumerate() {
                     table.assign_cell(
                         || "table 1",
                         self.config.small_range_table,
@@ -205,28 +134,14 @@ impl<FF: FieldExt> RangeInstructions<FF> for RangePlonk<FF> {
     }
 }
 
-#[derive(Clone)]
-struct MyCircuit<F: FieldExt> {
-    integer: Option<F>,
-    limb_0: Option<F>,
-    limb_1: Option<F>,
-    limb_2: Option<F>,
-    limb_3: Option<F>,
-    small_range_table: Vec<F>,
-}
+impl<F: FieldExt, const BASE: usize> RangeChip<F, BASE> {
+    fn new(config: RangeConfig) -> Self {
+        let small_range_table: Vec<F> = (0..1 << BASE).map(|e| F::from_u64(e)).collect();
 
-impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
-    type Config = RangeConfig;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        Self {
-            integer: None,
-            limb_0: None,
-            limb_1: None,
-            limb_2: None,
-            limb_3: None,
-            small_range_table: self.small_range_table.clone(),
+        RangeChip {
+            config,
+            small_range_table,
+            _marker: PhantomData,
         }
     }
 
@@ -272,7 +187,11 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             let d_next = meta.query_advice(d, Rotation::prev());
             let d = meta.query_advice(d, Rotation::cur());
 
-            let expression = s_range * (a + b + c + d - d_next);
+            let u1 = F::from_u64((1 << BASE) as u64);
+            let u2 = F::from_u64((1 << (2 * BASE)) as u64);
+            let u3 = F::from_u64((1 << (3 * BASE)) as u64);
+
+            let expression = s_range * (a + b * u1 + c * u2 + d * u3 - d_next);
             vec![expression]
         });
 
@@ -285,24 +204,103 @@ impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
             small_range_table,
         }
     }
+}
 
-    fn synthesize(&self, config: RangeConfig, mut layouter: impl Layouter<F>) -> Result<(), Error> {
-        let cs = RangePlonk::new(config);
+#[cfg(test)]
+mod tests {
 
-        cs.no_op(&mut layouter)?;
+    use super::{RangeChip, RangeConfig, RangeInstructions};
+    use halo2::arithmetic::FieldExt;
+    use halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use halo2::dev::MockProver;
+    use halo2::pasta::Fp;
+    use halo2::plonk::{Circuit, ConstraintSystem, Error};
 
-        cs.decomposition(&mut layouter, || {
-            Ok((
-                self.integer.ok_or(Error::SynthesisError)?,
-                self.limb_0.ok_or(Error::SynthesisError)?,
-                self.limb_1.ok_or(Error::SynthesisError)?,
-                self.limb_2.ok_or(Error::SynthesisError)?,
-                self.limb_3.ok_or(Error::SynthesisError)?,
-            ))
-        })?;
+    #[derive(Clone, Debug)]
+    struct TestCircuitConfig {
+        range_config: RangeConfig,
+    }
 
-        cs.small_range_table(&mut layouter, &self.small_range_table)?;
+    #[derive(Default)]
+    struct TestCircuit<F: FieldExt, const BASE: usize> {
+        integer: Option<F>,
+    }
 
-        Ok(())
+    impl<F: FieldExt, const BASE: usize> Circuit<F> for TestCircuit<F, BASE> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let range_config = RangeChip::<F, BASE>::configure(meta);
+            TestCircuitConfig { range_config }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let decompose = |e: F, base: usize| -> (F, F, F, F) {
+                use num_bigint::BigUint;
+                const LIMB_SIZE: usize = 4;
+                let mut e = BigUint::from_bytes_le(&e.to_bytes()[..]);
+                let n = (1 << base) as usize;
+                let mut limbs: Vec<F> = Vec::new();
+                for _ in 0..LIMB_SIZE {
+                    let u = BigUint::from(n - 1) & e.clone();
+                    let u = F::from_str(&u.to_str_radix(10)).unwrap();
+                    limbs.push(u);
+                    e = e >> base;
+                }
+                let a0 = limbs[0];
+                let a1 = limbs[1];
+                let a2 = limbs[2];
+                let a3 = limbs[3];
+                (a0, a1, a2, a3)
+            };
+
+            let range_chip = RangeChip::<F, BASE>::new(config.range_config);
+            range_chip.load(&mut layouter)?;
+
+            range_chip.no_op(&mut layouter)?;
+
+            let integer = self.integer.ok_or(Error::SynthesisError)?;
+            let limbs = decompose(integer, BASE);
+
+            range_chip.decomposition(&mut layouter, || {
+                Ok((integer, limbs.0, limbs.1, limbs.2, limbs.3))
+            })?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_range() {
+        const K: u32 = 5;
+        const BASE: usize = 4;
+
+        let integer = Some(Fp::from_u64(21554));
+        let circuit = TestCircuit::<Fp, BASE> { integer };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        // println!("{:?}", prover);
+        assert_eq!(prover.verify(), Ok(()));
+
+        let integer = Some(Fp::from_u64(1 << (BASE * 4)));
+        let circuit = TestCircuit::<Fp, BASE> { integer };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_ne!(prover.verify(), Ok(()));
     }
 }
