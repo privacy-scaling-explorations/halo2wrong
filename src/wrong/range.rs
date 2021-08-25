@@ -4,6 +4,7 @@ use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
 
+use crate::main_gate::MainGateConfig;
 use crate::wrong::{Common, Decomposed, Limb};
 use crate::wrong::{LOOKUP_LIMB_SIZE, NUMBER_OF_LOOKUP_LIMBS};
 
@@ -139,15 +140,13 @@ impl<F: FieldExt> RangeChip<F> {
 
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        advice_columns: &[Column<Advice>],
+        main_gate_config: MainGateConfig,
         lookup_limb_size: usize,
     ) -> RangeConfig {
-        assert_eq!(NUMBER_OF_LOOKUP_LIMBS, advice_columns.len());
-
-        let a = advice_columns[0];
-        let b = advice_columns[1];
-        let c = advice_columns[2];
-        let d = advice_columns[3];
+        let a = main_gate_config.a;
+        let b = main_gate_config.b;
+        let c = main_gate_config.c;
+        let d = main_gate_config.d;
 
         let s_range = meta.complex_selector();
         let small_range_table = meta.lookup_table_column();
@@ -209,6 +208,7 @@ impl<F: FieldExt> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
+    use crate::main_gate::MainGate;
     use crate::wrong::{Limb, LOOKUP_LIMB_SIZE};
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
@@ -237,12 +237,8 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            let a = meta.advice_column();
-            let b = meta.advice_column();
-            let c = meta.advice_column();
-            let d = meta.advice_column();
-
-            let range_config = RangeChip::<F>::configure(meta, &[a, b, c, d], LOOKUP_LIMB_SIZE);
+            let main_gate_config = MainGate::<F>::configure(meta);
+            let range_config = RangeChip::<F>::configure(meta, main_gate_config, LOOKUP_LIMB_SIZE);
             TestCircuitConfig { range_config }
         }
 

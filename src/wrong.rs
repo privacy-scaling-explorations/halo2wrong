@@ -6,7 +6,9 @@ use num_traits::{Num, Zero};
 use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::ops::Shl;
+use std::ops::Shr;
 
+mod bitness;
 mod int;
 mod range;
 
@@ -118,6 +120,8 @@ pub struct Decomposed<F: FieldExt> {
     bit_len: usize,
 }
 
+type Carry<F> = Vec<Limb<F>>;
+
 impl<F: FieldExt> Default for Limb<F> {
     fn default() -> Self {
         Limb {
@@ -169,6 +173,20 @@ impl<W: FieldExt, N: FieldExt> Integer<W, N> {
     pub fn mul(&self, other: &Self) -> (Self, Self) {
         let (q, r) = (self.value() * other.value()).div_rem(&Self::modulus());
         (self.new_from_big(q), self.new_from_big(r))
+    }
+
+    pub fn add(&self, other: &Self) -> (Self, Carry<N>) {
+        let mut carries: Carry<N> = Vec::new();
+        for (a, b) in self
+            .decomposed
+            .limbs
+            .iter()
+            .zip(other.decomposed.limbs.iter())
+        {
+            carries.push(((a.value() + b.value()) >> LIMB_SIZE).into());
+        }
+
+        (self.new_from_big(self.value() + other.value()), carries)
     }
 
     fn modulus() -> big_uint {

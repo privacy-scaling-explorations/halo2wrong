@@ -1,19 +1,17 @@
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error};
+use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use std::marker::PhantomData;
+
+use crate::main_gate::MainGateConfig;
 
 use super::range::{RangeChip, RangeConfig, RangeInstructions};
 use super::{Integer, LOOKUP_LIMB_SIZE};
 
 #[derive(Clone, Debug)]
 pub struct IntegerConfig {
-    a: Column<Advice>,
-    b: Column<Advice>,
-    c: Column<Advice>,
-    d: Column<Advice>,
-
     range_config: RangeConfig,
+    main_gate_config: MainGateConfig,
 }
 
 pub struct IntegerChip<F: FieldExt> {
@@ -122,25 +120,11 @@ impl<F: FieldExt> IntegerChip<F> {
 
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        advice_columns: &[Column<Advice>],
+        main_gate_config: MainGateConfig,
+        range_config: RangeConfig,
     ) -> IntegerConfig {
-        let a = advice_columns[0];
-        let b = advice_columns[1];
-        let c = advice_columns[2];
-        let d = advice_columns[3];
-
-        meta.enable_equality(a.into());
-        meta.enable_equality(b.into());
-        meta.enable_equality(c.into());
-        meta.enable_equality(d.into());
-
-        let range_config = RangeChip::<F>::configure(meta, &[a, b, c, d], LOOKUP_LIMB_SIZE);
-
         IntegerConfig {
-            a,
-            b,
-            c,
-            d,
+            main_gate_config,
             range_config,
         }
     }
@@ -153,7 +137,8 @@ impl<F: FieldExt> IntegerChip<F> {
 #[cfg(test)]
 mod tests {
 
-    use crate::wrong::range::RangeInstructions;
+    use crate::main_gate::MainGate;
+    use crate::wrong::range::{RangeChip, RangeInstructions};
     use crate::wrong::{Integer, Rns, LOOKUP_LIMB_SIZE};
 
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
@@ -183,12 +168,9 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            let a = meta.advice_column();
-            let b = meta.advice_column();
-            let c = meta.advice_column();
-            let d = meta.advice_column();
-
-            let integer_config = IntegerChip::<N>::configure(meta, &[a, b, c, d]);
+            let main_gate_config = MainGate::<N>::configure(meta);
+            let range_config = RangeChip::<N>::configure(meta, main_gate_config.clone(), LOOKUP_LIMB_SIZE);
+            let integer_config = IntegerChip::<N>::configure(meta, main_gate_config, range_config);
             TestCircuitConfig { integer_config }
         }
 
