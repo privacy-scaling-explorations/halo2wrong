@@ -1,12 +1,10 @@
+use crate::circuit::main_gate::MainGateConfig;
+use crate::int::{Common, Decomposed, Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, TableColumn};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
-
-use crate::main_gate::MainGateConfig;
-use crate::wrong::{Common, Decomposed, Limb};
-use crate::wrong::{LOOKUP_LIMB_SIZE, NUMBER_OF_LOOKUP_LIMBS};
 
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
@@ -17,11 +15,11 @@ pub struct RangeConfig {
     s_range: Selector,
 
     small_range_table: TableColumn,
-    lookup_limb_size: usize,
 }
 
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
+
     _marker: PhantomData<F>,
 }
 
@@ -59,15 +57,10 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         let offset_limb = 0;
         let offset_decomposed = offset_limb + 1;
 
-        let decomposed: Vec<F> = Decomposed::<F>::new(
-            limb.value(),
-            self.config.lookup_limb_size,
-            NUMBER_OF_LOOKUP_LIMBS,
-        )
-        .limbs
-        .iter()
-        .map(|limb| limb.fe())
-        .collect();
+        // let decomposed =self.config.rns.new_decomposed(limb)
+
+        let decomposed = Decomposed::<F>::from_limb(limb, 4, 16);
+        let decomposed: Vec<F> = decomposed.limbs.iter().map(|limb| limb.fe()).collect();
         let limb_value = limb.fe();
 
         let _ = region.assign_advice(|| "limb zero a", self.config.a, offset_limb, || Ok(zero))?;
@@ -109,8 +102,9 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     }
 
     fn load_small_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let small_range_table_values: Vec<F> =
-            (0..1 << LOOKUP_LIMB_SIZE).map(|e| F::from_u64(e)).collect();
+        let small_range_table_values: Vec<F> = (0..1 << BIT_LEN_LOOKUP_LIMB)
+            .map(|e| F::from_u64(e))
+            .collect();
 
         layouter.assign_table(
             || "",
@@ -141,7 +135,6 @@ impl<F: FieldExt> RangeChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         main_gate_config: MainGateConfig,
-        lookup_limb_size: usize,
     ) -> RangeConfig {
         let a = main_gate_config.a;
         let b = main_gate_config.b;
@@ -184,9 +177,10 @@ impl<F: FieldExt> RangeChip<F> {
             let d_next = meta.query_advice(d, Rotation::prev());
             let d = meta.query_advice(d, Rotation::cur());
 
-            let u1 = F::from_u64((1u64 << LOOKUP_LIMB_SIZE) as u64);
-            let u2 = F::from_u64((1u64 << (2 * LOOKUP_LIMB_SIZE)) as u64);
-            let u3 = F::from_u64((1u64 << (3 * LOOKUP_LIMB_SIZE)) as u64);
+            let bit_len = 16;
+            let u1 = F::from_u64((1u64 << bit_len) as u64);
+            let u2 = F::from_u64((1u64 << (2 * bit_len)) as u64);
+            let u3 = F::from_u64((1u64 << (3 * bit_len)) as u64);
 
             let expression = s_range * (a + b * u1 + c * u2 + d * u3 - d_next);
 
@@ -199,8 +193,8 @@ impl<F: FieldExt> RangeChip<F> {
             c,
             d,
             s_range,
+
             small_range_table,
-            lookup_limb_size,
         }
     }
 }
@@ -208,8 +202,8 @@ impl<F: FieldExt> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
-    use crate::main_gate::MainGate;
-    use crate::wrong::{Limb, LOOKUP_LIMB_SIZE};
+    use crate::circuit::main_gate::MainGate;
+    use crate::int::{Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use halo2::arithmetic::FieldExt;
@@ -238,7 +232,8 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let main_gate_config = MainGate::<F>::configure(meta);
-            let range_config = RangeChip::<F>::configure(meta, main_gate_config, LOOKUP_LIMB_SIZE);
+            let range_config = RangeChip::<F>::configure(meta, main_gate_config);
+
             TestCircuitConfig { range_config }
         }
 
@@ -268,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_range_circuit() {
-        const K: u32 = (LOOKUP_LIMB_SIZE + 1) as u32;
+        const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
 
         let limb = Some(Limb::from_fe(Fp::from_u64(0xffffffffffffffff)));
         let circuit = TestCircuit::<Fp> { limb };

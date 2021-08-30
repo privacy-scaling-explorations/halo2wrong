@@ -1,2 +1,2 @@
-mod wrong;
-mod main_gate;
+mod circuit;
+mod int;

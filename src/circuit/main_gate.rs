@@ -1,5 +1,5 @@
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Chip, Region};
+use halo2::circuit::{Cell, Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
@@ -90,5 +90,66 @@ impl<F: FieldExt> MainGate<F> {
             s_constant,
             sm,
         }
+    }
+}
+
+pub trait MainGateInstructions<F: FieldExt> {
+    fn add(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error>;
+
+    fn mul(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error>;
+}
+
+impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
+    fn add(
+        &self,
+        region: &mut Region<'_, F>,
+
+        input: Option<(F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error> {
+        let input = input.ok_or(Error::SynthesisError)?;
+
+        let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(input.0))?;
+        let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(input.1))?;
+        let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(input.2))?;
+
+        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+
+        Ok((lhs, rhs, out))
+    }
+
+    fn mul(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error> {
+        let input = input.ok_or(Error::SynthesisError)?;
+
+        let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(input.0))?;
+        let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(input.1))?;
+        let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(input.2))?;
+
+        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+
+        Ok((lhs, rhs, out))
     }
 }
