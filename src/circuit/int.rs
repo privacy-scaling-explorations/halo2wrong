@@ -42,6 +42,13 @@ trait IntegerInstructions<'a, Wrong: FieldExt, Native: FieldExt>: Chip<Native> {
         b: Option<&mut Integer<Wrong, Native>>,
     ) -> Result<Integer<Wrong, Native>, Error>;
 
+    fn sub(
+        &self,
+        region: &mut Region<'_, Native>,
+        a: Option<&mut Integer<Wrong, Native>>,
+        b: Option<&mut Integer<Wrong, Native>>,
+    ) -> Result<Integer<Wrong, Native>, Error>;
+
     fn reduce(
         &self,
         region: &mut Region<'_, Native>,
@@ -102,6 +109,51 @@ impl<'a, Wrong: FieldExt, Native: FieldExt> IntegerInstructions<'a, Wrong, Nativ
             // assing cell to the result
             c.cell = Some(c_cell)
         }
+
+        Ok(c)
+    }
+
+    fn sub(
+        &self,
+        region: &mut Region<'_, Native>,
+        a: Option<&mut Integer<Wrong, Native>>,
+        b: Option<&mut Integer<Wrong, Native>>,
+    ) -> Result<Integer<Wrong, Native>, Error> {
+        let a = a.ok_or(Error::SynthesisError)?;
+        let b = b.ok_or(Error::SynthesisError)?;
+        let mut c: Integer<_, _> = a.sub(b).clone();
+        let aux = a.rns.aux.clone();
+
+        let main_gate = self.main_gate();
+
+        for (((a, b), c), aux) in a
+            .decomposed
+            .limbs
+            .iter_mut()
+            .zip(b.decomposed.limbs.iter_mut())
+            .zip(c.decomposed.limbs.iter_mut())
+            .zip(aux.limbs.iter())
+        {
+            // expect operands are assigned
+            let a_cell = a.cell.ok_or(Error::SynthesisError)?;
+            let b_cell = b.cell.ok_or(Error::SynthesisError)?;
+
+            let (a_new_cell, b_new_cell, c_cell) =
+                main_gate.sub_add_constant(region, Some((a.fe(), b.fe(), c.fe(), aux.fe())))?;
+
+            // cycle equal limbs
+            region.constrain_equal(a_cell, a_new_cell)?;
+            region.constrain_equal(b_cell, b_new_cell)?;
+
+            // update cells of operands
+            a.cell = Some(a_new_cell);
+            b.cell = Some(b_new_cell);
+
+            // assing cell to the result
+            c.cell = Some(c_cell)
+        }
+
+        self.reduce(region, Some(&c))?;
 
         Ok(c)
     }

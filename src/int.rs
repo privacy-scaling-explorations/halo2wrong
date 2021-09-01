@@ -38,11 +38,12 @@ fn big_to_fe<F: FieldExt>(e: big_uint) -> F {
 pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub bit_len: usize,
     pub number_of_limbs: usize,
-    crt_modulus_bit_len: usize,
     pub right_shifter_r: Native,
     pub right_shifter_2r: Native,
     pub left_shifter_r: Native,
     pub left_shifter_2r: Native,
+    pub aux: Decomposed<Native>,
+    crt_modulus_bit_len: usize,
     wrong_modulus: big_uint,
     negative_wrong_modulus: Decomposed<Native>,
     s: Native,
@@ -66,6 +67,13 @@ impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
         let s = big_to_fe(big_uint::one() << bit_len);
         let two_limb_mask = (big_uint::one() << (bit_len * 2)) - 1usize;
 
+        let range_correct_factor = s - Native::one();
+
+        let aux =
+            &mut Decomposed::<Native>::from_big(wrong_modulus.clone(), number_of_limbs, bit_len);
+        aux.scale(range_correct_factor);
+        let aux = aux.clone();
+
         Rns {
             bit_len,
             number_of_limbs,
@@ -77,6 +85,7 @@ impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
             wrong_modulus,
             negative_wrong_modulus,
             s,
+            aux,
             two_limb_mask,
             _marker_wrong: PhantomData,
         }
@@ -97,6 +106,21 @@ impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
     pub(crate) fn new_integer_from_big(&self, e: big_uint) -> Integer<Wrong, Native> {
         Integer {
             decomposed: Decomposed::from_big(e, self.number_of_limbs, self.bit_len),
+            rns: self.clone(),
+        }
+    }
+
+    pub(crate) fn new_integer_from_limbs(
+        &self,
+        limbs: Vec<Limb<Native>>,
+    ) -> Integer<Wrong, Native> {
+        assert_eq!(self.number_of_limbs, limbs.len());
+        let decomposed = Decomposed {
+            limbs,
+            bit_len: self.bit_len,
+        };
+        Integer {
+            decomposed,
             rns: self.clone(),
         }
     }
@@ -171,6 +195,36 @@ impl<W: FieldExt, N: FieldExt> Integer<W, N> {
         };
 
         assert_eq!(decomposed.value(), self.value() + other.value());
+
+        Integer {
+            decomposed,
+            rns: self.rns.clone(),
+        }
+    }
+
+    pub(crate) fn sub(&self, other: &Self) -> Self {
+        let aux = self.rns.aux.clone();
+
+        let limbs: Vec<Limb<N>> = self
+            .decomposed
+            .limbs
+            .iter()
+            .zip(other.decomposed.limbs.iter())
+            .zip(aux.limbs.iter())
+            .map(|((self_limb, other_limb), aux)| {
+                (self_limb.value() - other_limb.value() + aux.value()).into()
+            })
+            .collect();
+
+        let decomposed = Decomposed {
+            limbs,
+            bit_len: self.rns.bit_len,
+        };
+
+        assert_eq!(
+            decomposed.value(),
+            self.value() - other.value() % aux.value()
+        );
 
         Integer {
             decomposed,
@@ -332,6 +386,12 @@ impl<F: FieldExt> Decomposed<F> {
         Decomposed {
             limbs: limbs.try_into().expect("must fit in"),
             bit_len,
+        }
+    }
+
+    pub fn scale(&mut self, k: F) {
+        for limb in self.limbs.iter_mut() {
+            limb._value = limb._value * k;
         }
     }
 }

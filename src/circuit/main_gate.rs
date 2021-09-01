@@ -100,6 +100,12 @@ pub trait MainGateInstructions<F: FieldExt> {
         input: Option<(F, F, F)>,
     ) -> Result<(Cell, Cell, Cell), Error>;
 
+    fn sub_add_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error>;
+
     fn mul(
         &self,
         region: &mut Region<'_, F>,
@@ -133,6 +139,33 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
         region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
         region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+
+        Ok((lhs, rhs, out))
+    }
+
+    fn sub_add_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error> {
+        let input = input.ok_or(Error::SynthesisError)?;
+
+        let lhs = input.0;
+        let rhs = input.1;
+        let constant = input.2;
+        let out = input.3;
+
+        let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(lhs))?;
+        let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(rhs))?;
+        let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(out))?;
+
+        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(-F::one()))?;
+        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(constant))?;
 
         Ok((lhs, rhs, out))
     }
