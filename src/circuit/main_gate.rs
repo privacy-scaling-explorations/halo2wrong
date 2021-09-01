@@ -21,7 +21,7 @@ pub struct MainGateConfig {
 }
 
 pub struct MainGate<F: FieldExt> {
-    config: MainGateConfig,
+    pub config: MainGateConfig,
     _marker: PhantomData<F>,
 }
 
@@ -54,7 +54,7 @@ impl<F: FieldExt> MainGate<F> {
 
         // main gate
 
-        meta.create_gate("main gate", |meta| {
+        meta.create_gate("main_gate", |meta| {
             let a = meta.query_advice(a, Rotation::cur());
             let b = meta.query_advice(b, Rotation::cur());
             let c = meta.query_advice(c, Rotation::cur());
@@ -105,6 +105,12 @@ pub trait MainGateInstructions<F: FieldExt> {
         region: &mut Region<'_, F>,
         input: Option<(F, F, F)>,
     ) -> Result<(Cell, Cell, Cell), Error>;
+
+    fn add_mul_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error>;
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
@@ -148,6 +154,30 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
         region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
         region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+
+        Ok((lhs, rhs, out))
+    }
+
+    fn add_mul_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        input: Option<(F, F, F, F)>,
+    ) -> Result<(Cell, Cell, Cell), Error> {
+        let input = input.ok_or(Error::SynthesisError)?;
+
+        // a + b * constant = c
+
+        let lhs = region.assign_advice(|| "a", self.config.a, 0, || Ok(input.0))?;
+        let rhs = region.assign_advice(|| "b", self.config.b, 0, || Ok(input.1))?;
+        let out = region.assign_advice(|| "c", self.config.c, 0, || Ok(input.3))?;
+
+        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(input.2))?;
+        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
         region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
 
         Ok((lhs, rhs, out))

@@ -39,7 +39,10 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub bit_len: usize,
     pub number_of_limbs: usize,
     crt_modulus_bit_len: usize,
-    right_shifter: Native,
+    pub right_shifter_r: Native,
+    pub right_shifter_2r: Native,
+    pub left_shifter_r: Native,
+    pub left_shifter_2r: Native,
     wrong_modulus: big_uint,
     negative_wrong_modulus: Decomposed<Native>,
     s: Native,
@@ -49,8 +52,12 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 
 impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
     pub(crate) fn new(bit_len: usize, number_of_limbs: usize, crt_modulus_bit_len: usize) -> Self {
-        let two_inv = Native::from_u64(2).invert().unwrap();
-        let right_shifter = two_inv.pow(&[2 * bit_len as u64, 0, 0, 0]);
+        let two = Native::from_u64(2);
+        let two_inv = two.invert().unwrap();
+        let right_shifter_r = two_inv.pow(&[bit_len as u64, 0, 0, 0]);
+        let right_shifter_2r = two_inv.pow(&[2 * bit_len as u64, 0, 0, 0]);
+        let left_shifter_r = two.pow(&[bit_len as u64, 0, 0, 0]);
+        let left_shifter_2r = two.pow(&[2 * bit_len as u64, 0, 0, 0]);
         let wrong_modulus = big_uint::from_str_radix(&Wrong::MODULUS[2..], 16).unwrap();
 
         let t = big_uint::one() << crt_modulus_bit_len;
@@ -63,7 +70,10 @@ impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
             bit_len,
             number_of_limbs,
             crt_modulus_bit_len,
-            right_shifter,
+            right_shifter_r,
+            right_shifter_2r,
+            left_shifter_r,
+            left_shifter_2r,
             wrong_modulus,
             negative_wrong_modulus,
             s,
@@ -85,10 +95,9 @@ impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
     }
 
     pub(crate) fn new_integer_from_big(&self, e: big_uint) -> Integer<Wrong, Native> {
-        let modulus = big_uint::from_str_radix(&Wrong::MODULUS[2..], 16).unwrap();
         Integer {
             decomposed: Decomposed::from_big(e, self.number_of_limbs, self.bit_len),
-            rns: &self,
+            rns: self.clone(),
         }
     }
 
@@ -97,7 +106,7 @@ impl<Wrong: FieldExt, Native: FieldExt> Rns<Wrong, Native> {
     }
 }
 
-impl<'a, W: FieldExt, N: FieldExt> From<Integer<'a, W, N>> for big_uint {
+impl<W: FieldExt, N: FieldExt> From<Integer<W, N>> for big_uint {
     fn from(el: Integer<W, N>) -> Self {
         el.value()
     }
@@ -115,38 +124,39 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
     }
 }
 
-pub struct Reduced<'a, W: FieldExt, N: FieldExt> {
-    pub r: Integer<'a, W, N>,
+pub struct Reduced<W: FieldExt, N: FieldExt> {
+    pub r: Integer<W, N>,
     pub q: Limb<N>,
     pub t: Vec<Limb<N>>,
-    pub u0: N,
-    pub u1: N,
+    pub negative_modulus: Vec<Limb<N>>,
+    pub u_0: Limb<N>,
+    pub u_1: Limb<N>,
+    pub v_0: Limb<N>,
+    pub v_1: Limb<N>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Integer<'a, Wrong: FieldExt, Native: FieldExt> {
+pub struct Integer<Wrong: FieldExt, Native: FieldExt> {
     pub decomposed: Decomposed<Native>,
-    pub rns: &'a Rns<Wrong, Native>,
+    pub rns: Rns<Wrong, Native>,
 }
 
-impl<'a, W: FieldExt, N: FieldExt> Common for Integer<'a, W, N> {
+impl<W: FieldExt, N: FieldExt> Common for Integer<W, N> {
     fn value(&self) -> big_uint {
         self.decomposed.value()
     }
 }
 
-impl<'a, W: FieldExt, N: FieldExt> Integer<'a, W, N> {
+impl<W: FieldExt, N: FieldExt> Integer<W, N> {
     pub(crate) fn fe(&self) -> W {
         big_to_fe(self.value())
     }
 
-    fn limbs(&self) -> Vec<Limb<N>> {
+    pub fn limbs(&self) -> Vec<Limb<N>> {
         self.decomposed.limbs.clone()
     }
 
     pub(crate) fn add(&self, other: &Self) -> Self {
-        let rns = self.rns;
-
         let limbs: Vec<Limb<N>> = self
             .decomposed
             .limbs
@@ -157,22 +167,24 @@ impl<'a, W: FieldExt, N: FieldExt> Integer<'a, W, N> {
 
         let decomposed = Decomposed {
             limbs,
-            bit_len: rns.bit_len,
+            bit_len: self.rns.bit_len,
         };
 
         assert_eq!(decomposed.value(), self.value() + other.value());
 
-        Integer { decomposed, rns }
+        Integer {
+            decomposed,
+            rns: self.rns.clone(),
+        }
     }
 
-    pub(crate) fn reduce(&self) -> Reduced<'a, W, N> {
-        let rns = self.rns;
-        let modulus = rns.wrong_modulus.clone();
-        let negative_modulus = rns.negative_wrong_modulus.clone();
+    pub(crate) fn reduce(&self) -> Reduced<W, N> {
+        let modulus = self.rns.wrong_modulus.clone();
+        let negative_modulus = self.rns.negative_wrong_modulus.clone();
 
         // compute quotient and the resultF
         let (q, r) = self.value().div_rem(&modulus);
-        assert!(q < big_uint::one() << rns.bit_len);
+        assert!(q < big_uint::one() << self.rns.bit_len);
         let q: Limb<N> = q.into();
 
         // q must stay in single limb
@@ -188,40 +200,53 @@ impl<'a, W: FieldExt, N: FieldExt> Integer<'a, W, N> {
             })
             .collect();
 
-        let r = rns.new_integer_from_big(r);
+        let r = self.rns.new_integer_from_big(r);
 
-        let (u0, u1) = self.residues(t.clone(), r.clone());
-
-        Reduced { r, q, t, u0, u1 }
+        let (u_0, u_1, v_0, v_1) = self.residues(t.clone(), r.clone());
+        let negative_modulus = negative_modulus.limbs;
+        Reduced {
+            r,
+            q,
+            t,
+            negative_modulus,
+            u_0,
+            u_1,
+            v_0,
+            v_1,
+        }
     }
 
-    fn residues(&self, t: Vec<Limb<N>>, r: Integer<W, N>) -> (N, N) {
+    fn residues(&self, t: Vec<Limb<N>>, r: Integer<W, N>) -> (Limb<N>, Limb<N>, Limb<N>, Limb<N>) {
         // for now works only for this case
-        let rns = self.rns;
-        assert_eq!(rns.number_of_limbs, 4);
-        let s = rns.s;
+        assert_eq!(self.rns.number_of_limbs, 4);
+        let s = self.rns.s;
 
-        let u0 =
+        let u_0 =
             t[0].fe() + s * t[1].fe() - r.decomposed.limbs[0].fe() - s * r.decomposed.limbs[1].fe();
 
-        let u1 =
+        let u_1 =
             t[2].fe() + s * t[3].fe() - r.decomposed.limbs[2].fe() - s * r.decomposed.limbs[3].fe();
 
-        let u1 = u1 + u0 * self.rns.right_shifter;
+        // let v1 = u_1 + u_0 * self.rns.right_shifter;
 
         // sanity check
         {
-            let mask = rns.two_limb_mask.clone();
-            let u0: big_uint = fe_to_big(u0);
-            let u1: big_uint = fe_to_big(u1);
-            assert_eq!(u0 & mask.clone(), big_uint::zero());
-            assert_eq!(u1 & mask, big_uint::zero());
+            let mask = self.rns.two_limb_mask.clone();
+            let u_0: big_uint = fe_to_big(u_0);
+            let u_1: big_uint = fe_to_big(u_1);
+            assert_eq!(u_0 & mask.clone(), big_uint::zero());
+            assert_eq!(u_1 & mask, big_uint::zero());
         }
 
-        let u0 = u0 * self.rns.right_shifter;
-        let u1 = u1 * self.rns.right_shifter;
+        let v_0 = u_0 * self.rns.right_shifter_2r;
+        let v_1 = (u_1 + v_0) * self.rns.right_shifter_2r;
 
-        (u0, u1)
+        (
+            Limb::from_fe(u_0),
+            Limb::from_fe(u_1),
+            Limb::from_fe(v_0),
+            Limb::from_fe(v_1),
+        )
     }
 }
 
