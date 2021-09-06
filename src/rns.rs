@@ -89,7 +89,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let right_shifter_2r = two_inv.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_r = two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
-        let wrong_modulus = big_uint::from_str_radix(&W::MODULUS[2..], 16).unwrap();
+        let wrong_modulus = modulus::<W>();
 
         let t = big_uint::one() << CRT_MODULUS_BIT_LEN;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
@@ -394,6 +394,81 @@ impl<F: FieldExt> Decomposed<F> {
 #[cfg(test)]
 mod tests {
 
+    use crate::rns::Common;
+
+    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Rns, BIT_LEN_LIMB, CRT_MODULUS_BIT_LEN};
+    use halo2::arithmetic::FieldExt;
+    use num_bigint::{BigUint as big_uint, RandBigInt};
+    use num_integer::Integer as _;
+    use num_traits::{Num, One, Zero};
+    use pasta_curves::Fp;
+    use pasta_curves::Fq;
+
+    use rand::RngCore;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
+
+    // extern crate num_bigint;
+    // extern crate rand;
+
     #[test]
-    fn test() {}
+    fn test_decomposing() {
+        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+        let number_of_limbs = 4usize;
+        let bit_len_limb = 64usize;
+        let bit_len_int = 256;
+        let el = &rng.gen_biguint(bit_len_int);
+        let decomposed = Decomposed::<Fp>::from_big(el.clone(), number_of_limbs, bit_len_limb);
+        assert_eq!(decomposed.value(), el.clone());
+    }
+
+    #[test]
+    fn test_rns() {
+        use pasta_curves::Fp as Wrong;
+        use pasta_curves::Fq as Native;
+
+        let rns = Rns::<Wrong, Native>::construct();
+
+        let wrong_modulus = rns.wrong_modulus.clone();
+        let native_modulus = modulus::<Native>();
+
+        // shifters
+
+        let el_0 = Native::rand();
+        let shifted_0 = el_0 * rns.left_shifter_r;
+        let left_shifter_r = big_uint::one() << BIT_LEN_LIMB;
+        let el = fe_to_big(el_0);
+        let shifted_1 = (el * left_shifter_r) % native_modulus.clone();
+        let shifted_0 = fe_to_big(shifted_0);
+        assert_eq!(shifted_0, shifted_1);
+        let shifted: Fq = big_to_fe(shifted_0);
+        let el_1 = shifted * rns.right_shifter_r;
+        assert_eq!(el_0, el_1);
+
+        let el_0 = Native::rand();
+        let shifted_0 = el_0 * rns.left_shifter_2r;
+        let left_shifter_2r = big_uint::one() << (2 * BIT_LEN_LIMB);
+        let el = fe_to_big(el_0);
+        let shifted_1 = (el * left_shifter_2r) % native_modulus.clone();
+        let shifted_0 = fe_to_big(shifted_0);
+        assert_eq!(shifted_0, shifted_1);
+        let shifted: Fq = big_to_fe(shifted_0);
+        let el_1 = shifted * rns.right_shifter_2r;
+        assert_eq!(el_0, el_1);
+
+        // negated modulus
+
+        let t = big_uint::one() << CRT_MODULUS_BIT_LEN;
+        let negated_wrong_modulus = t - wrong_modulus.clone();
+        assert_eq!(negated_wrong_modulus, rns.negative_wrong_modulus.value());
+
+        // range correction aux
+        let el_0 = Wrong::rand();
+        let el = fe_to_big(el_0);
+        let aux = rns.aux.value();
+        println!("{}", aux);
+        let el = (aux + el) % wrong_modulus.clone();
+        let el_1: Fp = big_to_fe(el);
+        assert_eq!(el_0, el_1)
+    }
 }
