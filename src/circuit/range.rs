@@ -1,5 +1,5 @@
 use crate::circuit::main_gate::MainGateConfig;
-use crate::int::{Common, Decomposed, Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
+use crate::rns::{Common, Decomposed, Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, TableColumn};
@@ -35,21 +35,13 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_limb(
-        &self,
-        region: &mut Region<'_, F>,
-        limb: Option<&mut Limb<F>>,
-    ) -> Result<(), Error>;
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: Option<&mut Limb<F>>) -> Result<(), Error>;
 
     fn load_small_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_limb(
-        &self,
-        region: &mut Region<'_, F>,
-        limb: Option<&mut Limb<F>>,
-    ) -> Result<(), Error> {
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: Option<&mut Limb<F>>) -> Result<(), Error> {
         let limb = limb.ok_or(Error::SynthesisError)?;
 
         let zero = F::zero();
@@ -66,35 +58,14 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         let _ = region.assign_advice(|| "limb zero a", self.config.a, offset_limb, || Ok(zero))?;
         let _ = region.assign_advice(|| "limb zero b", self.config.b, offset_limb, || Ok(zero))?;
         let _ = region.assign_advice(|| "limb zero c", self.config.c, offset_limb, || Ok(zero))?;
-        let cell =
-            region.assign_advice(|| "limb {}", self.config.d, offset_limb, || Ok(limb_value))?;
+        let cell = region.assign_advice(|| "limb {}", self.config.d, offset_limb, || Ok(limb_value))?;
 
         self.config.s_range.enable(region, offset_decomposed)?;
 
-        let _ = region.assign_advice(
-            || "limb decomposed 0",
-            self.config.a,
-            offset_decomposed,
-            || Ok(decomposed[0]),
-        )?;
-        let _ = region.assign_advice(
-            || "limb decomposed 1",
-            self.config.b,
-            offset_decomposed,
-            || Ok(decomposed[1]),
-        )?;
-        let _ = region.assign_advice(
-            || "limb decomposed 2",
-            self.config.c,
-            offset_decomposed,
-            || Ok(decomposed[2]),
-        )?;
-        let _ = region.assign_advice(
-            || "limb decomposed 3",
-            self.config.d,
-            offset_decomposed,
-            || Ok(decomposed[3]),
-        )?;
+        let _ = region.assign_advice(|| "limb decomposed 0", self.config.a, offset_decomposed, || Ok(decomposed[0]))?;
+        let _ = region.assign_advice(|| "limb decomposed 1", self.config.b, offset_decomposed, || Ok(decomposed[1]))?;
+        let _ = region.assign_advice(|| "limb decomposed 2", self.config.c, offset_decomposed, || Ok(decomposed[2]))?;
+        let _ = region.assign_advice(|| "limb decomposed 3", self.config.d, offset_decomposed, || Ok(decomposed[3]))?;
 
         limb.cell = Some(cell);
 
@@ -102,20 +73,13 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     }
 
     fn load_small_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let small_range_table_values: Vec<F> = (0..1 << BIT_LEN_LOOKUP_LIMB)
-            .map(|e| F::from_u64(e))
-            .collect();
+        let small_range_table_values: Vec<F> = (0..1 << BIT_LEN_LOOKUP_LIMB).map(|e| F::from_u64(e)).collect();
 
         layouter.assign_table(
             || "",
             |mut table| {
                 for (index, &value) in small_range_table_values.iter().enumerate() {
-                    table.assign_cell(
-                        || "small range table",
-                        self.config.small_range_table,
-                        index,
-                        || Ok(value),
-                    )?;
+                    table.assign_cell(|| "small range table", self.config.small_range_table, index, || Ok(value))?;
                 }
                 Ok(())
             },
@@ -126,16 +90,10 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
 impl<F: FieldExt> RangeChip<F> {
     pub fn new(config: RangeConfig) -> Self {
-        RangeChip {
-            config,
-            _marker: PhantomData,
-        }
+        RangeChip { config, _marker: PhantomData }
     }
 
-    pub fn configure(
-        meta: &mut ConstraintSystem<F>,
-        main_gate_config: MainGateConfig,
-    ) -> RangeConfig {
+    pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: MainGateConfig) -> RangeConfig {
         let a = main_gate_config.a;
         let b = main_gate_config.b;
         let c = main_gate_config.c;
@@ -203,7 +161,7 @@ impl<F: FieldExt> RangeChip<F> {
 mod tests {
 
     use crate::circuit::main_gate::MainGate;
-    use crate::int::{Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
+    use crate::rns::{Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use halo2::arithmetic::FieldExt;
@@ -237,11 +195,7 @@ mod tests {
             TestCircuitConfig { range_config }
         }
 
-        fn synthesize(
-            &self,
-            config: Self::Config,
-            mut layouter: impl Layouter<F>,
-        ) -> Result<(), Error> {
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
             let range_chip = RangeChip::<F>::new(config.range_config);
 
             let limb = self.limb.clone();

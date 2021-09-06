@@ -27,10 +27,7 @@ pub struct MainGate<F: FieldExt> {
 
 impl<F: FieldExt> MainGate<F> {
     pub fn new(config: MainGateConfig) -> Self {
-        MainGate {
-            config,
-            _marker: PhantomData,
-        }
+        MainGate { config, _marker: PhantomData }
     }
 
     pub fn configure(meta: &mut ConstraintSystem<F>) -> MainGateConfig {
@@ -69,12 +66,7 @@ impl<F: FieldExt> MainGate<F> {
             let sm = meta.query_fixed(sm, Rotation::cur());
             let s_constant = meta.query_fixed(s_constant, Rotation::cur());
 
-            vec![
-                a.clone() * sa + b.clone() * sb + a * b * sm - (c * sc)
-                    + sd * d
-                    + sd_next * d_next
-                    + s_constant,
-            ]
+            vec![a.clone() * sa + b.clone() * sb + a * b * sm + c * sc + sd * d + sd_next * d_next + s_constant]
         });
 
         MainGateConfig {
@@ -93,126 +85,119 @@ impl<F: FieldExt> MainGate<F> {
     }
 }
 
-pub trait MainGateInstructions<F: FieldExt> {
-    fn add(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error>;
-
-    fn sub_add_constant(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error>;
-
-    fn mul(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error>;
-
-    fn add_mul_constant(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error>;
-}
+pub trait MainGateInstructions<F: FieldExt> {}
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
-    fn add(
-        &self,
-        region: &mut Region<'_, F>,
+    // fn add(&self, region: &mut Region<'_, F>, input: Option<(F, F, F)>) -> Result<(Cell, Cell, Cell), Error> {
+    //     let input = input.ok_or(Error::SynthesisError)?;
 
-        input: Option<(F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error> {
-        let input = input.ok_or(Error::SynthesisError)?;
+    //     let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(input.0))?;
+    //     let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(input.1))?;
+    //     let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(input.2))?;
 
-        let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(input.0))?;
-        let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(input.1))?;
-        let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(input.2))?;
+    //     region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
 
-        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+    //     // zeroize unused selectors
+    //     region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
 
-        Ok((lhs, rhs, out))
-    }
+    //     Ok((lhs, rhs, out))
+    // }
 
-    fn sub_add_constant(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error> {
-        let input = input.ok_or(Error::SynthesisError)?;
+    // fn sub_add_constant(&self, region: &mut Region<'_, F>, input: Option<(F, F, F, F)>) -> Result<(Cell, Cell, Cell), Error> {
+    //     let input = input.ok_or(Error::SynthesisError)?;
 
-        let lhs = input.0;
-        let rhs = input.1;
-        let constant = input.2;
-        let out = input.3;
+    //     let lhs = input.0;
+    //     let rhs = input.1;
+    //     let constant = input.2;
+    //     let out = input.3;
 
-        let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(lhs))?;
-        let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(rhs))?;
-        let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(out))?;
+    //     let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(lhs))?;
+    //     let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(rhs))?;
+    //     let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(out))?;
 
-        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(-F::one()))?;
-        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(constant))?;
+    //     region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "b", self.config.sb, 0, || Ok(-F::one()))?;
+    //     region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(constant))?;
 
-        Ok((lhs, rhs, out))
-    }
+    //     // zeroize unused selectors
+    //     region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
 
-    fn mul(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error> {
-        let input = input.ok_or(Error::SynthesisError)?;
+    //     Ok((lhs, rhs, out))
+    // }
 
-        let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(input.0))?;
-        let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(input.1))?;
-        let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(input.2))?;
+    // fn mul(&self, region: &mut Region<'_, F>, input: Option<(F, F, F)>) -> Result<(Cell, Cell, Cell), Error> {
+    //     let input = input.ok_or(Error::SynthesisError)?;
 
-        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+    //     let lhs = region.assign_advice(|| "lhs", self.config.a, 0, || Ok(input.0))?;
+    //     let rhs = region.assign_advice(|| "rhs", self.config.b, 0, || Ok(input.1))?;
+    //     let out = region.assign_advice(|| "out", self.config.c, 0, || Ok(input.2))?;
 
-        Ok((lhs, rhs, out))
-    }
+    //     region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::one()))?;
 
-    fn add_mul_constant(
-        &self,
-        region: &mut Region<'_, F>,
-        input: Option<(F, F, F, F)>,
-    ) -> Result<(Cell, Cell, Cell), Error> {
-        let input = input.ok_or(Error::SynthesisError)?;
+    //     // zeroize unused selectors
+    //     region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
 
-        // a + b * constant = c
+    //     Ok((lhs, rhs, out))
+    // }
 
-        let lhs = region.assign_advice(|| "a", self.config.a, 0, || Ok(input.0))?;
-        let rhs = region.assign_advice(|| "b", self.config.b, 0, || Ok(input.1))?;
-        let out = region.assign_advice(|| "c", self.config.c, 0, || Ok(input.3))?;
+    // fn add_mul_constant(&self, region: &mut Region<'_, F>, input: Option<(F, F, F, F)>) -> Result<(Cell, Cell, Cell), Error> {
+    //     let input = input.ok_or(Error::SynthesisError)?;
 
-        region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "b", self.config.sb, 0, || Ok(input.2))?;
-        region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
-        region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
-        region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+    //     // a + b * constant = c
 
-        Ok((lhs, rhs, out))
-    }
+    //     let lhs = region.assign_advice(|| "a", self.config.a, 0, || Ok(input.0))?;
+    //     let rhs = region.assign_advice(|| "b", self.config.b, 0, || Ok(input.1))?;
+    //     let out = region.assign_advice(|| "c", self.config.c, 0, || Ok(input.3))?;
+
+    //     region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "b", self.config.sb, 0, || Ok(input.2))?;
+    //     region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+
+    //     // zeroize unused selectors
+    //     region.assign_fixed(|| "d", self.config.sd, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+
+    //     Ok((lhs, rhs, out))
+    // }
+
+    // fn mul_add_scaled_aux(&self, region: &mut Region<'_, F>, input: Option<(F, F, F, F, F)>) -> Result<(Cell, Cell, Cell, Cell), Error> {
+    //     let input = input.ok_or(Error::SynthesisError)?;
+
+    //     let lhs = input.0;
+    //     let rhs = input.1;
+    //     let out = input.2;
+    //     let aux = input.3;
+    //     let scale = input.4;
+
+    //     let lhs = region.assign_advice(|| "a", self.config.a, 0, || Ok(lhs))?;
+    //     let rhs = region.assign_advice(|| "b", self.config.b, 0, || Ok(rhs))?;
+    //     let out = region.assign_advice(|| "c", self.config.c, 0, || Ok(out))?;
+    //     let aux = region.assign_advice(|| "d", self.config.d, 0, || Ok(aux))?;
+
+    //     region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "c", self.config.sc, 0, || Ok(F::one()))?;
+    //     region.assign_fixed(|| "d", self.config.sd, 0, || Ok(scale))?;
+
+    //     region.assign_fixed(|| "a", self.config.sa, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "b", self.config.sb, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(F::zero()))?;
+    //     region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(F::zero()))?;
+
+    //     Ok((lhs, rhs, out, aux))
+    // }
 }

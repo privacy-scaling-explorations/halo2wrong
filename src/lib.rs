@@ -1,2 +1,2 @@
 mod circuit;
-mod int;
+mod rns;
