@@ -1,10 +1,13 @@
 use crate::circuit::main_gate::MainGateConfig;
-use crate::rns::{Decomposed, Limb, BIT_LEN_LOOKUP_LIMB};
+use crate::rns::{Decomposed, Limb};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error,  Selector, TableColumn};
+use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
+
+pub(crate) const BIT_LEN_LOOKUP_LIMB: usize = 16;
+pub(crate) const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
@@ -161,7 +164,8 @@ impl<F: FieldExt> RangeChip<F> {
 mod tests {
 
     use crate::circuit::main_gate::MainGate;
-    use crate::rns::{Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
+    use crate::circuit::range::BIT_LEN_LOOKUP_LIMB;
+    use crate::rns::{Limb, Rns};
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use halo2::arithmetic::FieldExt;

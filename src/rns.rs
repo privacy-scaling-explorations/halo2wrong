@@ -11,9 +11,6 @@ pub(crate) const CRT_MODULUS_BIT_LEN: usize = 256;
 pub(crate) const NUMBER_OF_LIMBS: usize = 4;
 pub(crate) const BIT_LEN_LIMB: usize = 64;
 
-pub(crate) const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
-pub(crate) const BIT_LEN_LOOKUP_LIMB: usize = 16;
-
 pub trait Common {
     fn value(&self) -> big_uint;
 
@@ -72,14 +69,11 @@ pub struct ReductionContext<N: FieldExt> {
 
 #[derive(Debug, Clone)]
 pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
-    pub bit_len: usize,
-    pub number_of_limbs: usize,
     pub right_shifter_r: Native,
     pub right_shifter_2r: Native,
     pub left_shifter_r: Native,
     pub left_shifter_2r: Native,
     pub aux: Decomposed<Native>,
-    crt_modulus_bit_len: usize,
     wrong_modulus: big_uint,
     negative_wrong_modulus: Decomposed<Native>,
     s: Native,
@@ -88,30 +82,27 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 }
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
-    pub(crate) fn construct(bit_len: usize, number_of_limbs: usize, crt_modulus_bit_len: usize) -> Self {
+    pub(crate) fn construct() -> Self {
         let two = N::from_u64(2);
         let two_inv = two.invert().unwrap();
-        let right_shifter_r = two_inv.pow(&[bit_len as u64, 0, 0, 0]);
-        let right_shifter_2r = two_inv.pow(&[2 * bit_len as u64, 0, 0, 0]);
-        let left_shifter_r = two.pow(&[bit_len as u64, 0, 0, 0]);
-        let left_shifter_2r = two.pow(&[2 * bit_len as u64, 0, 0, 0]);
+        let right_shifter_r = two_inv.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
+        let right_shifter_2r = two_inv.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
+        let left_shifter_r = two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
+        let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let wrong_modulus = big_uint::from_str_radix(&W::MODULUS[2..], 16).unwrap();
 
-        let t = big_uint::one() << crt_modulus_bit_len;
-        let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), number_of_limbs, bit_len);
-        let s = big_to_fe(big_uint::one() << bit_len);
-        let two_limb_mask = (big_uint::one() << (bit_len * 2)) - 1usize;
+        let t = big_uint::one() << CRT_MODULUS_BIT_LEN;
+        let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+        let s = big_to_fe(big_uint::one() << BIT_LEN_LIMB);
+        let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
 
         let range_correct_factor = s - N::one();
 
-        let aux = &mut Decomposed::<N>::from_big(wrong_modulus.clone(), number_of_limbs, bit_len);
+        let aux = &mut Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         aux.scale(range_correct_factor);
         let aux = aux.clone();
 
         Rns {
-            bit_len,
-            number_of_limbs,
-            crt_modulus_bit_len,
             right_shifter_r,
             right_shifter_2r,
             left_shifter_r,
@@ -139,13 +130,13 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
         Integer {
-            decomposed: Decomposed::from_big(e, self.number_of_limbs, self.bit_len),
+            decomposed: Decomposed::from_big(e, NUMBER_OF_LIMBS, BIT_LEN_LIMB),
         }
     }
 
     pub(crate) fn new_from_limbs(&self, limbs: Vec<Limb<N>>) -> Integer<N> {
-        assert_eq!(self.number_of_limbs, limbs.len());
-        let decomposed = Decomposed { limbs, bit_len: self.bit_len };
+        assert_eq!(NUMBER_OF_LIMBS, limbs.len());
+        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
         Integer { decomposed }
     }
 
@@ -158,7 +149,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .map(|(self_limb, other_limb)| (self_limb.value() + other_limb.value()).into())
             .collect();
 
-        let decomposed = Decomposed { limbs, bit_len: self.bit_len };
+        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
 
         assert_eq!(decomposed.value(), integer_1.value() + integer_0.value());
 
@@ -177,7 +168,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .map(|((integer_0_limb, integer_1_limb), aux)| (integer_0_limb.value() - integer_1_limb.value() + aux.value()).into())
             .collect();
 
-        let decomposed = Decomposed { limbs, bit_len: self.bit_len };
+        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
 
         assert_eq!(
             decomposed.value(),
@@ -194,10 +185,10 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         // compute quotient and the result
         let (quotient, result) = (integer_0.value() * integer_1.value()).div_rem(&modulus);
 
-        let quotient = Decomposed::<N>::from_big(quotient, self.number_of_limbs, self.bit_len);
+        let quotient = Decomposed::<N>::from_big(quotient, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         let result = self.new_from_big(result);
 
-        let l = self.number_of_limbs;
+        let l = NUMBER_OF_LIMBS;
         let mut t: Vec<N> = vec![N::zero(); l];
         for i in 0..l {
             for j in 0..l {
@@ -227,8 +218,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     }
 
     fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (Limb<N>, Limb<N>, Limb<N>, Limb<N>) {
-        // for now works only for this case
-        assert_eq!(self.number_of_limbs, 4);
         let s = self.s;
 
         let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limbs[0].fe() - s * r.decomposed.limbs[1].fe();
@@ -257,7 +246,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let (quotient, result) = integer.value().div_rem(&modulus);
 
         // keep quotient value under the size of a dense limb
-        assert!(quotient < big_uint::one() << self.bit_len);
+        assert!(quotient < big_uint::one() << BIT_LEN_LIMB);
         let quotient: Limb<N> = quotient.into();
 
         // q must stay in single limb
@@ -400,4 +389,11 @@ impl<F: FieldExt> Decomposed<F> {
             limb._value = limb._value * k;
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test() {}
 }

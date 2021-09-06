@@ -1,6 +1,6 @@
 use super::IntegerChip;
 use crate::circuit::range::RangeInstructions;
-use crate::rns::{Integer, Quotient};
+use crate::rns::{Integer, Quotient, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -70,7 +70,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_2 | b_2 | q_1 | tmp_a |
         // | a_3 | b_0 | q_3 | tmp_c |
 
-        for i in 0..self.rns.number_of_limbs {
+        for i in 0..NUMBER_OF_LIMBS {
             let mut t = intermediate_values[i].fe();
             for k in 0..=i {
                 let j = i - k;
