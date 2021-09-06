@@ -1,8 +1,8 @@
 use crate::circuit::main_gate::MainGateConfig;
-use crate::rns::{Common, Decomposed, Limb, Rns, BIT_LEN_LOOKUP_LIMB, NUMBER_OF_LOOKUP_LIMBS};
+use crate::rns::{Decomposed, Limb, BIT_LEN_LOOKUP_LIMB};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector, TableColumn};
+use halo2::plonk::{Advice, Column, ConstraintSystem, Error,  Selector, TableColumn};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
 

@@ -1,6 +1,5 @@
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Cell, Chip, Layouter, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
+use halo2::plonk::{Advice, Column, ConstraintSystem, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
 

@@ -1,4 +1,4 @@
-use halo2::arithmetic::{Field, FieldExt};
+use halo2::arithmetic::FieldExt;
 use halo2::circuit::Cell;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;

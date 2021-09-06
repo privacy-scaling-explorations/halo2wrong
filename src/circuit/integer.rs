@@ -1,10 +1,8 @@
-use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
-use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
-use crate::rns::{Integer, Quotient, Rns};
+use crate::circuit::range::{RangeChip, RangeConfig};
+use crate::rns::{Integer, Rns};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Chip, Region};
+use halo2::circuit::Region;
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
-use std::marker::PhantomData;
 
 mod add;
 mod mul;

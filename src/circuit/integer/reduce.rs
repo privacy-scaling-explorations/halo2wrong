@@ -1,11 +1,9 @@
-use super::{IntegerChip, IntegerInstructions};
-
-use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
-use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
+use super::IntegerChip;
+use crate::circuit::range::RangeInstructions;
 use crate::rns::{Integer, Quotient};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Chip, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
+use halo2::circuit::Region;
+use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: Option<&Integer<N>>) -> Result<Integer<N>, Error> {

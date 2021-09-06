@@ -1,13 +1,8 @@
-use std::ops::Add;
-
-use super::{IntegerChip, IntegerInstructions};
-
-use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
-use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
-use crate::rns::{Integer, Quotient};
+use super::IntegerChip;
+use crate::rns::Integer;
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Chip, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
+use halo2::circuit::Region;
+use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _add(&self, region: &mut Region<'_, N>, a: Option<&mut Integer<N>>, b: Option<&mut Integer<N>>) -> Result<Integer<N>, Error> {
