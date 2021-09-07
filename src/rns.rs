@@ -76,7 +76,6 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub aux: Decomposed<Native>,
     wrong_modulus: big_uint,
     negative_wrong_modulus: Decomposed<Native>,
-    s: Native,
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
 }
@@ -93,13 +92,33 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let t = big_uint::one() << CRT_MODULUS_BIT_LEN;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-        let s = big_to_fe(big_uint::one() << BIT_LEN_LIMB);
-        let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
 
-        let range_correct_factor = s - N::one();
+        let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
+        let range_correct_factor = left_shifter_r - N::from_u64(1);
 
         let aux = &mut Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         aux.scale(range_correct_factor);
+
+        // there is a funny case where a limb of and aux is equal to zero
+        // and therefore can't move a limb of the result into the range :/
+        // so we borrow from next most limb.
+        {
+            let expect = aux.value();
+            for i in 0..NUMBER_OF_LIMBS {
+                if aux.limbs[i].value() == big_uint::zero() {
+                    assert_ne!(i, 0);
+                    assert_ne!(i, NUMBER_OF_LIMBS - 1);
+                    let this = ((big_uint::one() << BIT_LEN_LIMB) - 1usize) << BIT_LEN_LIMB;
+                    aux.limbs[i] = Limb::from(this.clone());
+                    let next = &aux.limbs[i + 1].value();
+                    aux.limbs[i + 1] = Limb::from(((next << BIT_LEN_LIMB) - this.clone()) >> BIT_LEN_LIMB);
+                }
+            }
+            assert_eq!(expect, aux.value());
+        }
+
+        assert_eq!(aux.value() % &wrong_modulus, big_uint::zero());
+
         let aux = aux.clone();
 
         Rns {
@@ -109,7 +128,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             left_shifter_2r,
             wrong_modulus,
             negative_wrong_modulus,
-            s,
             aux,
             two_limb_mask,
             _marker_wrong: PhantomData,
@@ -165,20 +183,17 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .iter()
             .zip(integer_1.decomposed.limbs.iter())
             .zip(aux.limbs.iter())
-            .map(|((integer_0_limb, integer_1_limb), aux)| (integer_0_limb.value() - integer_1_limb.value() + aux.value()).into())
+            .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
             .collect();
 
         let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
-
-        assert_eq!(
-            decomposed.value(),
-            (integer_0.value() - integer_1.value() + aux.value()) % self.modulus().value()
-        );
 
         Integer { decomposed }
     }
 
     pub(crate) fn mul(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> ReductionContext<N> {
+        // println!("val: {}", integer_0.value().to_str_radix(16));
+        // println!("val: {}", integer_1.value().to_str_radix(16));
         let modulus = self.wrong_modulus.clone();
         let negative_modulus = self.negative_wrong_modulus.clone();
 
@@ -190,13 +205,12 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let l = NUMBER_OF_LIMBS;
         let mut t: Vec<N> = vec![N::zero(); l];
-        for i in 0..l {
-            for j in 0..l {
-                if i + j < l {
-                    t[i + j] = t[i + j]
-                        + integer_1.decomposed.limbs[i].fe() * integer_1.decomposed.limbs[j].fe()
-                        + negative_modulus.limbs[i].fe() * quotient.limbs[j].fe();
-                }
+        for k in 0..l {
+            for i in 0..=k {
+                let j = k - i;
+                t[i + j] = t[i + j]
+                    + integer_0.decomposed.limbs[i].fe() * integer_1.decomposed.limbs[j].fe()
+                    + negative_modulus.limbs[i].fe() * quotient.limbs[j].fe();
             }
         }
 
@@ -217,27 +231,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         }
     }
 
-    fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (Limb<N>, Limb<N>, Limb<N>, Limb<N>) {
-        let s = self.s;
-
-        let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limbs[0].fe() - s * r.decomposed.limbs[1].fe();
-        let u_1 = t[2].fe() + s * t[3].fe() - r.decomposed.limbs[2].fe() - s * r.decomposed.limbs[3].fe();
-
-        // sanity check
-        {
-            let mask = self.two_limb_mask.clone();
-            let u_0: big_uint = fe_to_big(u_0);
-            let u_1: big_uint = fe_to_big(u_1);
-            assert_eq!(u_0 & mask.clone(), big_uint::zero());
-            assert_eq!(u_1 & mask, big_uint::zero());
-        }
-
-        let v_0 = u_0 * self.right_shifter_2r;
-        let v_1 = (u_1 + v_0) * self.right_shifter_2r;
-
-        (Limb::from_fe(u_0), Limb::from_fe(u_1), Limb::from_fe(v_0), Limb::from_fe(v_1))
-    }
-
     pub(crate) fn reduce(&self, integer: &Integer<N>) -> ReductionContext<N> {
         let modulus = self.wrong_modulus.clone();
         let negative_modulus = self.negative_wrong_modulus.clone();
@@ -247,6 +240,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         // keep quotient value under the size of a dense limb
         assert!(quotient < big_uint::one() << BIT_LEN_LIMB);
+
         let quotient: Limb<N> = quotient.into();
 
         // q must stay in single limb
@@ -278,6 +272,28 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             v_0,
             v_1,
         }
+    }
+
+    fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (Limb<N>, Limb<N>, Limb<N>, Limb<N>) {
+        let s = self.left_shifter_r;
+
+        let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limbs[0].fe() - s * r.decomposed.limbs[1].fe();
+        let u_1 = t[2].fe() + s * t[3].fe() - r.decomposed.limbs[2].fe() - s * r.decomposed.limbs[3].fe();
+
+        // sanity check
+        {
+            let mask = self.two_limb_mask.clone();
+            let u_1 = u_0 * self.right_shifter_2r + u_1;
+            let u_0: big_uint = fe_to_big(u_0);
+            let u_1: big_uint = fe_to_big(u_1);
+            assert_eq!(u_0 & mask.clone(), big_uint::zero());
+            assert_eq!(u_1 & mask, big_uint::zero());
+        }
+
+        let v_0 = u_0 * self.right_shifter_2r;
+        let v_1 = (u_1 + v_0) * self.right_shifter_2r;
+
+        (Limb::from_fe(u_0), Limb::from_fe(u_1), Limb::from_fe(v_0), Limb::from_fe(v_1))
     }
 }
 
@@ -394,22 +410,17 @@ impl<F: FieldExt> Decomposed<F> {
 #[cfg(test)]
 mod tests {
 
+    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Limb, Rns, BIT_LEN_LIMB, CRT_MODULUS_BIT_LEN};
     use crate::rns::Common;
-
-    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Rns, BIT_LEN_LIMB, CRT_MODULUS_BIT_LEN};
+    use crate::rns::Integer;
+    use crate::rns::NUMBER_OF_LIMBS;
     use halo2::arithmetic::FieldExt;
     use num_bigint::{BigUint as big_uint, RandBigInt};
-    use num_integer::Integer as _;
-    use num_traits::{Num, One, Zero};
+    use num_traits::One;
     use pasta_curves::Fp;
     use pasta_curves::Fq;
-
-    use rand::RngCore;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-
-    // extern crate num_bigint;
-    // extern crate rand;
 
     #[test]
     fn test_decomposing() {
@@ -423,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rns() {
+    fn test_rns_constants() {
         use pasta_curves::Fp as Wrong;
         use pasta_curves::Fq as Native;
 
@@ -466,9 +477,78 @@ mod tests {
         let el_0 = Wrong::rand();
         let el = fe_to_big(el_0);
         let aux = rns.aux.value();
-        println!("{}", aux);
         let el = (aux + el) % wrong_modulus.clone();
         let el_1: Fp = big_to_fe(el);
         assert_eq!(el_0, el_1)
+    }
+
+    #[test]
+    fn test_integer() {
+        use pasta_curves::Fp as Wrong;
+        use pasta_curves::Fq as Native;
+        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+        let bit_len_int = 256;
+
+        let rns = Rns::<Wrong, Native>::construct();
+
+        let wrong_modulus = rns.wrong_modulus.clone();
+
+        // conversion
+        let el_0 = rng.gen_biguint(bit_len_int);
+        let el = rns.new_from_big(el_0.clone());
+        let el_1 = el.value();
+        assert_eq!(el_0, el_1);
+
+        // add
+        let el_0 = &rns.rand();
+        let el_1 = &rns.rand();
+
+        let r_0 = rns.add(el_0, el_1);
+        let r_0: Wrong = r_0.fe();
+        let r_1: Wrong = el_0.fe::<Wrong>() + el_1.fe::<Wrong>();
+        assert_eq!(r_0, r_1);
+
+        // sub
+        let el_0 = &rns.rand();
+        let el_1 = &rns.rand();
+
+        let r_0 = rns.sub(el_0, el_1);
+        let r_0: Wrong = r_0.fe();
+        let r_1: Wrong = el_0.fe::<Wrong>() - el_1.fe::<Wrong>();
+        assert_eq!(r_0, r_1);
+
+        // reduce
+        let mut rand_overflow_int = |limb_bit_size: u64| -> Integer<Native> {
+            let limbs = (0..NUMBER_OF_LIMBS).map(|_| Limb::<Native>::from(rng.gen_biguint(limb_bit_size))).collect();
+            Integer {
+                decomposed: Decomposed {
+                    limbs: limbs,
+                    bit_len: BIT_LEN_LIMB,
+                },
+            }
+        };
+
+        let overflow = 110u64;
+        let el = rand_overflow_int(overflow);
+        let result_0 = el.value() % wrong_modulus.clone();
+        let reduction_context = rns.reduce(&el);
+        let result_1 = reduction_context.result;
+        assert_eq!(result_1.value(), result_0);
+
+        // aux
+        let aux = Integer { decomposed: rns.aux.clone() };
+        let el_0 = &rns.rand();
+        let el_1 = rns.add(&aux, &el_0);
+        let reduction_context = rns.reduce(&el_1);
+        assert_eq!(el_0.value(), reduction_context.result.value());
+
+        for _ in 0..10000 {
+            let el_0 = &rns.rand();
+            let el_1 = &rns.rand();
+            let result_0 = (el_0.value() * el_1.value()) % wrong_modulus.clone();
+            let reduction_context = rns.mul(&el_0, &el_1);
+            let result_1 = reduction_context.result;
+            assert_eq!(result_1.value(), result_0);
+        }
     }
 }
