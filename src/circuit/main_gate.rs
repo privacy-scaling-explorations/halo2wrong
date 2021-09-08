@@ -48,8 +48,6 @@ impl<F: FieldExt> MainGate<F> {
         meta.enable_equality(c.into());
         meta.enable_equality(d.into());
 
-        // main gate
-
         meta.create_gate("main_gate", |meta| {
             let a = meta.query_advice(a, Rotation::cur());
             let b = meta.query_advice(b, Rotation::cur());

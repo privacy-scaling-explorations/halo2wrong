@@ -7,9 +7,11 @@ use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::ops::Shl;
 
-pub(crate) const CRT_MODULUS_BIT_LEN: usize = 256;
+pub(crate) const BIT_LEN_CRT_MODULUS: usize = 256;
 pub(crate) const NUMBER_OF_LIMBS: usize = 4;
 pub(crate) const BIT_LEN_LIMB: usize = 64;
+pub(crate) const BIT_LEN_OVERFLOW: usize = 2; // FIX:
+pub(crate) const BIT_LEN_LIMB_LOOKUP: usize = 16;
 
 pub trait Common {
     fn value(&self) -> big_uint;
@@ -90,7 +92,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let wrong_modulus = modulus::<W>();
 
-        let t = big_uint::one() << CRT_MODULUS_BIT_LEN;
+        let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
 
         let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
@@ -410,7 +412,7 @@ impl<F: FieldExt> Decomposed<F> {
 #[cfg(test)]
 mod tests {
 
-    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Limb, Rns, BIT_LEN_LIMB, CRT_MODULUS_BIT_LEN};
+    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Limb, Rns, BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB};
     use crate::rns::Common;
     use crate::rns::Integer;
     use crate::rns::NUMBER_OF_LIMBS;
@@ -469,7 +471,7 @@ mod tests {
 
         // negated modulus
 
-        let t = big_uint::one() << CRT_MODULUS_BIT_LEN;
+        let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
         let negated_wrong_modulus = t - wrong_modulus.clone();
         assert_eq!(negated_wrong_modulus, rns.negative_wrong_modulus.value());
 

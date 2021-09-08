@@ -1,5 +1,5 @@
 use crate::circuit::range::{RangeChip, RangeConfig};
-use crate::rns::{Integer, Rns};
+use crate::rns::{Integer, Rns, BIT_LEN_LIMB, BIT_LEN_OVERFLOW};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
@@ -102,6 +102,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     fn range_chip(&self) -> RangeChip<N> {
-        RangeChip::<N>::new(self.config.range_config.clone())
+        RangeChip::<N>::new(self.config.range_config.clone(), BIT_LEN_LIMB, BIT_LEN_OVERFLOW)
     }
 }
