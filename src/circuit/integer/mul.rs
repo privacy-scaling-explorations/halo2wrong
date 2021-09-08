@@ -84,7 +84,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 let q_i_new_cell = region.assign_advice(|| "q_", self.config.c, offset, || Ok(quotient[i].fe()))?;
                 let t_i_cell = region.assign_advice(|| "t_", self.config.d, offset, || Ok(t))?;
 
-                region.assign_fixed(|| "s_m", self.config.sm, offset, || Ok(N::one()))?;
+                region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::one()))?;
                 region.assign_fixed(|| "s_c", self.config.sc, offset, || Ok(negative_modulus[i].fe()))?;
                 region.assign_fixed(|| "s_d", self.config.sd, offset, || Ok(-N::one()))?;
                 region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(N::one()))?;
@@ -149,7 +149,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(-N::one()))?;
 
         // zeroize unused selectors
-        region.assign_fixed(|| "s_m", self.config.sm, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle equal limbs
@@ -176,7 +176,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // zeroize unused selectors
         region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_m", self.config.sm, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
 
@@ -213,7 +213,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(-N::one()))?;
 
         // zeroize unused selectors
-        region.assign_fixed(|| "s_m", self.config.sm, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle equal limbs
@@ -240,7 +240,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // zeroize unused selectors
         region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_m", self.config.sm, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
 

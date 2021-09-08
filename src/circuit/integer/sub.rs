@@ -36,7 +36,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             // zeroize unused selectors
             region.assign_fixed(|| "d", self.config.sd, 0, || Ok(N::zero()))?;
             region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(N::zero()))?;
-            region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(N::zero()))?;
+            region.assign_fixed(|| "a * b", self.config.s_mul, 0, || Ok(N::zero()))?;
 
             // cycle equal limbs
             region.constrain_equal(a_cell, a_new_cell)?;

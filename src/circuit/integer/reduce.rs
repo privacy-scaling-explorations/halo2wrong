@@ -60,7 +60,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             // zeroize unused selectors
             region.assign_fixed(|| "d", self.config.sd, offset, || Ok(N::zero()))?;
             region.assign_fixed(|| "d_next", self.config.sd_next, offset, || Ok(N::zero()))?;
-            region.assign_fixed(|| "a * b", self.config.sm, offset, || Ok(N::zero()))?;
+            region.assign_fixed(|| "a * b", self.config.s_mul, offset, || Ok(N::zero()))?;
             region.assign_fixed(|| "constant", self.config.s_constant, offset, || Ok(N::zero()))?;
 
             // cycle equal limbs
@@ -126,7 +126,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             u_0.cell = Some(u_0_cell);
 
             // zeroize unused selectors
-            region.assign_fixed(|| "a * b", self.config.sm, 0, || Ok(N::zero()))?;
+            region.assign_fixed(|| "a * b", self.config.s_mul, 0, || Ok(N::zero()))?;
             region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(N::zero()))?;
         }
 
@@ -154,7 +154,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             // zeroize unused selectors
             region.assign_fixed(|| "a", self.config.sa, offset + 1, || Ok(N::zero()))?;
             region.assign_fixed(|| "b", self.config.sb, offset + 1, || Ok(N::zero()))?;
-            region.assign_fixed(|| "a * b", self.config.sm, offset + 1, || Ok(N::zero()))?;
+            region.assign_fixed(|| "a * b", self.config.s_mul, offset + 1, || Ok(N::zero()))?;
             region.assign_fixed(|| "d_next", self.config.sd_next, offset + 1, || Ok(N::zero()))?;
             region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(N::zero()))?;
         }
@@ -206,7 +206,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             u_1.cell = Some(u_1_cell);
 
             // zeroize unused selectors
-            region.assign_fixed(|| "a * b", self.config.sm, offset, || Ok(N::zero()))?;
+            region.assign_fixed(|| "a * b", self.config.s_mul, offset, || Ok(N::zero()))?;
             region.assign_fixed(|| "constant", self.config.s_constant, offset, || Ok(N::zero()))?;
         }
 
@@ -235,7 +235,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             // zeroize unused selectors
             region.assign_fixed(|| "a", self.config.sa, offset + 1, || Ok(N::zero()))?;
             region.assign_fixed(|| "b", self.config.sb, offset + 1, || Ok(N::zero()))?;
-            region.assign_fixed(|| "a * b", self.config.sm, offset + 1, || Ok(N::zero()))?;
+            region.assign_fixed(|| "a * b", self.config.s_mul, offset + 1, || Ok(N::zero()))?;
             region.assign_fixed(|| "d_next", self.config.sd_next, offset + 1, || Ok(N::zero()))?;
             region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(N::zero()))?;
         }

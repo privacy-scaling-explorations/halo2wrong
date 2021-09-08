@@ -15,7 +15,7 @@ pub struct MainGateConfig {
     pub sc: Column<Fixed>,
     pub sd: Column<Fixed>,
     pub sd_next: Column<Fixed>,
-    pub sm: Column<Fixed>,
+    pub s_mul: Column<Fixed>,
     pub s_constant: Column<Fixed>,
 }
 
@@ -40,7 +40,7 @@ impl<F: FieldExt> MainGate<F> {
         let sc = meta.fixed_column();
         let sd = meta.fixed_column();
         let sd_next = meta.fixed_column();
-        let sm = meta.fixed_column();
+        let s_mul = meta.fixed_column();
         let s_constant = meta.fixed_column();
 
         meta.enable_equality(a.into());
@@ -62,10 +62,10 @@ impl<F: FieldExt> MainGate<F> {
             let sc = meta.query_fixed(sc, Rotation::cur());
             let sd = meta.query_fixed(sd, Rotation::cur());
             let sd_next = meta.query_fixed(sd_next, Rotation::cur());
-            let sm = meta.query_fixed(sm, Rotation::cur());
+            let s_mul = meta.query_fixed(s_mul, Rotation::cur());
             let s_constant = meta.query_fixed(s_constant, Rotation::cur());
 
-            vec![a.clone() * sa + b.clone() * sb + a * b * sm + c * sc + sd * d + sd_next * d_next + s_constant]
+            vec![a.clone() * sa + b.clone() * sb + a * b * s_mul + c * sc + sd * d + sd_next * d_next + s_constant]
         });
 
         MainGateConfig {
@@ -79,7 +79,7 @@ impl<F: FieldExt> MainGate<F> {
             sd,
             sd_next,
             s_constant,
-            sm,
+            s_mul,
         }
     }
 }

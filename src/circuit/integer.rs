@@ -23,7 +23,7 @@ pub struct IntegerConfig {
     pub sc: Column<Fixed>,
     pub sd: Column<Fixed>,
     pub sd_next: Column<Fixed>,
-    pub sm: Column<Fixed>,
+    pub s_mul: Column<Fixed>,
     pub s_constant: Column<Fixed>,
 }
 
@@ -82,7 +82,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         sc: Column<Fixed>,
         sd: Column<Fixed>,
         sd_next: Column<Fixed>,
-        sm: Column<Fixed>,
+        s_mul: Column<Fixed>,
         s_constant: Column<Fixed>,
     ) -> IntegerConfig {
         IntegerConfig {
@@ -96,7 +96,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             sc,
             sd,
             sd_next,
-            sm,
+            s_mul,
             s_constant,
         }
     }
