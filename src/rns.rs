@@ -322,7 +322,6 @@ impl<N: FieldExt> Integer<N> {
 
 #[derive(Debug, Clone)]
 pub struct Limb<F: FieldExt> {
-    pub cell: Option<Cell>,
     _value: F,
 }
 
@@ -334,16 +333,13 @@ impl<F: FieldExt> Common for Limb<F> {
 
 impl<F: FieldExt> Default for Limb<F> {
     fn default() -> Self {
-        Limb { _value: F::zero(), cell: None }
+        Limb { _value: F::zero() }
     }
 }
 
 impl<F: FieldExt> From<big_uint> for Limb<F> {
     fn from(e: big_uint) -> Self {
-        Self {
-            _value: big_to_fe(e),
-            cell: None,
-        }
+        Self { _value: big_to_fe(e) }
     }
 }
 

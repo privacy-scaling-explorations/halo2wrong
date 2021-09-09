@@ -1,7 +1,7 @@
 use crate::circuit::range::{RangeChip, RangeConfig};
-use crate::rns::{Integer, Rns, BIT_LEN_LIMB, BIT_LEN_OVERFLOW};
+use crate::rns::{Decomposed, Integer, Limb, Rns, BIT_LEN_LIMB, BIT_LEN_OVERFLOW};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Region;
+use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 
 mod add;
@@ -27,21 +27,33 @@ pub struct IntegerConfig {
     pub s_constant: Column<Fixed>,
 }
 
+#[derive(Debug, Clone)]
+pub struct AssignedInteger<F: FieldExt> {
+    // TODO:    try using constant sized cells
+    //          to do this take a constant to integer as number of limbs
+    integer: Option<Integer<F>>,
+    cells: Vec<Cell>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssignedLimb<F: FieldExt> {
+    pub value: Option<Limb<F>>,
+    pub cell: Cell,
+}
+
+impl<F: FieldExt> AssignedLimb<F> {
+    pub fn clone_with_cell(&self, cell: Cell) -> Self {
+        Self {
+            value: self.value.clone(),
+            cell,
+        }
+    }
+}
+
 pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
     config: IntegerConfig,
     rns: Rns<Wrong, Native>,
 }
-
-// impl<W: FieldExt, N: FieldExt> Chip<N> for IntegerChip<W, N> {
-//     type Config = IntegerConfig;
-//     type Loaded = ();
-//     fn config(&self) -> &Self::Config {
-//         &self.config
-//     }
-//     fn loaded(&self) -> &Self::Loaded {
-//         &()
-//     }
-// }
 
 trait IntegerInstructions<F: FieldExt> {
     fn add(&self, region: &mut Region<'_, F>, a: Option<&mut Integer<F>>, b: Option<&mut Integer<F>>) -> Result<Integer<F>, Error>;

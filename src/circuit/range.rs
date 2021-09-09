@@ -1,3 +1,4 @@
+use crate::circuit::integer::AssignedLimb;
 use crate::circuit::main_gate::MainGateConfig;
 use crate::rns::{Common, Decomposed, Limb};
 use halo2::arithmetic::FieldExt;
@@ -18,7 +19,6 @@ pub struct RangeConfig {
     limb_range_table: TableColumn,
     s_overflow: Selector,
     overflow_range_table: TableColumn,
-
     sa: Column<Fixed>,
     sb: Column<Fixed>,
     sc: Column<Fixed>,
@@ -52,40 +52,56 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: Option<&mut Limb<F>>) -> Result<(), Error>;
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>) -> Result<AssignedLimb<F>, Error>;
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
     fn load_overflow_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: Option<&mut Limb<F>>) -> Result<(), Error> {
-        let limb = limb.ok_or(Error::SynthesisError)?;
-
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>) -> Result<AssignedLimb<F>, Error> {
         let limb_bit_len = self.limb_bit_len;
         let overflow_bit_len = self.overflow_bit_len;
         let has_overflow = overflow_bit_len != 0;
-
         let number_of_limbs = if has_overflow { NUMBER_OF_LOOKUP_LIMBS + 1 } else { NUMBER_OF_LOOKUP_LIMBS };
-
         let offset_limb = 0;
         let offset_overflow = offset_limb + 1;
 
-        let decomposed = Decomposed::<F>::from_limb(&limb, number_of_limbs, limb_bit_len);
-        assert!((decomposed.value().bits() as usize) < NUMBER_OF_LOOKUP_LIMBS * limb_bit_len + overflow_bit_len + 1);
+        let value = limb.value.as_ref().map(|value| value);
+        let decomposed = value.map(|limb| Decomposed::<F>::from_limb(&limb.clone(), number_of_limbs, limb_bit_len));
 
-        let decomposed: Vec<F> = decomposed.limbs.iter().map(|limb| limb.fe()).collect();
+        let get_limb = |idx: usize| -> Result<F, Error> {
+            // let decomposed = decomposed.clone();
+            let decomposed = decomposed.as_ref().ok_or(Error::SynthesisError)?;
+            Ok(decomposed.limbs[idx].fe())
+        };
 
-        let limb_value = limb.fe();
-        let overflow_value = if has_overflow { decomposed[4] } else { F::zero() };
-        let limb_wo_overflow_value = limb_value - overflow_value * self.left_shifter_4r;
+        let get_value = || -> Result<F, Error> {
+            let value = value.ok_or(Error::SynthesisError)?;
+            Ok(value.fe())
+        };
+
+        let get_overflow_value = || -> Result<F, Error> {
+            let decomposed = decomposed.as_ref().ok_or(Error::SynthesisError)?;
+            Ok(if has_overflow {
+                decomposed.limbs[number_of_limbs - 1].fe()
+            } else {
+                F::zero()
+            })
+        };
+
+        let get_value_wo_overflow = || -> Result<F, Error> {
+            let value = get_value()?;
+            let overflow_value = get_overflow_value()?;
+            Ok(value - overflow_value * self.left_shifter_4r)
+        };
 
         {
             self.config.s_range.enable(region, offset_limb)?;
 
-            let _ = region.assign_advice(|| "limb decomposed 0", self.config.a, offset_limb, || Ok(decomposed[0]))?;
-            let _ = region.assign_advice(|| "limb decomposed 1", self.config.b, offset_limb, || Ok(decomposed[1]))?;
-            let _ = region.assign_advice(|| "limb decomposed 2", self.config.c, offset_limb, || Ok(decomposed[2]))?;
-            let _ = region.assign_advice(|| "limb decomposed 3", self.config.d, offset_limb, || Ok(decomposed[3]))?;
+            let _ = region.assign_advice(|| "limb decomposed 0", self.config.a, offset_limb, || get_limb(0))?;
+            let _ = region.assign_advice(|| "limb decomposed 1", self.config.b, offset_limb, || get_limb(1))?;
+            let _ = region.assign_advice(|| "limb decomposed 2", self.config.c, offset_limb, || get_limb(2))?;
+            let _ = region.assign_advice(|| "limb decomposed 3", self.config.d, offset_limb, || get_limb(3))?;
 
             region.assign_fixed(|| "a", self.config.sa, offset_limb, || Ok(F::one()))?;
             region.assign_fixed(|| "b", self.config.sb, offset_limb, || Ok(self.left_shifter_r))?;
@@ -100,13 +116,13 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
         let cur_cell = {
             if has_overflow {
-                // self.config.s_overflow.enable(region, offset_overflow)?;
+                self.config.s_overflow.enable(region, offset_overflow)?;
             }
 
-            let cell = region.assign_advice(|| "limb value", self.config.a, offset_overflow, || Ok(limb_value))?;
-            let _ = region.assign_advice(|| "overflow value", self.config.b, offset_overflow, || Ok(overflow_value))?;
+            let cell = region.assign_advice(|| "limb value", self.config.a, offset_overflow, || get_value())?;
+            let _ = region.assign_advice(|| "overflow value", self.config.b, offset_overflow, || get_overflow_value())?;
             let _ = region.assign_advice(|| "zero", self.config.c, offset_overflow, || Ok(F::zero()))?;
-            let _ = region.assign_advice(|| "limb w/o overflow", self.config.d, offset_overflow, || Ok(limb_wo_overflow_value))?;
+            let _ = region.assign_advice(|| "limb w/o overflow", self.config.d, offset_overflow, || get_value_wo_overflow())?;
 
             region.assign_fixed(|| "a", self.config.sa, offset_overflow, || Ok(-F::one()))?;
             region.assign_fixed(
@@ -125,18 +141,11 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             cell
         };
 
-        match limb.cell {
-            Some(prev_cell) => {
-                // apperently not working as expected
-                region.constrain_equal(cur_cell, prev_cell)?;
-            }
+        let prev_cell = limb.cell.clone();
 
-            _ => {}
-        };
+        region.constrain_equal(cur_cell, prev_cell)?;
 
-        limb.cell = Some(cur_cell);
-
-        Ok(())
+        Ok(limb.clone_with_cell(cur_cell))
     }
 
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
@@ -275,7 +284,6 @@ impl<F: FieldExt> RangeChip<F> {
 
             s_range,
             s_overflow,
-
             sa,
             sb,
             sc,
@@ -283,7 +291,6 @@ impl<F: FieldExt> RangeChip<F> {
             sd_next,
             s_mul,
             s_constant,
-
             limb_range_table,
             overflow_range_table,
         }
@@ -293,6 +300,8 @@ impl<F: FieldExt> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
+    use super::{RangeChip, RangeConfig, RangeInstructions};
+    use crate::circuit::integer::AssignedLimb;
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::rns::Limb;
     use halo2::arithmetic::FieldExt;
@@ -300,8 +309,6 @@ mod tests {
     use halo2::dev::MockProver;
     use halo2::pasta::Fp;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
-
-    use super::{RangeChip, RangeConfig, RangeInstructions};
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
@@ -335,14 +342,17 @@ mod tests {
             let range_chip = RangeChip::<F>::new(config.range_config.clone(), LIMB_BIT_LEN, OVERFLOW_BIT_LEN);
 
             // assign the value
+            let get_value = || -> Result<F, Error> {
+                let value = self.value.ok_or(Error::SynthesisError)?;
+                Ok(value)
+            };
 
-            let cell = layouter.assign_region(
-                || "region 1",
+            let limb = &layouter.assign_region(
+                || "region 0",
                 |mut region| {
-                    let value = self.value.ok_or(Error::SynthesisError)?;
-                    let cell = region.assign_advice(|| "a", config.main_gate_config.a, 0, || Ok(value))?;
-                    let cell_x = region.assign_advice(|| "b", config.main_gate_config.b, 0, || Ok(F::zero()))?;
-                    let cell_y = region.assign_advice(|| "c", config.main_gate_config.c, 0, || Ok(F::zero()))?;
+                    let cell = region.assign_advice(|| "a", config.main_gate_config.a, 0, get_value)?;
+                    let _ = region.assign_advice(|| "b", config.main_gate_config.b, 0, || Ok(F::zero()))?;
+                    let _ = region.assign_advice(|| "c", config.main_gate_config.c, 0, || Ok(F::zero()))?;
                     let _ = region.assign_advice(|| "d", config.main_gate_config.d, 0, || Ok(F::zero()))?;
                     region.assign_fixed(|| "sa", config.main_gate_config.sa, 0, || Ok(F::zero()))?;
                     region.assign_fixed(|| "sb", config.main_gate_config.sb, 0, || Ok(F::zero()))?;
@@ -352,20 +362,21 @@ mod tests {
                     region.assign_fixed(|| "sd_next", config.main_gate_config.sd_next, 0, || Ok(F::zero()))?;
                     region.assign_fixed(|| "s_constant", config.main_gate_config.s_constant, 0, || Ok(F::zero()))?;
 
-                    // this works
-                    // region.constrain_equal(cell_x, cell_y)?;
+                    // Ok(cell)
 
-                    Ok(cell)
+                    let limb = AssignedLimb {
+                        cell,
+                        value: self.value.map(|value| Limb::from_fe(value)),
+                    };
+
+                    Ok(limb)
                 },
             )?;
 
-            let limb = &mut Limb::<F>::from_fe(self.value.ok_or(Error::SynthesisError)?);
-            limb.cell = Some(cell);
-
             layouter.assign_region(
-                || "region 2",
+                || "region 1",
                 |mut region| {
-                    range_chip.range_limb(&mut region, Some(limb))?;
+                    range_chip.range_limb(&mut region, limb)?;
                     Ok(())
                 },
             )?;
@@ -383,18 +394,16 @@ mod tests {
         const NO_OVERFLOW: usize = 0;
         const BIT_LEN_OVERFLOW: usize = 4;
         const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
-        let value = Some(Fp::from_u64(0xffffffffffffffff));
+        // const K: u32 = 5;
 
+        let value = Some(Fp::from_u64(0xffffffffffffffff));
         let circuit = TestCircuit::<Fp, BIT_LEN_LOOKUP_LIMB, NO_OVERFLOW> { value };
 
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-
         assert_eq!(prover.verify(), Ok(()));
-
-        let value = Some(Fp::from_u128(0xaffffffffffffffff));
 
         let circuit = TestCircuit::<Fp, BIT_LEN_LOOKUP_LIMB, BIT_LEN_OVERFLOW> { value };
 
