@@ -30,7 +30,7 @@ fn modulus<F: FieldExt>() -> big_uint {
 }
 
 fn big_to_fe<F: FieldExt>(e: big_uint) -> F {
-    F::from_str(&e.to_str_radix(10)[..]).unwrap()
+    F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
 }
 
 impl<N: FieldExt> From<Integer<N>> for big_uint {
@@ -417,10 +417,10 @@ mod tests {
     use crate::rns::Integer;
     use crate::rns::NUMBER_OF_LIMBS;
     use halo2::arithmetic::FieldExt;
+    use halo2::pasta::Fp;
+    use halo2::pasta::Fq;
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::One;
-    use pasta_curves::Fp;
-    use pasta_curves::Fq;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -437,8 +437,8 @@ mod tests {
 
     #[test]
     fn test_rns_constants() {
-        use pasta_curves::Fp as Wrong;
-        use pasta_curves::Fq as Native;
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
 
         let rns = Rns::<Wrong, Native>::construct();
 
@@ -486,8 +486,8 @@ mod tests {
 
     #[test]
     fn test_integer() {
-        use pasta_curves::Fp as Wrong;
-        use pasta_curves::Fq as Native;
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
         let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
         let bit_len_int = 256;
 
