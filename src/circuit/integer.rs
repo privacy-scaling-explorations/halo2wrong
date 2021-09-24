@@ -1,6 +1,6 @@
 use crate::circuit::range::{RangeChip, RangeConfig};
-use crate::rns::{Decomposed, Integer, Limb, Rns, BIT_LEN_LIMB, BIT_LEN_OVERFLOW};
-use halo2::arithmetic::FieldExt;
+use crate::rns::{Decomposed, Integer, Limb, Rns, BIT_LEN_LIMB, BIT_LEN_OVERFLOW, NUMBER_OF_LIMBS};
+use halo2::arithmetic::{Field, FieldExt};
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 
@@ -29,10 +29,29 @@ pub struct IntegerConfig {
 
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<F: FieldExt> {
-    // TODO:    try using constant sized cells
-    //          to do this take a constant to integer as number of limbs
-    integer: Option<Integer<F>>,
-    cells: Vec<Cell>,
+    pub value: Option<Integer<F>>,
+    pub cells: Vec<Cell>,
+}
+
+impl<F: FieldExt> AssignedInteger<F> {
+    fn empty() -> Self {
+        Self { value: None, cells: vec![] }
+    }
+
+    pub fn value(&self) -> Option<Integer<F>> {
+        self.value.clone()
+    }
+
+    fn new(cells: Vec<Cell>, value: Option<Integer<F>>) -> Self {
+        Self { value: None, cells: vec![] }
+    }
+
+    pub fn clone_with_cells(&self, cells: Vec<Cell>) -> Self {
+        Self {
+            value: self.value.clone(),
+            cells: cells,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +67,10 @@ impl<F: FieldExt> AssignedLimb<F> {
             cell,
         }
     }
+
+    fn new(cell: Cell, value: Option<Limb<F>>) -> Self {
+        AssignedLimb { value, cell }
+    }
 }
 
 pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
@@ -56,24 +79,60 @@ pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
 }
 
 trait IntegerInstructions<F: FieldExt> {
-    fn add(&self, region: &mut Region<'_, F>, a: Option<&mut Integer<F>>, b: Option<&mut Integer<F>>) -> Result<Integer<F>, Error>;
-    fn mul(&self, region: &mut Region<'_, F>, a: Option<&mut Integer<F>>, b: Option<&mut Integer<F>>) -> Result<Integer<F>, Error>;
-    fn sub(&self, region: &mut Region<'_, F>, a: Option<&mut Integer<F>>, b: Option<&mut Integer<F>>) -> Result<Integer<F>, Error>;
-    fn reduce(&self, region: &mut Region<'_, F>, a: Option<&Integer<F>>) -> Result<Integer<F>, Error>;
+    fn add(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedInteger<F>,
+        b: &AssignedInteger<F>,
+    ) -> Result<(AssignedInteger<F>, AssignedInteger<F>, AssignedInteger<F>), Error>;
+
+    fn sub(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedInteger<F>,
+        b: &AssignedInteger<F>,
+    ) -> Result<(AssignedInteger<F>, AssignedInteger<F>, AssignedInteger<F>), Error>;
+
+    fn mul(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedInteger<F>,
+        b: &AssignedInteger<F>,
+    ) -> Result<(AssignedInteger<F>, AssignedInteger<F>, AssignedInteger<F>), Error>;
+
+    fn reduce(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
-    fn add(&self, region: &mut Region<'_, N>, a: Option<&mut Integer<N>>, b: Option<&mut Integer<N>>) -> Result<Integer<N>, Error> {
+    fn add(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
         self._add(region, a, b)
     }
-    fn reduce(&self, region: &mut Region<'_, N>, a: Option<&Integer<N>>) -> Result<Integer<N>, Error> {
+
+    fn mul(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
+        self._mul(region, a, b)
+    }
+
+    fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
         self._reduce(region, a)
     }
-    fn sub(&self, region: &mut Region<'_, N>, a: Option<&mut Integer<N>>, b: Option<&mut Integer<N>>) -> Result<Integer<N>, Error> {
+
+    fn sub(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
         self._sub(region, a, b)
-    }
-    fn mul(&self, region: &mut Region<'_, N>, a: Option<&mut Integer<N>>, b: Option<&mut Integer<N>>) -> Result<Integer<N>, Error> {
-        self._mul(region, a, b)
     }
 }
 

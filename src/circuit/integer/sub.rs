@@ -1,57 +1,55 @@
-use super::IntegerChip;
-use crate::rns::Integer;
+use super::{AssignedInteger, IntegerChip};
+use crate::rns::{Integer, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Region;
+use halo2::circuit::{Cell, Region};
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _sub(&self, region: &mut Region<'_, N>, a: Option<&mut Integer<N>>, b: Option<&mut Integer<N>>) -> Result<Integer<N>, Error> {
-        let a = a.ok_or(Error::SynthesisError)?;
-        let b = b.ok_or(Error::SynthesisError)?;
-        let mut c: Integer<_> = self.rns.sub(a, b);
-        let aux = self.rns.aux.clone();
+    pub(crate) fn _sub(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
+        let c = a.value().map(|integer_a| {
+            let b_integer = b.value().unwrap();
+            self.rns.sub(&integer_a, &b_integer)
+        });
+        let aux: Vec<N> = self.rns.aux.clone().limbs.iter().map(|limb| limb.fe()).collect();
 
-        for (((a, b), c), aux) in a
-            .decomposed
-            .limbs
-            .iter_mut()
-            .zip(b.decomposed.limbs.iter_mut())
-            .zip(c.decomposed.limbs.iter_mut())
-            .zip(aux.limbs.iter())
-        {
-            // expect operands are assigned
-            let a_cell = a.cell.ok_or(Error::SynthesisError)?;
-            let b_cell = b.cell.ok_or(Error::SynthesisError)?;
+        let mut c_cells: Vec<Cell> = Vec::new();
+        let mut a_updated_cells: Vec<Cell> = a.cells.clone();
+        let mut b_updated_cells: Vec<Cell> = b.cells.clone();
 
-            // let (a_new_cell, b_new_cell, c_cell) = main_gate.sub_add_constant(region, Some((a.fe(), b.fe(), c.fe(), aux.fe())))?;
+        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
+        let b_integer: Option<Vec<N>> = b.value.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
+        let c_integer: Option<Vec<N>> = c.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
 
-            let a_new_cell = region.assign_advice(|| "a", self.config.a, 0, || Ok(a.fe()))?;
-            let b_new_cell = region.assign_advice(|| "b", self.config.b, 0, || Ok(b.fe()))?;
-            let c_cell = region.assign_advice(|| "c", self.config.c, 0, || Ok(c.fe()))?;
-            region.assign_fixed(|| "sa", self.config.sa, 0, || Ok(N::one()))?;
-            region.assign_fixed(|| "sb", self.config.sb, 0, || Ok(-N::one()))?;
-            region.assign_fixed(|| "sc", self.config.sc, 0, || Ok(N::one()))?;
-            region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(aux.fe()))?;
+        for idx in 0..NUMBER_OF_LIMBS {
+            let a_new_cell = region.assign_advice(|| "b", self.config.b, 0, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+            let b_new_cell = region.assign_advice(|| "b", self.config.b, 0, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+            let c_cell = region.assign_advice(|| "b", self.config.b, 0, || Ok(c_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+            c_cells.push(c_cell);
 
-            // zeroize unused selectors
+            region.assign_fixed(|| "a", self.config.sa, 0, || Ok(N::one()))?;
+            region.assign_fixed(|| "b", self.config.sb, 0, || Ok(-N::one()))?;
+            region.assign_fixed(|| "c", self.config.sc, 0, || Ok(N::one()))?;
+            region.assign_fixed(|| "constant", self.config.s_constant, 0, || Ok(aux[idx]))?;
+
             region.assign_fixed(|| "d", self.config.sd, 0, || Ok(N::zero()))?;
             region.assign_fixed(|| "d_next", self.config.sd_next, 0, || Ok(N::zero()))?;
             region.assign_fixed(|| "a * b", self.config.s_mul, 0, || Ok(N::zero()))?;
 
-            // cycle equal limbs
-            region.constrain_equal(a_cell, a_new_cell)?;
-            region.constrain_equal(b_cell, b_new_cell)?;
+            region.constrain_equal(a.cells[idx], a_new_cell)?;
+            region.constrain_equal(b.cells[idx], b_new_cell)?;
 
-            // update cells of operands
-            a.cell = Some(a_new_cell);
-            b.cell = Some(b_new_cell);
-
-            // assing cell to the result
-            c.cell = Some(c_cell)
+            a_updated_cells[idx] = a_new_cell;
+            b_updated_cells[idx] = b_new_cell;
         }
 
-        self._reduce(region, Some(&c))?;
-
-        Ok(c)
+        let a = a.clone_with_cells(a_updated_cells);
+        let b = b.clone_with_cells(b_updated_cells);
+        let c = AssignedInteger::<N>::new(c_cells, c);
+        Ok((a, b, c))
     }
 }

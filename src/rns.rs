@@ -1,5 +1,4 @@
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Cell;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
@@ -75,9 +74,10 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub right_shifter_2r: Native,
     pub left_shifter_r: Native,
     pub left_shifter_2r: Native,
+    pub left_shifter_4r: Native,
     pub aux: Decomposed<Native>,
+    pub negative_wrong_modulus: Decomposed<Native>,
     wrong_modulus: big_uint,
-    negative_wrong_modulus: Decomposed<Native>,
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
 }
@@ -90,6 +90,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let right_shifter_2r = two_inv.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_r = two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
+        let left_shifter_4r = two.pow(&[4 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let wrong_modulus = modulus::<W>();
 
         let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
@@ -128,6 +129,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             right_shifter_2r,
             left_shifter_r,
             left_shifter_2r,
+            left_shifter_4r,
             wrong_modulus,
             negative_wrong_modulus,
             aux,
@@ -240,12 +242,13 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         // compute quotient and the result
         let (quotient, result) = integer.value().div_rem(&modulus);
 
+        // FIX: q must stay in single limb
+        // apply modulus shifted values
+
         // keep quotient value under the size of a dense limb
         assert!(quotient < big_uint::one() << BIT_LEN_LIMB);
 
         let quotient: Limb<N> = quotient.into();
-
-        // q must stay in single limb
 
         // compute temp values
         let t: Vec<Limb<N>> = integer
@@ -300,8 +303,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Integer<Native: FieldExt> {
-    pub decomposed: Decomposed<Native>,
+pub struct Integer<F: FieldExt> {
+    pub decomposed: Decomposed<F>,
 }
 
 impl<N: FieldExt> Common for Integer<N> {

@@ -8,6 +8,8 @@ use halo2::poly::Rotation;
 
 pub(crate) const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
+// TODO: give circuit dev to control overflow selector
+
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
     a: Column<Advice>,
@@ -19,6 +21,7 @@ pub struct RangeConfig {
     limb_range_table: TableColumn,
     s_overflow: Selector,
     overflow_range_table: TableColumn,
+
     sa: Column<Fixed>,
     sb: Column<Fixed>,
     sc: Column<Fixed>,
