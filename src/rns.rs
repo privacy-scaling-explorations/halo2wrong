@@ -83,6 +83,50 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 }
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
+    fn aux() {
+        let two = N::from_u64(2);
+        let R = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
+        let wrong_modulus = modulus::<W>();
+        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+        let wrong_modulus_decomposed: Vec<big_uint> = wrong_modulus_decomposed.limbs.iter().map(|limb| limb.value()).collect();
+        let wrong_modulus_top = wrong_modulus_decomposed[NUMBER_OF_LIMBS - 1].clone();
+        let mut initial_range_correction_factor = R.div(wrong_modulus_top) + 1usize;
+
+        let mut aux: Vec<big_uint> = wrong_modulus_decomposed
+            .iter()
+            .map(|limb| limb * initial_range_correction_factor.clone())
+            .collect();
+
+        let mut overborrow = false;
+        let mut has_carry = false;
+
+        loop {
+            for i in 0..NUMBER_OF_LIMBS {
+                if aux[i] < R.clone() {
+                    if i == NUMBER_OF_LIMBS - 1 {
+                        overborrow = true;
+                        break;
+                    }
+                    aux[i] += R.clone();
+                    has_carry = true
+                }
+                if has_carry {
+                    aux[i] = aux[i].clone() - 1usize;
+                    has_carry = has_carry || false;
+                }
+            }
+            if overborrow {
+                initial_range_correction_factor += 1usize;
+                aux = wrong_modulus_decomposed
+                    .iter()
+                    .map(|limb| limb * initial_range_correction_factor.clone())
+                    .collect();
+            } else {
+                break;
+            }
+        }
+    }
+
     pub(crate) fn construct() -> Self {
         let two = N::from_u64(2);
         let two_inv = two.invert().unwrap();
@@ -101,24 +145,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let aux = &mut Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         aux.scale(range_correct_factor);
-
-        // there is a funny case where a limb of and aux is equal to zero
-        // and therefore can't move a limb of the result into the range :/
-        // so we borrow from next most limb.
-        {
-            let expect = aux.value();
-            for i in 0..NUMBER_OF_LIMBS {
-                if aux.limbs[i].value() == big_uint::zero() {
-                    assert_ne!(i, 0);
-                    assert_ne!(i, NUMBER_OF_LIMBS - 1);
-                    let this = ((big_uint::one() << BIT_LEN_LIMB) - 1usize) << BIT_LEN_LIMB;
-                    aux.limbs[i] = Limb::from(this.clone());
-                    let next = &aux.limbs[i + 1].value();
-                    aux.limbs[i + 1] = Limb::from(((next << BIT_LEN_LIMB) - this.clone()) >> BIT_LEN_LIMB);
-                }
-            }
-            assert_eq!(expect, aux.value());
-        }
 
         assert_eq!(aux.value() % &wrong_modulus, big_uint::zero());
 
