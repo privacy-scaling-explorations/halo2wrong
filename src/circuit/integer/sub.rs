@@ -1,5 +1,5 @@
 use super::{AssignedInteger, IntegerChip};
-use crate::rns::{Integer, NUMBER_OF_LIMBS};
+use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::Error;

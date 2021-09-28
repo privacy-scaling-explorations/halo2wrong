@@ -1,16 +1,11 @@
+use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use std::convert::TryInto;
 use std::marker::PhantomData;
-use std::ops::Shl;
-
-pub(crate) const BIT_LEN_CRT_MODULUS: usize = 256;
-pub(crate) const NUMBER_OF_LIMBS: usize = 4;
-pub(crate) const BIT_LEN_LIMB: usize = 64;
-pub(crate) const BIT_LEN_OVERFLOW: usize = 2; // FIX:
-pub(crate) const BIT_LEN_LIMB_LOOKUP: usize = 16;
+use std::ops::{Div, Shl};
 
 pub trait Common {
     fn value(&self) -> big_uint;

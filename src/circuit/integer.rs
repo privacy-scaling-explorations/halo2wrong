@@ -1,6 +1,7 @@
 use crate::circuit::range::{RangeChip, RangeConfig};
-use crate::rns::{Decomposed, Integer, Limb, Rns, BIT_LEN_LIMB, BIT_LEN_OVERFLOW, NUMBER_OF_LIMBS};
-use halo2::arithmetic::{Field, FieldExt};
+use crate::rns::{Integer, Limb, Rns};
+use crate::BIT_LEN_LIMB;
+use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 
