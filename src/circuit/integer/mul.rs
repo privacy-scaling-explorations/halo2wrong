@@ -23,6 +23,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         a: &AssignedInteger<N>,
         b: &AssignedInteger<N>,
     ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
+        let main_gate = self.main_gate();
+
         let reduction_result = a.value().map(|integer_a| {
             let b_integer = b.value().unwrap();
             self.rns.mul(&integer_a, &b_integer)
@@ -93,20 +95,20 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             for k in 0..=i {
                 let j = i - k;
 
-                let a_i_new_cell = region.assign_advice(|| "a_", self.config.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[i]))?;
-                let b_j_new_cell = region.assign_advice(|| "b_", self.config.b, offset, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[j]))?;
-                let q_j_new_cell = region.assign_advice(|| "q_", self.config.c, offset, || Ok(quotient.as_ref().ok_or(Error::SynthesisError)?[j]))?;
-                let t_i_cell = region.assign_advice(|| "t_", self.config.d, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
+                let a_i_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[i]))?;
+                let b_j_new_cell = region.assign_advice(|| "b_", main_gate.b, offset, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[j]))?;
+                let q_j_new_cell = region.assign_advice(|| "q_", main_gate.c, offset, || Ok(quotient.as_ref().ok_or(Error::SynthesisError)?[j]))?;
+                let t_i_cell = region.assign_advice(|| "t_", main_gate.d, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
 
-                region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::one()))?;
-                region.assign_fixed(|| "s_c", self.config.sc, offset, || Ok(negative_wrong_modulus[i]))?;
-                region.assign_fixed(|| "s_d", self.config.sd, offset, || Ok(-N::one()))?;
-                region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(N::one()))?;
+                region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::one()))?;
+                region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(negative_wrong_modulus[i]))?;
+                region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
+                region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::one()))?;
 
                 // zero selectors
-                region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::zero()))?;
-                region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(N::zero()))?;
-                region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
+                region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
+                region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(N::zero()))?;
+                region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
                 // cycle and update operand limb assignments
                 region.constrain_equal(a_running.cells[i], a_i_new_cell)?;
@@ -156,28 +158,28 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let t_0_new_cell = region.assign_advice(
             || "t_0",
-            self.config.a,
+            main_gate.a,
             offset,
             || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[0]),
         )?;
         let t_1_new_cell = region.assign_advice(
             || "t_1",
-            self.config.b,
+            main_gate.b,
             offset,
             || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[1]),
         )?;
 
-        let r_0_cell = region.assign_advice(|| "r_0", self.config.c, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[0]))?;
-        let r_1_cell = region.assign_advice(|| "r_1", self.config.d, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[1]))?;
+        let r_0_cell = region.assign_advice(|| "r_0", main_gate.c, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[0]))?;
+        let r_1_cell = region.assign_advice(|| "r_1", main_gate.d, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[1]))?;
 
-        region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_c", self.config.sc, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_d", self.config.sd, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
+        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(N::one()))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(left_shifter_r))?;
+        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(-N::one()))?;
 
-        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         region.constrain_equal(intermediate_values_cycling[0], t_0_new_cell)?;
         region.constrain_equal(intermediate_values_cycling[1], t_1_new_cell)?;
@@ -187,17 +189,17 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         offset += 1;
 
-        let u_0_cell = region.assign_advice(|| "u_0", self.config.d, offset, || u_0.ok_or(Error::SynthesisError))?;
-        let v_0_cell = region.assign_advice(|| "v_0", self.config.c, offset, || v_0.ok_or(Error::SynthesisError))?;
+        let u_0_cell = region.assign_advice(|| "u_0", main_gate.d, offset, || u_0.ok_or(Error::SynthesisError))?;
+        let v_0_cell = region.assign_advice(|| "v_0", main_gate.c, offset, || v_0.ok_or(Error::SynthesisError))?;
 
-        region.assign_fixed(|| "s_c", self.config.sc, offset, || Ok(left_shifter_2r))?;
-        region.assign_fixed(|| "s_d", self.config.sd, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(left_shifter_2r))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
 
-        region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         let v_0 = &mut AssignedLimb::<N>::new(v_0_cell, v_1.map(|v_1| Limb::<N>::from_fe(v_1)));
 
@@ -213,28 +215,28 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let t_2_new_cell = region.assign_advice(
             || "t_2",
-            self.config.a,
+            main_gate.a,
             offset,
             || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[2]),
         )?;
         let t_3_new_cell = region.assign_advice(
             || "t_3",
-            self.config.b,
+            main_gate.b,
             offset,
             || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[3]),
         )?;
 
-        let r_2_cell = region.assign_advice(|| "r_2", self.config.c, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[2]))?;
-        let r_3_cell = region.assign_advice(|| "r_3", self.config.d, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[3]))?;
+        let r_2_cell = region.assign_advice(|| "r_2", main_gate.c, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[2]))?;
+        let r_3_cell = region.assign_advice(|| "r_3", main_gate.d, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[3]))?;
 
-        region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_c", self.config.sc, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_d", self.config.sd, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
+        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(N::one()))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(left_shifter_r))?;
+        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(-N::one()))?;
 
-        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         region.constrain_equal(intermediate_values_cycling[2], t_2_new_cell)?;
         region.constrain_equal(intermediate_values_cycling[3], t_3_new_cell)?;
@@ -244,18 +246,18 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         offset += 1;
 
-        let v_1_cell = region.assign_advice(|| "v_1", self.config.b, offset, || v_1.ok_or(Error::SynthesisError))?;
-        let u_0_new_cell = region.assign_advice(|| "u_0", self.config.c, offset, || u_0.ok_or(Error::SynthesisError))?;
-        let _ = region.assign_advice(|| "u_1", self.config.d, offset, || u_1.ok_or(Error::SynthesisError))?;
+        let v_1_cell = region.assign_advice(|| "v_1", main_gate.b, offset, || v_1.ok_or(Error::SynthesisError))?;
+        let u_0_new_cell = region.assign_advice(|| "u_0", main_gate.c, offset, || u_0.ok_or(Error::SynthesisError))?;
+        let _ = region.assign_advice(|| "u_1", main_gate.d, offset, || u_1.ok_or(Error::SynthesisError))?;
 
-        region.assign_fixed(|| "s_b", self.config.sb, offset, || Ok(-left_shifter_4r))?;
-        region.assign_fixed(|| "s_c", self.config.sc, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_d", self.config.sd, offset, || Ok(left_shifter_2r))?;
+        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(-left_shifter_4r))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(N::one()))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(left_shifter_2r))?;
 
-        region.assign_fixed(|| "s_a", self.config.sa, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_m", self.config.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_d_next", self.config.sd_next, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         let v_1 = &mut AssignedLimb::<N>::new(v_1_cell, v_1.map(|e| Limb::<N>::from_fe(e)));
 

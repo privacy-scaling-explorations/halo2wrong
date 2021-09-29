@@ -1,7 +1,7 @@
 use crate::circuit::integer::AssignedLimb;
 use crate::circuit::main_gate::MainGateConfig;
 use crate::rns::Decomposed;
-use crate::NUMBER_OF_LOOKUP_LIMBS;
+use crate::{BIT_LEN_LIMB_LOOKUP, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector, TableColumn};
@@ -42,7 +42,6 @@ pub enum Overflow {
 
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
-    limb_bit_len: usize,
 
     left_shifter_r: F,
     left_shifter_2r: F,
@@ -82,8 +81,6 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow) -> Result<AssignedLimb<F>, Error> {
-        let limb_bit_len = self.limb_bit_len;
-
         let number_of_limbs = match overflow {
             Overflow::NoOverflow => NUMBER_OF_LOOKUP_LIMBS,
             _ => NUMBER_OF_LOOKUP_LIMBS + 1,
@@ -93,7 +90,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         let offset_overflow = offset_limb + 1;
 
         let value = limb.value.as_ref().map(|value| value);
-        let decomposed = value.map(|limb| Decomposed::<F>::from_limb(&limb.clone(), number_of_limbs, limb_bit_len));
+        let decomposed = value.map(|limb| Decomposed::<F>::from_limb(&limb.clone(), number_of_limbs, BIT_LEN_LIMB_LOOKUP));
 
         let get_limb = |idx: usize| -> Result<F, Error> {
             // let decomposed = decomposed.clone();
@@ -181,8 +178,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     }
 
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let bit_len = self.limb_bit_len;
-        let table_values: Vec<F> = (0..1 << bit_len).map(|e| F::from_u64(e)).collect();
+        let table_values: Vec<F> = (0..1 << BIT_LEN_LIMB_LOOKUP).map(|e| F::from_u64(e)).collect();
 
         layouter.assign_table(
             || "",
@@ -217,17 +213,15 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 }
 
 impl<F: FieldExt> RangeChip<F> {
-    pub fn new(config: RangeConfig, limb_bit_len: usize) -> Self {
+    pub fn new(config: RangeConfig) -> Self {
         let two = F::from_u64(2);
-        let left_shifter_r = two.pow(&[limb_bit_len as u64, 0, 0, 0]);
-        let left_shifter_2r = two.pow(&[(limb_bit_len * 2) as u64, 0, 0, 0]);
-        let left_shifter_3r = two.pow(&[(limb_bit_len * 3) as u64, 0, 0, 0]);
-        let left_shifter_4r = two.pow(&[(limb_bit_len * 4) as u64, 0, 0, 0]);
+        let left_shifter_r = two.pow(&[BIT_LEN_LIMB_LOOKUP as u64, 0, 0, 0]);
+        let left_shifter_2r = two.pow(&[(BIT_LEN_LIMB_LOOKUP * 2) as u64, 0, 0, 0]);
+        let left_shifter_3r = two.pow(&[(BIT_LEN_LIMB_LOOKUP * 3) as u64, 0, 0, 0]);
+        let left_shifter_4r = two.pow(&[(BIT_LEN_LIMB_LOOKUP * 4) as u64, 0, 0, 0]);
 
         RangeChip {
             config,
-
-            limb_bit_len,
 
             left_shifter_r,
             left_shifter_2r,
@@ -236,7 +230,7 @@ impl<F: FieldExt> RangeChip<F> {
         }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: MainGateConfig, overflow_bit_lengths: Vec<usize>) -> RangeConfig {
+    pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: &MainGateConfig, overflow_bit_lengths: Vec<usize>) -> RangeConfig {
         let a = main_gate_config.a;
         let b = main_gate_config.b;
         let c = main_gate_config.c;
@@ -325,6 +319,7 @@ mod tests {
     use crate::circuit::integer::AssignedLimb;
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::rns::Limb;
+    use crate::BIT_LEN_LIMB_LOOKUP;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -346,10 +341,6 @@ mod tests {
         fn overflow_bit_lengths() -> Vec<usize> {
             vec![1, 4, 8]
         }
-
-        fn limb_bit_len() -> usize {
-            16
-        }
     }
 
     impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
@@ -364,7 +355,7 @@ mod tests {
             let main_gate_config = MainGate::<F>::configure(meta);
 
             let overflow_bit_lengths = Self::overflow_bit_lengths();
-            let range_config = RangeChip::<F>::configure(meta, main_gate_config.clone(), overflow_bit_lengths);
+            let range_config = RangeChip::<F>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
             TestCircuitConfig {
                 main_gate_config,
@@ -373,9 +364,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
-            let limb_bit_len = Self::limb_bit_len();
-
-            let range_chip = RangeChip::<F>::new(config.range_config.clone(), limb_bit_len);
+            let range_chip = RangeChip::<F>::new(config.range_config.clone());
 
             // assign the value
             let get_value = || -> Result<F, Error> {
@@ -426,8 +415,7 @@ mod tests {
 
     #[test]
     fn test_range_circuit() {
-        const BIT_LEN_LOOKUP_LIMB: usize = 16;
-        const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
+        const K: u32 = (BIT_LEN_LIMB_LOOKUP + 1) as u32;
 
         let value = Some(Fp::from_u64(0xffffffffffffffff));
         let circuit = TestCircuit::<Fp> { value };

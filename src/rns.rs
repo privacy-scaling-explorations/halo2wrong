@@ -64,7 +64,7 @@ pub struct ReductionContext<N: FieldExt> {
     pub v_1: Limb<N>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub right_shifter_r: Native,
     pub right_shifter_2r: Native,
@@ -360,6 +360,10 @@ impl<N: FieldExt> Integer<N> {
     pub fn limbs(&self) -> Vec<Limb<N>> {
         self.decomposed.limbs.clone()
     }
+
+    pub fn get_limb(&self, idx: usize) -> N {
+        self.decomposed.limbs[idx].fe()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -530,14 +534,13 @@ mod tests {
         use halo2::pasta::Fp as Wrong;
         use halo2::pasta::Fq as Native;
         let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
-        let bit_len_int = 256;
 
         let rns = Rns::<Wrong, Native>::construct();
 
         let wrong_modulus = rns.wrong_modulus.clone();
 
         // conversion
-        let el_0 = rng.gen_biguint(bit_len_int);
+        let el_0 = rng.gen_biguint(BIT_LEN_CRT_MODULUS as u64);
         let el = rns.new_from_big(el_0.clone());
         let el_1 = el.value();
         assert_eq!(el_0, el_1);
