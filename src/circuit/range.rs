@@ -1,14 +1,18 @@
 use crate::circuit::integer::AssignedLimb;
 use crate::circuit::main_gate::MainGateConfig;
-use crate::rns::{Common, Decomposed, Limb};
+use crate::rns::Decomposed;
+use crate::NUMBER_OF_LOOKUP_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector, TableColumn};
 use halo2::poly::Rotation;
 
-pub(crate) const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
-
-// TODO: give circuit dev to control overflow selector
+#[derive(Clone, Debug)]
+pub struct TableConfig {
+    selector: Selector,
+    column: TableColumn,
+    bit_len: usize,
+}
 
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
@@ -19,8 +23,8 @@ pub struct RangeConfig {
 
     s_range: Selector,
     limb_range_table: TableColumn,
-    s_overflow: Selector,
-    overflow_range_table: TableColumn,
+
+    overflow_tables: Vec<TableConfig>,
 
     sa: Column<Fixed>,
     sb: Column<Fixed>,
@@ -31,11 +35,14 @@ pub struct RangeConfig {
     s_constant: Column<Fixed>,
 }
 
+pub enum Overflow {
+    NoOverflow,
+    Size(usize),
+}
+
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
-
     limb_bit_len: usize,
-    overflow_bit_len: usize,
 
     left_shifter_r: F,
     left_shifter_2r: F,
@@ -54,18 +61,34 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
     }
 }
 
+impl<F: FieldExt> RangeChip<F> {
+    fn get_table(&self, bit_len: usize) -> Result<&TableConfig, Error> {
+        let table_config = self
+            .config
+            .overflow_tables
+            .iter()
+            .find(|&table_config| table_config.bit_len == bit_len)
+            .ok_or(Error::SynthesisError)?;
+        Ok(table_config)
+    }
+}
+
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>) -> Result<AssignedLimb<F>, Error>;
+    // fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow_idx: Option<usize>) -> Result<AssignedLimb<F>, Error>;
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow) -> Result<AssignedLimb<F>, Error>;
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
-    fn load_overflow_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
+    fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>) -> Result<AssignedLimb<F>, Error> {
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow) -> Result<AssignedLimb<F>, Error> {
         let limb_bit_len = self.limb_bit_len;
-        let overflow_bit_len = self.overflow_bit_len;
-        let has_overflow = overflow_bit_len != 0;
-        let number_of_limbs = if has_overflow { NUMBER_OF_LOOKUP_LIMBS + 1 } else { NUMBER_OF_LOOKUP_LIMBS };
+
+        let number_of_limbs = match overflow {
+            Overflow::NoOverflow => NUMBER_OF_LOOKUP_LIMBS,
+            _ => NUMBER_OF_LOOKUP_LIMBS + 1,
+        };
+
         let offset_limb = 0;
         let offset_overflow = offset_limb + 1;
 
@@ -85,10 +108,10 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
         let get_overflow_value = || -> Result<F, Error> {
             let decomposed = decomposed.as_ref().ok_or(Error::SynthesisError)?;
-            Ok(if has_overflow {
-                decomposed.limbs[number_of_limbs - 1].fe()
-            } else {
-                F::zero()
+
+            Ok(match overflow {
+                Overflow::NoOverflow => F::zero(),
+                _ => decomposed.limbs[number_of_limbs - 1].fe(),
             })
         };
 
@@ -118,9 +141,10 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         }
 
         let cur_cell = {
-            if has_overflow {
-                self.config.s_overflow.enable(region, offset_overflow)?;
-            }
+            match overflow {
+                Overflow::Size(bit_len) => self.get_table(bit_len)?.selector.enable(region, offset_overflow)?,
+                _ => {}
+            };
 
             let cell = region.assign_advice(|| "limb value", self.config.a, offset_overflow, || get_value())?;
             let _ = region.assign_advice(|| "overflow value", self.config.b, offset_overflow, || get_overflow_value())?;
@@ -132,7 +156,12 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 || "b",
                 self.config.sb,
                 offset_overflow,
-                || Ok(if has_overflow { self.left_shifter_4r } else { F::zero() }),
+                || {
+                    Ok(match overflow {
+                        Overflow::NoOverflow => F::zero(),
+                        _ => self.left_shifter_4r,
+                    })
+                },
             )?;
             region.assign_fixed(|| "d", self.config.sd, offset_overflow, || Ok(F::one()))?;
 
@@ -167,29 +196,28 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         Ok(())
     }
 
-    fn load_overflow_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let bit_len = self.overflow_bit_len;
-        let has_overflow = bit_len != 0;
-
-        if has_overflow {
+    fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        for overflow_table in self.config.overflow_tables.iter() {
+            let bit_len = overflow_table.bit_len;
             let table_values: Vec<F> = (0..1 << bit_len).map(|e| F::from_u64(e)).collect();
 
             layouter.assign_table(
                 || "",
                 |mut table| {
                     for (index, &value) in table_values.iter().enumerate() {
-                        table.assign_cell(|| "overflow table", self.config.overflow_range_table, index, || Ok(value))?;
+                        table.assign_cell(|| "overflow table", overflow_table.column, index, || Ok(value))?;
                     }
                     Ok(())
                 },
             )?;
         }
+
         Ok(())
     }
 }
 
 impl<F: FieldExt> RangeChip<F> {
-    pub fn new(config: RangeConfig, limb_bit_len: usize, overflow_bit_len: usize) -> Self {
+    pub fn new(config: RangeConfig, limb_bit_len: usize) -> Self {
         let two = F::from_u64(2);
         let left_shifter_r = two.pow(&[limb_bit_len as u64, 0, 0, 0]);
         let left_shifter_2r = two.pow(&[(limb_bit_len * 2) as u64, 0, 0, 0]);
@@ -200,7 +228,6 @@ impl<F: FieldExt> RangeChip<F> {
             config,
 
             limb_bit_len,
-            overflow_bit_len,
 
             left_shifter_r,
             left_shifter_2r,
@@ -209,16 +236,14 @@ impl<F: FieldExt> RangeChip<F> {
         }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: MainGateConfig, has_overflow: bool) -> RangeConfig {
+    pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: MainGateConfig, overflow_bit_lengths: Vec<usize>) -> RangeConfig {
         let a = main_gate_config.a;
         let b = main_gate_config.b;
         let c = main_gate_config.c;
         let d = main_gate_config.d;
 
         let s_range = meta.complex_selector();
-        let s_overflow = meta.complex_selector();
         let limb_range_table = meta.lookup_table_column();
-        let overflow_range_table = meta.lookup_table_column();
 
         meta.lookup(|meta| {
             let a_ = meta.query_advice(a.into(), Rotation::cur());
@@ -244,32 +269,26 @@ impl<F: FieldExt> RangeChip<F> {
             vec![(d_ * s_range, limb_range_table)]
         });
 
-        if has_overflow {
-            meta.lookup(|meta| {
-                let b_ = meta.query_advice(b.into(), Rotation::cur());
-                let s_overflow = meta.query_selector(s_overflow);
-                vec![(b_ * s_overflow, overflow_range_table)]
-            });
-        }
+        let overflow_tables = overflow_bit_lengths
+            .iter()
+            .map(|bit_len| {
+                let selector = meta.complex_selector();
+                let column = meta.lookup_table_column();
 
-        // meta.create_gate("range", |meta| {
-        //     let s_range = meta.query_selector(s_range);
+                meta.lookup(|meta| {
+                    let b_ = meta.query_advice(b.into(), Rotation::cur());
+                    let selector = meta.query_selector(selector);
+                    vec![(b_ * selector, column)]
+                });
 
-        //     let a = meta.query_advice(a, Rotation::cur());
-        //     let b = meta.query_advice(b, Rotation::cur());
-        //     let c = meta.query_advice(c, Rotation::cur());
-        //     let d_next = meta.query_advice(d, Rotation::next());
-        //     let d = meta.query_advice(d, Rotation::cur());
-
-        //     // NOTICE: we could also use main gate selectors to combine limbs.
-        //     let u1 = F::from_u64((1u64 << limb_bit_len) as u64);
-        //     let u2 = F::from_u64((1u64 << (2 * limb_bit_len)) as u64);
-        //     let u3 = F::from_u64((1u64 << (3 * limb_bit_len)) as u64);
-
-        //     let expression = s_range * (a + b * u1 + c * u2 + d * u3 - d_next);
-
-        //     vec![expression]
-        // });
+                let table_config = TableConfig {
+                    selector,
+                    column,
+                    bit_len: *bit_len,
+                };
+                table_config
+            })
+            .collect();
 
         let sa = main_gate_config.sa;
         let sb = main_gate_config.sb;
@@ -286,7 +305,6 @@ impl<F: FieldExt> RangeChip<F> {
             d,
 
             s_range,
-            s_overflow,
             sa,
             sb,
             sc,
@@ -295,7 +313,7 @@ impl<F: FieldExt> RangeChip<F> {
             s_mul,
             s_constant,
             limb_range_table,
-            overflow_range_table,
+            overflow_tables,
         }
     }
 }
@@ -303,7 +321,7 @@ impl<F: FieldExt> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
-    use super::{RangeChip, RangeConfig, RangeInstructions};
+    use super::{Overflow, RangeChip, RangeConfig, RangeInstructions};
     use crate::circuit::integer::AssignedLimb;
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::rns::Limb;
@@ -320,11 +338,21 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuit<F: FieldExt, const LIMB_BIT_LEN: usize, const OVERFLOW_BIT_LEN: usize> {
+    struct TestCircuit<F: FieldExt> {
         value: Option<F>,
     }
 
-    impl<F: FieldExt, const LIMB_BIT_LEN: usize, const OVERFLOW_BIT_LEN: usize> Circuit<F> for TestCircuit<F, LIMB_BIT_LEN, OVERFLOW_BIT_LEN> {
+    impl<F: FieldExt> TestCircuit<F> {
+        fn overflow_bit_lengths() -> Vec<usize> {
+            vec![1, 4, 8]
+        }
+
+        fn limb_bit_len() -> usize {
+            16
+        }
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -334,7 +362,10 @@ mod tests {
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
             let main_gate_config = MainGate::<F>::configure(meta);
-            let range_config = RangeChip::<F>::configure(meta, main_gate_config.clone(), OVERFLOW_BIT_LEN > 0);
+
+            let overflow_bit_lengths = Self::overflow_bit_lengths();
+            let range_config = RangeChip::<F>::configure(meta, main_gate_config.clone(), overflow_bit_lengths);
+
             TestCircuitConfig {
                 main_gate_config,
                 range_config,
@@ -342,7 +373,9 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
-            let range_chip = RangeChip::<F>::new(config.range_config.clone(), LIMB_BIT_LEN, OVERFLOW_BIT_LEN);
+            let limb_bit_len = Self::limb_bit_len();
+
+            let range_chip = RangeChip::<F>::new(config.range_config.clone(), limb_bit_len);
 
             // assign the value
             let get_value = || -> Result<F, Error> {
@@ -379,13 +412,13 @@ mod tests {
             layouter.assign_region(
                 || "region 1",
                 |mut region| {
-                    range_chip.range_limb(&mut region, limb)?;
+                    range_chip.range_limb(&mut region, limb, Overflow::NoOverflow)?;
                     Ok(())
                 },
             )?;
 
             range_chip.load_limb_range_table(&mut layouter)?;
-            range_chip.load_overflow_range_table(&mut layouter)?;
+            range_chip.load_overflow_range_tables(&mut layouter)?;
 
             Ok(())
         }
@@ -394,27 +427,15 @@ mod tests {
     #[test]
     fn test_range_circuit() {
         const BIT_LEN_LOOKUP_LIMB: usize = 16;
-        const NO_OVERFLOW: usize = 0;
-        const BIT_LEN_OVERFLOW: usize = 4;
         const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
-        // const K: u32 = 5;
 
         let value = Some(Fp::from_u64(0xffffffffffffffff));
-        let circuit = TestCircuit::<Fp, BIT_LEN_LOOKUP_LIMB, NO_OVERFLOW> { value };
+        let circuit = TestCircuit::<Fp> { value };
 
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        assert_eq!(prover.verify(), Ok(()));
-
-        let circuit = TestCircuit::<Fp, BIT_LEN_LOOKUP_LIMB, BIT_LEN_OVERFLOW> { value };
-
-        let prover = match MockProver::run(K, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
         assert_eq!(prover.verify(), Ok(()));
     }
 }

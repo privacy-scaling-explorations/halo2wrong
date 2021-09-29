@@ -1,12 +1,22 @@
 use super::IntegerChip;
 use crate::circuit::integer::{AssignedInteger, AssignedLimb};
-use crate::circuit::range::RangeInstructions;
-use crate::rns::{Integer, Limb, Quotient, NUMBER_OF_LIMBS};
+use crate::circuit::range::{Overflow, RangeInstructions};
+use crate::rns::{Limb, Quotient};
+use crate::NUMBER_OF_LIMBS;
+
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+    fn mul_v0_overflow(&self) -> Overflow {
+        Overflow::Size(2)
+    }
+
+    fn mul_v1_overflow(&self) -> Overflow {
+        Overflow::Size(3)
+    }
+
     pub(crate) fn _mul(
         &self,
         region: &mut Region<'_, N>,
@@ -258,14 +268,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         for (i, cell) in quotient_cycling.iter().enumerate() {
             let value = quotient.as_ref().map(|quotient| Limb::<N>::from_fe(quotient[i]));
             let limb = AssignedLimb::new(cell.clone(), value);
-            range_chip.range_limb(region, &limb)?;
+            range_chip.range_limb(region, &limb, Overflow::NoOverflow)?;
         }
 
         // range result
         for (i, cell) in result_cells.clone().iter().enumerate() {
             let value = result.as_ref().map(|result| Limb::<N>::from_fe(result[i]));
             let limb = AssignedLimb::new(cell.clone(), value);
-            let new_limb = range_chip.range_limb(region, &limb)?;
+            let new_limb = range_chip.range_limb(region, &limb, Overflow::NoOverflow)?;
 
             // cycle and update cell
             region.constrain_equal(result_cells[i], new_limb.cell)?;
@@ -275,8 +285,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // range v0 and v1
 
         // TODO: overflow flag
-        range_chip.range_limb(region, &v_0)?;
-        range_chip.range_limb(region, &v_1)?;
+        range_chip.range_limb(region, &v_0, self.mul_v0_overflow())?;
+        range_chip.range_limb(region, &v_1, self.mul_v1_overflow())?;
 
         let a: AssignedInteger<N> = a_running.clone();
         let b: AssignedInteger<N> = b_running.clone();

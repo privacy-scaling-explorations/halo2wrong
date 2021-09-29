@@ -1,13 +1,20 @@
 use super::IntegerChip;
 use crate::circuit::integer::{AssignedInteger, AssignedLimb};
-use crate::circuit::range::RangeInstructions;
+use crate::circuit::range::{Overflow, RangeInstructions};
 use crate::rns::{Limb, Quotient};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    // pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: Option<&Integer<N>>) -> Result<Integer<N>, Error> {
+    fn red_v0_overflow(&self) -> Overflow {
+        Overflow::NoOverflow
+    }
+
+    fn red_v1_overflow(&self) -> Overflow {
+        Overflow::NoOverflow
+    }
+
     pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
         let reduction_result = a.value().map(|integer_a| self.rns.reduce(&integer_a));
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs.iter().map(|limb| limb.fe()).collect();
@@ -256,13 +263,13 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         // quotient
         let quotient = &mut AssignedLimb::<N>::new(q_cell, quotient.map(|e| Limb::<N>::from_fe(e)));
-        range_chip.range_limb(region, &quotient)?;
+        range_chip.range_limb(region, &quotient, Overflow::NoOverflow)?;
 
         // range result
         for (i, cell) in result_cells.clone().iter().enumerate() {
             let value = result.as_ref().map(|result| Limb::<N>::from_fe(result[i]));
             let limb = AssignedLimb::new(cell.clone(), value);
-            let new_limb = range_chip.range_limb(region, &limb)?;
+            let new_limb = range_chip.range_limb(region, &limb, Overflow::NoOverflow)?;
 
             // cycle and update cell
             region.constrain_equal(result_cells[i], new_limb.cell)?;
@@ -270,8 +277,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         }
 
         // TODO: overflow flag
-        range_chip.range_limb(region, &v_0)?;
-        range_chip.range_limb(region, &v_1)?;
+        range_chip.range_limb(region, &v_0, self.red_v0_overflow())?;
+        range_chip.range_limb(region, &v_1, self.red_v1_overflow())?;
 
         let a: AssignedInteger<N> = a_running.clone();
 
