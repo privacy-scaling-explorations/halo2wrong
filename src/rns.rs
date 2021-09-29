@@ -3,6 +3,7 @@ use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
+use rand::thread_rng;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::ops::{Div, Shl};
@@ -121,7 +122,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_4r = two.pow(&[4 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let wrong_modulus = modulus::<W>();
-
         let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
@@ -145,14 +145,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         self.new_from_big(fe_to_big(fe))
     }
 
-    pub(crate) fn rand(&self) -> Integer<N> {
-        self.new(W::rand())
-    }
-
-    pub(crate) fn modulus(&self) -> Integer<N> {
-        self.new_from_big(modulus::<W>())
-    }
-
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
         Integer {
             decomposed: Decomposed::from_big(e, NUMBER_OF_LIMBS, BIT_LEN_LIMB),
@@ -163,6 +155,50 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         assert_eq!(NUMBER_OF_LIMBS, limbs.len());
         let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
         Integer { decomposed }
+    }
+
+    pub(crate) fn rand(&self) -> Integer<N> {
+        self.new(W::rand())
+    }
+
+    pub(crate) fn rand_in_max(&self) -> Integer<N> {
+        use num_bigint::RandBigInt;
+        let mut rng = thread_rng();
+        let el = rng.gen_biguint(BIT_LEN_CRT_MODULUS as u64);
+        self.new_from_big(el)
+    }
+
+    pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<N> {
+        use num_bigint::RandBigInt;
+        let limbs: Vec<Limb<N>> = (0..NUMBER_OF_LIMBS)
+            .map(|_| {
+                let mut rng = thread_rng();
+                let el = rng.gen_biguint(bit_len as u64);
+                let limb: Limb<N> = el.into();
+                limb
+            })
+            .collect();
+
+        self.new_from_limbs(limbs)
+    }
+
+    pub(crate) fn max(&self, bit_len: Option<usize>) -> Integer<N> {
+        let limbs = (0..NUMBER_OF_LIMBS).map(|_| self.max_limb(bit_len)).collect();
+        self.new_from_limbs(limbs)
+    }
+
+    pub(crate) fn max_limb(&self, bit_len: Option<usize>) -> Limb<N> {
+        let bit_len = match bit_len {
+            Some(bit_len) => bit_len,
+            _ => BIT_LEN_LIMB,
+        };
+
+        let el = (big_uint::one() << bit_len) - 1usize;
+        el.into()
+    }
+
+    pub(crate) fn modulus(&self) -> Integer<N> {
+        self.new_from_big(modulus::<W>())
     }
 
     pub(crate) fn add(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> Integer<N> {
@@ -421,12 +457,11 @@ mod tests {
     use super::{big_to_fe, fe_to_big, modulus, Decomposed, Limb, Rns, BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB};
     use crate::rns::Common;
     use crate::rns::Integer;
-    use crate::rns::NUMBER_OF_LIMBS;
     use halo2::arithmetic::FieldExt;
     use halo2::pasta::Fp;
     use halo2::pasta::Fq;
     use num_bigint::{BigUint as big_uint, RandBigInt};
-    use num_traits::One;
+    use num_traits::{One, Zero};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -508,8 +543,8 @@ mod tests {
         assert_eq!(el_0, el_1);
 
         // add
-        let el_0 = &rns.rand();
-        let el_1 = &rns.rand();
+        let el_0 = &rns.rand_in_max();
+        let el_1 = &rns.rand_in_max();
 
         let r_0 = rns.add(el_0, el_1);
         let r_0: Wrong = r_0.fe();
@@ -517,8 +552,8 @@ mod tests {
         assert_eq!(r_0, r_1);
 
         // sub
-        let el_0 = &rns.rand();
-        let el_1 = &rns.rand();
+        let el_0 = &rns.rand_in_max();
+        let el_1 = &rns.rand_in_max();
 
         let r_0 = rns.sub(el_0, el_1);
         let r_0: Wrong = r_0.fe();
@@ -526,33 +561,27 @@ mod tests {
         assert_eq!(r_0, r_1);
 
         // reduce
-        let mut rand_overflow_int = |limb_bit_size: u64| -> Integer<Native> {
-            let limbs = (0..NUMBER_OF_LIMBS).map(|_| Limb::<Native>::from(rng.gen_biguint(limb_bit_size))).collect();
-            Integer {
-                decomposed: Decomposed {
-                    limbs: limbs,
-                    bit_len: BIT_LEN_LIMB,
-                },
-            }
-        };
-
-        let overflow = 110u64;
-        let el = rand_overflow_int(overflow);
+        let overflow = BIT_LEN_LIMB + 10;
+        let el = rns.rand_with_limb_bit_size(overflow);
         let result_0 = el.value() % wrong_modulus.clone();
         let reduction_context = rns.reduce(&el);
         let result_1 = reduction_context.result;
         assert_eq!(result_1.value(), result_0);
 
         // aux
+
+        assert_eq!(rns.aux.value() % &wrong_modulus, big_uint::zero());
+
         let aux = Integer { decomposed: rns.aux.clone() };
-        let el_0 = &rns.rand();
+        let el_0 = &rns.rand_in_max();
         let el_1 = rns.add(&aux, &el_0);
         let reduction_context = rns.reduce(&el_1);
-        assert_eq!(el_0.value(), reduction_context.result.value());
+        assert_eq!(el_0.value() % wrong_modulus.clone(), reduction_context.result.value());
 
+        // mul
         for _ in 0..10000 {
-            let el_0 = &rns.rand();
-            let el_1 = &rns.rand();
+            let el_0 = &rns.rand_in_max();
+            let el_1 = &rns.rand_in_max();
             let result_0 = (el_0.value() * el_1.value()) % wrong_modulus.clone();
             let reduction_context = rns.mul(&el_0, &el_1);
             let result_1 = reduction_context.result;

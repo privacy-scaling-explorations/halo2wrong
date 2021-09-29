@@ -12,10 +12,10 @@ halo2 = { path = '../halo2', features = []}
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
+rand = "0.8"
 
 
 [dev-dependencies]
-rand = "0.8"
 rand_core = { version = "0.6", default-features = false }
 rand_xorshift = "0.3"
 
