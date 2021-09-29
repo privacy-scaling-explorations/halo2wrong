@@ -78,48 +78,38 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 }
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
-    fn aux() {
+    fn aux() -> Decomposed<N> {
         let two = N::from_u64(2);
         let R = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
         let wrong_modulus = modulus::<W>();
-        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         let wrong_modulus_decomposed: Vec<big_uint> = wrong_modulus_decomposed.limbs.iter().map(|limb| limb.value()).collect();
         let wrong_modulus_top = wrong_modulus_decomposed[NUMBER_OF_LIMBS - 1].clone();
-        let mut initial_range_correction_factor = R.div(wrong_modulus_top) + 1usize;
+        let range_correct_factor = R.div(wrong_modulus_top) + 1usize;
+        let mut aux: Vec<big_uint> = wrong_modulus_decomposed.iter().map(|limb| limb * range_correct_factor.clone()).collect();
 
-        let mut aux: Vec<big_uint> = wrong_modulus_decomposed
-            .iter()
-            .map(|limb| limb * initial_range_correction_factor.clone())
-            .collect();
-
-        let mut overborrow = false;
-        let mut has_carry = false;
-
-        loop {
-            for i in 0..NUMBER_OF_LIMBS {
-                if aux[i] < R.clone() {
-                    if i == NUMBER_OF_LIMBS - 1 {
-                        overborrow = true;
-                        break;
-                    }
-                    aux[i] += R.clone();
-                    has_carry = true
-                }
-                if has_carry {
-                    aux[i] = aux[i].clone() - 1usize;
-                    has_carry = has_carry || false;
-                }
-            }
-            if overborrow {
-                initial_range_correction_factor += 1usize;
-                aux = wrong_modulus_decomposed
-                    .iter()
-                    .map(|limb| limb * initial_range_correction_factor.clone())
-                    .collect();
+        if aux[1] < R.clone() - 1usize {
+            if aux[2] == big_uint::zero() {
+                aux[1] += R.clone();
+                aux[2] = R.clone() - 1usize;
+                aux[3] -= 1usize;
             } else {
-                break;
+                aux[1] += R.clone();
+                aux[2] -= 1usize;
             }
         }
+
+        if aux[2] < R.clone() - 1usize {
+            aux[2] += R.clone();
+            aux[3] -= 1usize;
+        }
+
+        let aux = Decomposed {
+            limbs: aux.iter().map(|aux| aux.clone().into()).collect(),
+            bit_len: BIT_LEN_LIMB,
+        };
+
+        aux
     }
 
     pub(crate) fn construct() -> Self {
@@ -134,16 +124,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-
         let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
-        let range_correct_factor = left_shifter_r - N::from_u64(1);
-
-        let aux = &mut Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-        aux.scale(range_correct_factor);
-
-        assert_eq!(aux.value() % &wrong_modulus, big_uint::zero());
-
-        let aux = aux.clone();
+        let aux = Self::aux();
 
         Rns {
             right_shifter_r,
@@ -420,6 +402,10 @@ impl<F: FieldExt> Decomposed<F> {
             limbs: limbs.try_into().expect("must fit in"),
             bit_len,
         }
+    }
+
+    pub fn limb(&self, idx: usize) -> Limb<F> {
+        self.limbs[idx].clone()
     }
 
     pub fn scale(&mut self, k: F) {
