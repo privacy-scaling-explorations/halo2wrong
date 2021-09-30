@@ -1,0 +1,1 @@
+Implementation effort for [the wrong field spec](https://github.com/kilic/wrong) with [halo2](https://github.com/zcash/halo2) API
