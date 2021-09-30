@@ -16,7 +16,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
-        // pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>) -> Result<(), Error> {
         let main_gate = self.main_gate();
 
         let reduction_result = a.value().map(|integer_a| self.rns.reduce(&integer_a));

@@ -238,8 +238,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     }
 
     pub(crate) fn mul(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> ReductionContext<N> {
-        // println!("val: {}", integer_0.value().to_str_radix(16));
-        // println!("val: {}", integer_1.value().to_str_radix(16));
         let modulus = self.wrong_modulus.clone();
         let negative_modulus = self.negative_wrong_modulus.clone();
 

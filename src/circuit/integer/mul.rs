@@ -92,18 +92,23 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         for i in 0..NUMBER_OF_LIMBS {
             let mut t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
 
-            for k in 0..=i {
-                let j = i - k;
+            for j in 0..=i {
+                let k = i - j;
 
-                let a_i_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[i]))?;
-                let b_j_new_cell = region.assign_advice(|| "b_", main_gate.b, offset, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[j]))?;
-                let q_j_new_cell = region.assign_advice(|| "q_", main_gate.c, offset, || Ok(quotient.as_ref().ok_or(Error::SynthesisError)?[j]))?;
+                let a_j_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[j]))?;
+                let b_k_new_cell = region.assign_advice(|| "b_", main_gate.b, offset, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[k]))?;
+                let q_k_new_cell = region.assign_advice(|| "q_", main_gate.c, offset, || Ok(quotient.as_ref().ok_or(Error::SynthesisError)?[k]))?;
                 let t_i_cell = region.assign_advice(|| "t_", main_gate.d, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
 
                 region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::one()))?;
-                region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(negative_wrong_modulus[i]))?;
+                region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(negative_wrong_modulus[j]))?;
                 region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
-                region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::one()))?;
+
+                if k == 0 {
+                    region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
+                } else {
+                    region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::one()))?;
+                }
 
                 // zero selectors
                 region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
@@ -111,32 +116,32 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
                 // cycle and update operand limb assignments
-                region.constrain_equal(a_running.cells[i], a_i_new_cell)?;
-                region.constrain_equal(b_running.cells[j], b_j_new_cell)?;
-                a_running.cells[i] = a_i_new_cell;
-                b_running.cells[j] = b_j_new_cell;
+                region.constrain_equal(a_running.cells[j], a_j_new_cell)?;
+                region.constrain_equal(b_running.cells[k], b_k_new_cell)?;
+                a_running.cells[j] = a_j_new_cell;
+                b_running.cells[k] = b_k_new_cell;
 
-                if k == 0 {
-                    // first time we see quotient ith limb
-                    quotient_cycling.push(q_j_new_cell);
+                if j == 0 {
+                    // first time we see jth quotient limb
+                    quotient_cycling.push(q_k_new_cell);
                 } else {
                     // cycle and update quotient limb assignment
-                    region.constrain_equal(quotient_cycling[j], q_j_new_cell)?;
-                    quotient_cycling[j] = q_j_new_cell;
+                    region.constrain_equal(quotient_cycling[k], q_k_new_cell)?;
+                    quotient_cycling[k] = q_k_new_cell;
                 }
 
-                if k == 0 {
-                    // first time we see t_i assignment
+                if j == 0 {
+                    // first time we see t_j assignment
                     intermediate_values_cycling.push(t_i_cell);
                 }
 
                 // update running temp value
                 t = t.map(|t| {
-                    let a = a_integer.as_ref().unwrap()[i];
-                    let b = b_integer.as_ref().unwrap()[j];
-                    let q = quotient.as_ref().unwrap()[j];
-                    let p = negative_wrong_modulus[i];
-                    t - a * b - q * p
+                    let a = a_integer.as_ref().unwrap()[j];
+                    let b = b_integer.as_ref().unwrap()[k];
+                    let q = quotient.as_ref().unwrap()[k];
+                    let p = negative_wrong_modulus[j];
+                    t - (a * b + q * p)
                 });
 
                 offset += 1;

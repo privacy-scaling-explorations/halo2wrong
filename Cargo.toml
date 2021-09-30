@@ -20,3 +20,5 @@ rand_core = { version = "0.6", default-features = false }
 rand_xorshift = "0.3"
 
 
+[features]
+no_lookup = []

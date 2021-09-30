@@ -219,6 +219,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 #[cfg(test)]
 mod tests {
 
+    use std::ops::Mul;
+
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeInstructions};
@@ -365,17 +367,23 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_overflows = &layouter.assign_region(
+            let integer_overflows_0 = &layouter.assign_region(
                 || "region 0",
                 |mut region| integer_chip.assign_input(&mut region, self.integer_overflows.clone()),
             )?;
             let integer_reduced_0 =
                 &layouter.assign_region(|| "region 1", |mut region| integer_chip.assign_input(&mut region, self.integer_reduced.clone()))?;
-            let (_, integer_reduced_1) = &layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, &integer_overflows))?;
-            // let (_, integer_reduced_1) = &layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, &integer_overflows))?;
+            let (integer_overflows_1, integer_reduced_1) =
+                &layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, &integer_overflows_0))?;
+
             let (_, _) = layouter.assign_region(
                 || "region 3",
                 |mut region| integer_chip.equal(&mut region, &integer_reduced_0, &integer_reduced_1),
+            )?;
+
+            let (_, _) = layouter.assign_region(
+                || "region 4",
+                |mut region| integer_chip.equal(&mut region, &integer_overflows_0, &integer_overflows_1),
             )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
@@ -416,6 +424,90 @@ mod tests {
         let circuit = TestCircuitReduction::<Wrong, Native> {
             integer_overflows: Some(integer_overflows),
             integer_reduced: Some(integer_reduced),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        #[cfg(feature = "no_lookup")]
+        println!("{:#?}", prover);
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitMultiplication<W: FieldExt, N: FieldExt> {
+        integer_a: Option<Integer<N>>,
+        integer_b: Option<Integer<N>>,
+        integer_c: Option<Integer<N>>,
+        rns: Rns<W, N>,
+    }
+
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitMultiplication<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            let main_gate_config = MainGate::<N>::configure(meta);
+            let overflow_bit_lengths = TestCircuitConfig::overflow_bit_lengths();
+            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let integer_config = IntegerChip::<W, N>::configure(meta, &range_config, &main_gate_config);
+            TestCircuitConfig {
+                integer_config,
+                main_gate_config,
+            }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+
+            let integer_a_0 = &layouter.assign_region(|| "region 0", |mut region| integer_chip.assign_input(&mut region, self.integer_a.clone()))?;
+            let integer_b_0 = &layouter.assign_region(|| "region 1", |mut region| integer_chip.assign_input(&mut region, self.integer_b.clone()))?;
+            let integer_c_0 = &layouter.assign_region(|| "region 2", |mut region| integer_chip.assign_input(&mut region, self.integer_c.clone()))?;
+
+            let (integer_a_1, integer_b_1, integer_c_1) =
+                &layouter.assign_region(|| "region 3", |mut region| integer_chip.mul(&mut region, &integer_a_0, &integer_b_0))?;
+
+            let (_, _) = layouter.assign_region(|| "region 4", |mut region| integer_chip.equal(&mut region, &integer_c_0, &integer_c_1))?;
+
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_limb_range_table(&mut layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_overflow_range_tables(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_multiplication_circuit() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+        const BIT_LEN_LOOKUP_LIMB: usize = 16;
+
+        #[cfg(not(feature = "no_lookup"))]
+        const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        const K: u32 = 8;
+
+        let rns = Rns::<Wrong, Native>::construct();
+
+        let integer_a = rns.rand_in_max();
+        let integer_b = rns.rand_in_max();
+        let integer_c = rns.mul(&integer_a, &integer_b).result;
+
+        let circuit = TestCircuitMultiplication::<Wrong, Native> {
+            integer_a: Some(integer_a),
+            integer_b: Some(integer_b),
+            integer_c: Some(integer_c),
             rns: rns.clone(),
         };
 
