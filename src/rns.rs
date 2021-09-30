@@ -1,10 +1,11 @@
 use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB, NUMBER_OF_LIMBS};
-use halo2::arithmetic::FieldExt;
+use halo2::arithmetic::{Field, FieldExt};
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use rand::thread_rng;
 use std::convert::TryInto;
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Div, Shl};
 
@@ -70,7 +71,6 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub right_shifter_2r: Native,
     pub left_shifter_r: Native,
     pub left_shifter_2r: Native,
-    pub left_shifter_4r: Native,
     pub aux: Decomposed<Native>,
     pub negative_wrong_modulus: Decomposed<Native>,
     wrong_modulus: big_uint,
@@ -120,7 +120,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let right_shifter_2r = two_inv.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_r = two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
         let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
-        let left_shifter_4r = two.pow(&[4 * BIT_LEN_LIMB as u64, 0, 0, 0]);
         let wrong_modulus = modulus::<W>();
         let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
@@ -132,7 +131,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             right_shifter_2r,
             left_shifter_r,
             left_shifter_2r,
-            left_shifter_4r,
             wrong_modulus,
             negative_wrong_modulus,
             aux,
@@ -155,6 +153,11 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         assert_eq!(NUMBER_OF_LIMBS, limbs.len());
         let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
         Integer { decomposed }
+    }
+
+    pub(crate) fn new_from_str_limbs(&self, e: Vec<&str>) -> Integer<N> {
+        let limbs = e.iter().map(|e| Limb::from(*e)).collect();
+        self.new_from_limbs(limbs)
     }
 
     pub(crate) fn rand(&self) -> Integer<N> {
@@ -341,7 +344,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Integer<F: FieldExt> {
     pub decomposed: Decomposed<F>,
 }
@@ -351,6 +354,29 @@ impl<N: FieldExt> Common for Integer<N> {
         self.decomposed.value()
     }
 }
+
+impl<F: FieldExt> fmt::Debug for Integer<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let value = self.value();
+        let value = value.to_str_radix(16);
+        write!(f, "{}\n", value)?;
+        for limb in self.limbs().iter() {
+            let value = limb.value();
+            let value = value.to_str_radix(16);
+            write!(f, "{}\n", value)?;
+        }
+        Ok(())
+    }
+}
+
+// impl<F: FieldExt> From<Vec<&str>> for Integer<F> {
+//     fn from(e: Vec<&str>) -> Self {
+//         let limbs = e.iter().map(|e| Limb::from(*e)).collect();
+//         Self {
+//             decomposed: Decomposed { limbs, bit_len: BIT_LEN_LIMB },
+//         }
+//     }
+// }
 
 impl<N: FieldExt> Integer<N> {
     pub(crate) fn fe<W: FieldExt>(&self) -> W {
@@ -386,6 +412,14 @@ impl<F: FieldExt> Default for Limb<F> {
 impl<F: FieldExt> From<big_uint> for Limb<F> {
     fn from(e: big_uint) -> Self {
         Self { _value: big_to_fe(e) }
+    }
+}
+
+impl<F: FieldExt> From<&str> for Limb<F> {
+    fn from(e: &str) -> Self {
+        Self {
+            _value: big_to_fe(big_uint::from_str_radix(e, 16).unwrap()),
+        }
     }
 }
 

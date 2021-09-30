@@ -7,6 +7,7 @@ use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector, TableColumn};
 use halo2::poly::Rotation;
 
+#[cfg(not(feature = "no_lookup"))]
 #[derive(Clone, Debug)]
 pub struct TableConfig {
     selector: Selector,
@@ -22,8 +23,11 @@ pub struct RangeConfig {
     d: Column<Advice>,
 
     s_range: Selector,
+
+    #[cfg(not(feature = "no_lookup"))]
     limb_range_table: TableColumn,
 
+    #[cfg(not(feature = "no_lookup"))]
     overflow_tables: Vec<TableConfig>,
 
     sa: Column<Fixed>,
@@ -61,6 +65,7 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 impl<F: FieldExt> RangeChip<F> {
+    #[cfg(not(feature = "no_lookup"))]
     fn get_table(&self, bit_len: usize) -> Result<&TableConfig, Error> {
         let table_config = self
             .config
@@ -73,20 +78,21 @@ impl<F: FieldExt> RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    // fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow_idx: Option<usize>) -> Result<AssignedLimb<F>, Error>;
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow) -> Result<AssignedLimb<F>, Error>;
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow, offset: usize) -> Result<(AssignedLimb<F>, usize), Error>;
+    #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
+    #[cfg(not(feature = "no_lookup"))]
     fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow) -> Result<AssignedLimb<F>, Error> {
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow, offset: usize) -> Result<(AssignedLimb<F>, usize), Error> {
         let number_of_limbs = match overflow {
             Overflow::NoOverflow => NUMBER_OF_LOOKUP_LIMBS,
             _ => NUMBER_OF_LOOKUP_LIMBS + 1,
         };
 
-        let offset_limb = 0;
+        let offset_limb = offset;
         let offset_overflow = offset_limb + 1;
 
         let value = limb.value.as_ref().map(|value| value);
@@ -138,6 +144,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         }
 
         let cur_cell = {
+            #[cfg(not(feature = "no_lookup"))]
             match overflow {
                 Overflow::Size(bit_len) => self.get_table(bit_len)?.selector.enable(region, offset_overflow)?,
                 _ => {}
@@ -174,9 +181,10 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
         region.constrain_equal(cur_cell, prev_cell)?;
 
-        Ok(limb.clone_with_cell(cur_cell))
+        Ok((limb.clone_with_cell(cur_cell), offset + 2))
     }
 
+    #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let table_values: Vec<F> = (0..1 << BIT_LEN_LIMB_LOOKUP).map(|e| F::from_u64(e)).collect();
 
@@ -192,6 +200,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         Ok(())
     }
 
+    #[cfg(not(feature = "no_lookup"))]
     fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         for overflow_table in self.config.overflow_tables.iter() {
             let bit_len = overflow_table.bit_len;
@@ -237,32 +246,39 @@ impl<F: FieldExt> RangeChip<F> {
         let d = main_gate_config.d;
 
         let s_range = meta.complex_selector();
+
+        #[cfg(not(feature = "no_lookup"))]
         let limb_range_table = meta.lookup_table_column();
 
+        #[cfg(not(feature = "no_lookup"))]
         meta.lookup(|meta| {
             let a_ = meta.query_advice(a.into(), Rotation::cur());
             let s_range = meta.query_selector(s_range);
             vec![(a_ * s_range, limb_range_table)]
         });
 
+        #[cfg(not(feature = "no_lookup"))]
         meta.lookup(|meta| {
             let b_ = meta.query_advice(b.into(), Rotation::cur());
             let s_range = meta.query_selector(s_range);
             vec![(b_ * s_range, limb_range_table)]
         });
 
+        #[cfg(not(feature = "no_lookup"))]
         meta.lookup(|meta| {
             let c_ = meta.query_advice(c.into(), Rotation::cur());
             let s_range = meta.query_selector(s_range);
             vec![(c_ * s_range, limb_range_table)]
         });
 
+        #[cfg(not(feature = "no_lookup"))]
         meta.lookup(|meta| {
             let d_ = meta.query_advice(d.into(), Rotation::cur());
             let s_range = meta.query_selector(s_range);
             vec![(d_ * s_range, limb_range_table)]
         });
 
+        #[cfg(not(feature = "no_lookup"))]
         let overflow_tables = overflow_bit_lengths
             .iter()
             .map(|bit_len| {
@@ -306,7 +322,9 @@ impl<F: FieldExt> RangeChip<F> {
             sd_next,
             s_mul,
             s_constant,
+            #[cfg(not(feature = "no_lookup"))]
             limb_range_table,
+            #[cfg(not(feature = "no_lookup"))]
             overflow_tables,
         }
     }
@@ -401,12 +419,14 @@ mod tests {
             layouter.assign_region(
                 || "region 1",
                 |mut region| {
-                    range_chip.range_limb(&mut region, limb, Overflow::NoOverflow)?;
+                    range_chip.range_limb(&mut region, limb, Overflow::NoOverflow, 0)?;
                     Ok(())
                 },
             )?;
 
+            #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(&mut layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
             range_chip.load_overflow_range_tables(&mut layouter)?;
 
             Ok(())

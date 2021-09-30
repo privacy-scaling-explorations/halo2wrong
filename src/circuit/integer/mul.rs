@@ -154,7 +154,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut result_cells: Vec<Cell> = vec![];
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
-        let left_shifter_4r = self.rns.left_shifter_4r;
 
         let t_0_new_cell = region.assign_advice(
             || "t_0",
@@ -174,8 +173,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
         region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(left_shifter_r))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-left_shifter_r))?;
         region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(-N::one()))?;
 
         region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
@@ -201,17 +200,15 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
-        let v_0 = &mut AssignedLimb::<N>::new(v_0_cell, v_1.map(|v_1| Limb::<N>::from_fe(v_1)));
-
         offset += 1;
 
         // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
-        // v_1 * 4R = u_1 * 2R + u_0
+        // v_1 * 2R = u_1 + v_0
 
         // | A   | B   | C   | D     |
         // | --- | --- | --- | ----- |
         // | t_2 | t_3 | r_2 | r_3   |
-        // | -   | v_1 | u_0 | u_1   |
+        // | -   | v_1 | v_0 | u_1   |
 
         let t_2_new_cell = region.assign_advice(
             || "t_2",
@@ -231,8 +228,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
         region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(left_shifter_r))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-left_shifter_r))?;
         region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(-N::one()))?;
 
         region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
@@ -247,21 +244,24 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         offset += 1;
 
         let v_1_cell = region.assign_advice(|| "v_1", main_gate.b, offset, || v_1.ok_or(Error::SynthesisError))?;
-        let u_0_new_cell = region.assign_advice(|| "u_0", main_gate.c, offset, || u_0.ok_or(Error::SynthesisError))?;
+        let v_0_new_cell = region.assign_advice(|| "v_0", main_gate.c, offset, || v_0.ok_or(Error::SynthesisError))?;
         let _ = region.assign_advice(|| "u_1", main_gate.d, offset, || u_1.ok_or(Error::SynthesisError))?;
 
-        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(-left_shifter_4r))?;
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(left_shifter_2r))?;
+        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_2r))?;
+        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
 
         region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
+        region.constrain_equal(v_0_cell, v_0_new_cell)?;
+
+        let v_0 = &mut AssignedLimb::<N>::new(v_0_new_cell, v_0.map(|v_0| Limb::<N>::from_fe(v_0)));
         let v_1 = &mut AssignedLimb::<N>::new(v_1_cell, v_1.map(|e| Limb::<N>::from_fe(e)));
 
-        region.constrain_equal(u_0_cell, u_0_new_cell)?;
+        offset += 1;
 
         // ranges
         let range_chip = self.range_chip();
@@ -270,14 +270,16 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         for (i, cell) in quotient_cycling.iter().enumerate() {
             let value = quotient.as_ref().map(|quotient| Limb::<N>::from_fe(quotient[i]));
             let limb = AssignedLimb::new(cell.clone(), value);
-            range_chip.range_limb(region, &limb, Overflow::NoOverflow)?;
+            let (_, updated_offset) = range_chip.range_limb(region, &limb, Overflow::NoOverflow, offset)?;
+            offset = updated_offset;
         }
 
         // range result
         for (i, cell) in result_cells.clone().iter().enumerate() {
             let value = result.as_ref().map(|result| Limb::<N>::from_fe(result[i]));
             let limb = AssignedLimb::new(cell.clone(), value);
-            let new_limb = range_chip.range_limb(region, &limb, Overflow::NoOverflow)?;
+            let (new_limb, updated_offset) = range_chip.range_limb(region, &limb, Overflow::NoOverflow, offset)?;
+            offset = updated_offset;
 
             // cycle and update cell
             region.constrain_equal(result_cells[i], new_limb.cell)?;
@@ -286,9 +288,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         // range v0 and v1
 
-        // TODO: overflow flag
-        range_chip.range_limb(region, &v_0, self.mul_v0_overflow())?;
-        range_chip.range_limb(region, &v_1, self.mul_v1_overflow())?;
+        let (_, offset) = range_chip.range_limb(region, &v_0, self.mul_v0_overflow(), offset)?;
+        let (_, _) = range_chip.range_limb(region, &v_1, self.mul_v1_overflow(), offset)?;
 
         let a: AssignedInteger<N> = a_running.clone();
         let b: AssignedInteger<N> = b_running.clone();
