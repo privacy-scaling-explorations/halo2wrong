@@ -1,4 +1,5 @@
-use super::{AssignedInteger, IntegerChip};
+use super::IntegerChip;
+use crate::circuit::AssignedInteger;
 use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
@@ -11,7 +12,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         a: &AssignedInteger<N>,
         b: &AssignedInteger<N>,
     ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
-        let main_gate = self.main_gate();
+        let main_gate = self.main_gate_config();
 
         let c = a.value().map(|integer_a| {
             let b_integer = b.value().unwrap();
@@ -30,9 +31,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut offset = 0;
 
         for idx in 0..NUMBER_OF_LIMBS {
-            let a_new_cell = region.assign_advice(|| "b", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+            let a_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
             let b_new_cell = region.assign_advice(|| "b", main_gate.b, offset, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
-            let c_cell = region.assign_advice(|| "b", main_gate.c, offset, || Ok(c_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+            let c_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(c_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+            let _ = region.assign_advice(|| "d", main_gate.d, offset, || Ok(N::zero()))?;
+
             c_cells.push(c_cell);
 
             region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(N::one()))?;

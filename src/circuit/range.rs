@@ -1,5 +1,5 @@
-use crate::circuit::integer::AssignedLimb;
 use crate::circuit::main_gate::MainGateConfig;
+use crate::circuit::AssignedLimb;
 use crate::rns::Decomposed;
 use crate::{BIT_LEN_LIMB_LOOKUP, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
@@ -334,8 +334,8 @@ impl<F: FieldExt> RangeChip<F> {
 mod tests {
 
     use super::{Overflow, RangeChip, RangeConfig, RangeInstructions};
-    use crate::circuit::integer::AssignedLimb;
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
+    use crate::circuit::AssignedLimb;
     use crate::rns::Limb;
     use crate::BIT_LEN_LIMB_LOOKUP;
     use halo2::arithmetic::FieldExt;

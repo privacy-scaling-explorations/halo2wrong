@@ -1,4 +1,5 @@
-use super::{AssignedInteger, IntegerChip};
+use super::IntegerChip;
+use crate::circuit::AssignedInteger;
 use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
@@ -11,7 +12,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         a: &AssignedInteger<N>,
         b: &AssignedInteger<N>,
     ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
-        let main_gate = self.main_gate();
+        let main_gate = self.main_gate_config();
 
         let c = a.value().map(|integer_a| {
             let b_integer = b.value().unwrap();

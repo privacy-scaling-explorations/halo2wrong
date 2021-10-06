@@ -73,6 +73,7 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub left_shifter_2r: Native,
     pub aux: Decomposed<Native>,
     pub negative_wrong_modulus: Decomposed<Native>,
+    pub wrong_modulus_decomposed: Decomposed<Native>,
     wrong_modulus: big_uint,
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
@@ -123,6 +124,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let wrong_modulus = modulus::<W>();
         let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
         let aux = Self::aux();
 
@@ -133,6 +135,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             left_shifter_2r,
             wrong_modulus,
             negative_wrong_modulus,
+            wrong_modulus_decomposed,
             aux,
             two_limb_mask,
             _marker_wrong: PhantomData,
@@ -228,6 +231,23 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .limbs
             .iter()
             .zip(integer_1.decomposed.limbs.iter())
+            .zip(aux.limbs.iter())
+            .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
+            .collect();
+
+        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
+
+        Integer { decomposed }
+    }
+
+    pub(crate) fn neg(&self, integer_0: &Integer<N>) -> Integer<N> {
+        let aux = self.aux.clone();
+
+        let limbs: Vec<Limb<N>> = integer_0
+            .decomposed
+            .limbs
+            .iter()
+            .zip(self.wrong_modulus_decomposed.limbs.iter())
             .zip(aux.limbs.iter())
             .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
             .collect();
@@ -430,7 +450,7 @@ impl<F: FieldExt> From<Decomposed<F>> for Limb<F> {
 
 impl<F: FieldExt> Limb<F> {
     pub fn from_fe(fe: F) -> Limb<F> {
-        big_uint::from_bytes_le(&fe.to_bytes()[..]).into()
+        Self { _value: fe }
     }
 
     pub fn fe(&self) -> F {

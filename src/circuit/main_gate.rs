@@ -1,5 +1,7 @@
+use super::{AssignedCondition, AssignedValue};
 use halo2::arithmetic::FieldExt;
-use halo2::plonk::{Advice, Column, ConstraintSystem, Fixed};
+use halo2::circuit::{Chip, Region};
+use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
 
@@ -22,6 +24,112 @@ pub struct MainGateConfig {
 pub struct MainGate<F: FieldExt> {
     pub config: MainGateConfig,
     _marker: PhantomData<F>,
+}
+
+pub trait MainGateInstructions<F: FieldExt> {
+    fn cond_swap(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedValue<F>,
+        b: &AssignedValue<F>,
+        cond: &AssignedCondition<F>,
+    ) -> Result<(AssignedValue<F>, AssignedValue<F>, AssignedCondition<F>, AssignedValue<F>), Error>;
+
+    fn bitness_check(&self, region: &mut Region<'_, F>, a: &AssignedValue<F>) -> Result<AssignedValue<F>, Error>;
+}
+
+impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
+    fn cond_swap(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedValue<F>,
+        b: &AssignedValue<F>,
+        cond: &AssignedCondition<F>,
+    ) -> Result<(AssignedValue<F>, AssignedValue<F>, AssignedCondition<F>, AssignedValue<F>), Error> {
+        let diff = a.value.map(|a| a - b.value.unwrap());
+        let res = a.value.map(|a| {
+            let b = b.value.unwrap();
+            let cond = cond._value.unwrap();
+            if cond {
+                a
+            } else {
+                b
+            }
+        });
+
+        let mut offset = 0;
+
+        let a_new_cell = region.assign_advice(|| "a", self.config.a, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
+        let b_new_cell_0 = region.assign_advice(|| "b", self.config.b, offset, || Ok(b.value.ok_or(Error::SynthesisError)?))?;
+        let _ = region.assign_advice(|| "c", self.config.c, offset, || Ok(F::zero()))?;
+        let diff_cell = region.assign_advice(|| "d", self.config.d, offset, || Ok(diff.ok_or(Error::SynthesisError)?))?;
+
+        region.assign_fixed(|| "sa", self.config.sa, offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "sb", self.config.sb, offset, || Ok(-F::one()))?;
+        region.assign_fixed(|| "sd", self.config.sd, offset, || Ok(F::one()))?;
+
+        region.assign_fixed(|| "sc", self.config.sc, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_mul", self.config.s_mul, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
+
+        region.constrain_equal(a.cell, a_new_cell)?;
+        region.constrain_equal(b.cell, b_new_cell_0)?;
+
+        offset += 1;
+
+        let diff_new_cell = region.assign_advice(|| "a", self.config.a, offset, || Ok(diff.ok_or(Error::SynthesisError)?))?;
+        let cond_new_cell = region.assign_advice(|| "b", self.config.b, offset, || Ok(cond.value().ok_or(Error::SynthesisError)?))?;
+        let b_new_cell_1 = region.assign_advice(|| "c", self.config.c, offset, || Ok(b.value.ok_or(Error::SynthesisError)?))?;
+        let res_cell = region.assign_advice(|| "d", self.config.d, offset, || Ok(res.ok_or(Error::SynthesisError)?))?;
+
+        region.assign_fixed(|| "s_mul", self.config.s_mul, offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "sc", self.config.sd, offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "sd", self.config.sd, offset, || Ok(-F::one()))?;
+
+        region.assign_fixed(|| "sa", self.config.sa, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sb", self.config.sb, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
+
+        region.constrain_equal(diff_cell, diff_new_cell)?;
+        region.constrain_equal(b_new_cell_0, b_new_cell_1)?;
+        region.constrain_equal(cond.cell, cond_new_cell)?;
+
+        let a = a.clone_with_cell(a_new_cell);
+        let b = b.clone_with_cell(b_new_cell_1);
+        let res = AssignedValue::new(res_cell, res);
+        let cond = cond.clone_with_cell(cond_new_cell);
+        Ok((a, b, cond, res))
+    }
+
+    fn bitness_check(&self, region: &mut Region<'_, F>, a: &AssignedValue<F>) -> Result<AssignedValue<F>, Error> {
+        // a*a - a == 0
+
+        let offset = 0;
+
+        let a_new_cell_0 = region.assign_advice(|| "a", self.config.a, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
+        let a_new_cell_1 = region.assign_advice(|| "b", self.config.b, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
+        let a_new_cell_2 = region.assign_advice(|| "c", self.config.c, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
+        let _ = region.assign_advice(|| "d", self.config.d, offset, || Ok(F::zero()))?;
+
+        region.assign_fixed(|| "s_mul", self.config.s_mul, offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "sc", self.config.sc, offset, || Ok(-F::one()))?;
+
+        region.assign_fixed(|| "sa", self.config.sa, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sb", self.config.sb, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd", self.config.sd, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
+
+        region.constrain_equal(a.cell, a_new_cell_0)?;
+        region.constrain_equal(a_new_cell_0, a_new_cell_1)?;
+        region.constrain_equal(a_new_cell_1, a_new_cell_2)?;
+
+        let a = a.clone_with_cell(a_new_cell_2);
+
+        Ok(a)
+    }
 }
 
 impl<F: FieldExt> MainGate<F> {

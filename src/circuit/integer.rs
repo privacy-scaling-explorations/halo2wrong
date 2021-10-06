@@ -1,10 +1,13 @@
-use crate::circuit::main_gate::MainGateConfig;
-use crate::circuit::range::{RangeChip, RangeConfig};
+use super::main_gate::MainGate;
+use super::{AssignedCondition, AssignedInteger};
+use crate::circuit::main_gate::{MainGateConfig, MainGateInstructions};
+use crate::circuit::range::{Overflow, RangeChip, RangeConfig};
+use crate::circuit::AssignedValue;
 use crate::rns::{Integer, Limb, Rns};
-use crate::{BIT_LEN_LIMB, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
-use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
+use halo2::plonk::{ConstraintSystem, Error};
 
 mod add;
 mod mul;
@@ -15,52 +18,6 @@ mod sub;
 pub struct IntegerConfig {
     range_config: RangeConfig,
     main_gate_config: MainGateConfig,
-}
-
-#[derive(Debug, Clone)]
-pub struct AssignedInteger<F: FieldExt> {
-    pub value: Option<Integer<F>>,
-    pub cells: Vec<Cell>,
-}
-
-impl<F: FieldExt> AssignedInteger<F> {
-    fn empty() -> Self {
-        Self { value: None, cells: vec![] }
-    }
-
-    pub fn value(&self) -> Option<Integer<F>> {
-        self.value.clone()
-    }
-
-    fn new(cells: Vec<Cell>, value: Option<Integer<F>>) -> Self {
-        Self { value, cells }
-    }
-
-    pub fn clone_with_cells(&self, cells: Vec<Cell>) -> Self {
-        Self {
-            value: self.value.clone(),
-            cells: cells,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AssignedLimb<F: FieldExt> {
-    pub value: Option<Limb<F>>,
-    pub cell: Cell,
-}
-
-impl<F: FieldExt> AssignedLimb<F> {
-    pub fn clone_with_cell(&self, cell: Cell) -> Self {
-        Self {
-            value: self.value.clone(),
-            cell,
-        }
-    }
-
-    fn new(cell: Cell, value: Option<Limb<F>>) -> Self {
-        AssignedLimb { value, cell }
-    }
 }
 
 pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
@@ -95,6 +52,16 @@ trait IntegerInstructions<F: FieldExt> {
     fn assign_input(&self, region: &mut Region<'_, F>, integer: Option<Integer<F>>) -> Result<AssignedInteger<F>, Error>;
 
     fn equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
+
+    fn cond_swap(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedInteger<F>,
+        b: &AssignedInteger<F>,
+        cond: &AssignedCondition<F>,
+    ) -> Result<(AssignedInteger<F>, AssignedInteger<F>, AssignedCondition<F>, AssignedInteger<F>), Error>;
+
+    // fn in_field(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>) -> Result<AssignedInteger<F>, Error>;
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
@@ -130,7 +97,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn assign_input(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>) -> Result<AssignedInteger<N>, Error> {
-        let main_gate = self.main_gate();
+        let main_gate = self.main_gate_config();
 
         let u_0 = integer.as_ref().map(|e| e.get_limb(0));
         let u_1 = integer.as_ref().map(|e| e.get_limb(1));
@@ -157,7 +124,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
 
     fn equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
         // TODO: equality can be constained only using permutation
-        let main_gate = self.main_gate();
+        let main_gate = self.main_gate_config();
 
         let mut a_updated_cells: Vec<Cell> = a.cells.clone();
         let mut b_updated_cells: Vec<Cell> = b.cells.clone();
@@ -193,6 +160,94 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         let b = b.clone_with_cells(b_updated_cells);
         Ok((a, b))
     }
+
+    fn cond_swap(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+        cond: &AssignedCondition<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedCondition<N>, AssignedInteger<N>), Error> {
+        let main_gate = self.main_gate();
+
+        let a_: Vec<AssignedValue<N>> = a.into();
+        let b_: Vec<AssignedValue<N>> = b.into();
+
+        let (a_new_0, b_new_0, cond_new, res_0) = main_gate.cond_swap(region, &a_[0], &b_[0], cond)?;
+        let (a_new_1, b_new_1, cond_new, res_1) = main_gate.cond_swap(region, &a_[1], &b_[1], &cond_new)?;
+        let (a_new_2, b_new_2, cond_new, res_2) = main_gate.cond_swap(region, &a_[2], &b_[2], &cond_new)?;
+        let (a_new_3, b_new_3, cond_ret, res_3) = main_gate.cond_swap(region, &a_[3], &b_[3], &cond_new)?;
+
+        let a_new = vec![a_new_0, a_new_1, a_new_2, a_new_3];
+        let a_new_cells: Vec<Cell> = a_new.iter().map(|a_new_i| a_new_i.cell).collect();
+
+        let b_new = vec![b_new_0, b_new_1, b_new_2, b_new_3];
+        let b_new_cells: Vec<Cell> = b_new.iter().map(|b_new_i| b_new_i.cell).collect();
+
+        let res = vec![res_0, res_1, res_2, res_3];
+        let res_cells: Vec<Cell> = res.iter().map(|res| res.cell).collect();
+        let res: Option<Vec<Limb<N>>> = res[0].value.map(|_| res.iter().map(|res_i| Limb::from_fe(res_i.value.unwrap())).collect());
+        let res = res.map(|res| self.rns.new_from_limbs(res));
+
+        let a = a.clone_with_cells(a_new_cells);
+        let b = b.clone_with_cells(b_new_cells);
+        let r = AssignedInteger::new(res_cells, res);
+
+        Ok((a, b, cond_ret, r))
+    }
+
+    // fn in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    //     let main_gate = self.main_gate_config();
+    //     let negated_integer = input.value().map(|a| self.rns.neg(&a));
+
+    //     let mut input_updated_cells: Vec<Cell> = input.cells.clone();
+    //     let mut negated_integer_cells: Vec<Cell> = Vec::new();
+
+    //     let input_integer: Option<Vec<N>> = input.value.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
+    //     let negated_integer: Option<Vec<N>> = negated_integer.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
+    //     let wrong_modulus: Vec<N> = self.rns.wrong_modulus_decomposed.clone().limbs.iter().map(|limb| limb.fe()).collect();
+
+    //     let mut offset = 0;
+
+    //     for idx in 0..NUMBER_OF_LIMBS {
+    //         let input_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(input_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+    //         let negated_integer_cell = region.assign_advice(|| "b", main_gate.a, offset, || Ok(negated_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
+    //         let _ = region.assign_advice(|| "c", main_gate.c, offset, || Ok(N::zero()))?;
+    //         let _ = region.assign_advice(|| "d", main_gate.d, offset, || Ok(N::zero()))?;
+
+    //         region.assign_fixed(|| "b", main_gate.sb, offset, || Ok(-N::one()))?;
+    //         region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(-N::one()))?;
+    //         region.assign_fixed(|| "constant", main_gate.s_constant, offset, || Ok(wrong_modulus[idx]))?;
+
+    //         region.assign_fixed(|| "c", main_gate.sc, offset, || Ok(N::zero()))?;
+    //         region.assign_fixed(|| "d", main_gate.sd, offset, || Ok(N::zero()))?;
+    //         region.assign_fixed(|| "d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
+    //         region.assign_fixed(|| "a * b", main_gate.s_mul, offset, || Ok(N::zero()))?;
+
+    //         region.constrain_equal(input.cells[idx], input_new_cell)?;
+
+    //         negated_integer_cells.push(negated_integer_cell);
+    //         input_updated_cells[idx] = input_new_cell;
+    //         offset += 1;
+    //     }
+
+    //     let range_chip = self.range_chip();
+
+    //     for (i, cell) in negated_integer_cells.clone().iter().enumerate() {
+    //         let value = result.as_ref().map(|result| Limb::<N>::from_fe(result[i]));
+    //         let limb = AssignedLimb::new(cell.clone(), value);
+    //         let (new_limb, updated_offset) = range_chip.range_limb(region, &limb, Overflow::NoOverflow, offset)?;
+    //         offset = updated_offset;
+
+    //         // cycle and update cell
+    //         region.constrain_equal(result_cells[i], new_limb.cell)?;
+    //         result_cells[i] = new_limb.cell;
+    //     }
+
+    //     let input = input.clone_with_cells(input_updated_cells);
+
+    //     unimplemented!();
+    // }
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
@@ -211,21 +266,23 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         RangeChip::<N>::new(self.config.range_config.clone())
     }
 
-    fn main_gate(&self) -> MainGateConfig {
+    fn main_gate_config(&self) -> MainGateConfig {
         self.config.main_gate_config.clone()
+    }
+
+    fn main_gate(&self) -> MainGate<N> {
+        MainGate::<N>::new(self.config.main_gate_config.clone())
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use std::ops::Mul;
-
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeInstructions};
     use crate::rns::{Integer, Rns};
-    use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB};
+    use crate::BIT_LEN_LIMB;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;

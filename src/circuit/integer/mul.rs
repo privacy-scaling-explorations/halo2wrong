@@ -1,6 +1,6 @@
 use super::IntegerChip;
-use crate::circuit::integer::{AssignedInteger, AssignedLimb};
 use crate::circuit::range::{Overflow, RangeInstructions};
+use crate::circuit::{AssignedInteger, AssignedLimb};
 use crate::rns::{Limb, Quotient};
 use crate::NUMBER_OF_LIMBS;
 
@@ -23,7 +23,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         a: &AssignedInteger<N>,
         b: &AssignedInteger<N>,
     ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
-        let main_gate = self.main_gate();
+        let main_gate = self.main_gate_config();
 
         let reduction_result = a.value().map(|integer_a| {
             let b_integer = b.value().unwrap();
