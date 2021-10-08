@@ -1,5 +1,5 @@
 use crate::circuit::main_gate::MainGateConfig;
-use crate::circuit::AssignedLimb;
+use crate::circuit::{AssignedInteger, AssignedLimb};
 use crate::rns::Decomposed;
 use crate::{BIT_LEN_LIMB_LOOKUP, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
@@ -78,7 +78,9 @@ impl<F: FieldExt> RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow, offset: usize) -> Result<(AssignedLimb<F>, usize), Error>;
+    fn range_integer(&self, region: &mut Region<'_, F>, limb: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow, offset: &mut usize) -> Result<AssignedLimb<F>, Error>;
+
     #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
     #[cfg(not(feature = "no_lookup"))]
@@ -86,13 +88,23 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow, offset: usize) -> Result<(AssignedLimb<F>, usize), Error> {
+    fn range_integer(&self, region: &mut Region<'_, F>, integer: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error> {
+        let integer_cycling = &mut integer.clone();
+        for (i, limb) in integer.limbs().iter().enumerate() {
+            let limb = self.range_limb(region, &limb, Overflow::NoOverflow, offset)?;
+            region.constrain_equal(integer_cycling.cells[i], limb.cell)?;
+            integer_cycling.cells[i] = limb.cell;
+        }
+        Ok(integer_cycling.clone())
+    }
+
+    fn range_limb(&self, region: &mut Region<'_, F>, limb: &AssignedLimb<F>, overflow: Overflow, offset: &mut usize) -> Result<AssignedLimb<F>, Error> {
         let number_of_limbs = match overflow {
             Overflow::NoOverflow => NUMBER_OF_LOOKUP_LIMBS,
             _ => NUMBER_OF_LOOKUP_LIMBS + 1,
         };
 
-        let offset_limb = offset;
+        let offset_limb = *offset;
         let offset_overflow = offset_limb + 1;
 
         let value = limb.value.as_ref().map(|value| value);
@@ -101,7 +113,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         let get_limb = |idx: usize| -> Result<F, Error> {
             // let decomposed = decomposed.clone();
             let decomposed = decomposed.as_ref().ok_or(Error::SynthesisError)?;
-            Ok(decomposed.limbs[idx].fe())
+            Ok(decomposed.limb(idx))
         };
 
         let get_value = || -> Result<F, Error> {
@@ -114,7 +126,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
             Ok(match overflow {
                 Overflow::NoOverflow => F::zero(),
-                _ => decomposed.limbs[number_of_limbs - 1].fe(),
+                _ => decomposed.limb(number_of_limbs - 1),
             })
         };
 
@@ -181,7 +193,8 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
         region.constrain_equal(cur_cell, prev_cell)?;
 
-        Ok((limb.clone_with_cell(cur_cell), offset + 2))
+        *offset = *offset + 2;
+        Ok(limb.clone_with_cell(cur_cell))
     }
 
     #[cfg(not(feature = "no_lookup"))]
@@ -419,7 +432,7 @@ mod tests {
             layouter.assign_region(
                 || "region 1",
                 |mut region| {
-                    range_chip.range_limb(&mut region, limb, Overflow::NoOverflow, 0)?;
+                    range_chip.range_limb(&mut region, limb, Overflow::NoOverflow, &mut 0)?;
                     Ok(())
                 },
             )?;

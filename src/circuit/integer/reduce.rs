@@ -1,7 +1,7 @@
-use super::IntegerChip;
+use super::{IntegerChip, IntegerInstructions};
 use crate::circuit::range::{Overflow, RangeInstructions};
 use crate::circuit::{AssignedInteger, AssignedLimb};
-use crate::rns::{Limb, Quotient};
+use crate::rns::{Common, Integer, Limb, Quotient};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::Error;
@@ -17,13 +17,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
     pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
         let main_gate = self.main_gate_config();
+        let mut offset = 0;
+        let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs();
 
         let reduction_result = a.value().map(|integer_a| self.rns.reduce(&integer_a));
-        let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs.iter().map(|limb| limb.fe()).collect();
 
-        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
-
-        let result: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.result.limbs().iter().map(|limb| limb.fe()).collect());
         let quotient: Option<N> = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
                 Quotient::Short(quotient) => quotient,
@@ -31,6 +29,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             };
             quotient.fe()
         });
+
+        let result: Option<Integer<N>> = reduction_result.as_ref().map(|u| u.result.clone());
+        let result = self.assign(region, result, &mut offset)?;
+
+        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|integer| integer.limbs());
+        let result_integer: Option<Vec<N>> = result.value.as_ref().map(|integer| integer.limbs());
         let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.iter().map(|t| t.fe()).collect());
 
         let u_0 = reduction_result.as_ref().map(|u| u.u_0.fe());
@@ -45,8 +49,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_2 | q | t_2 | - |
         // | a_3 | q | t_3 | - |
 
-        let mut offset = 0;
-        let a_running = &mut a.clone();
+        let a_cycling = &mut a.clone();
+        let r_cycling = &mut result.clone();
 
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[0]);
 
@@ -66,8 +70,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_running.cells[0], a_0_new_cell)?;
-        a_running.cells[0] = a_0_new_cell;
+        region.constrain_equal(a_cycling.cells[0], a_0_new_cell)?;
+        a_cycling.cells[0] = a_0_new_cell;
 
         offset += 1;
 
@@ -89,8 +93,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_running.cells[1], a_1_new_cell)?;
-        a_running.cells[1] = a_1_new_cell;
+        region.constrain_equal(a_cycling.cells[1], a_1_new_cell)?;
+        a_cycling.cells[1] = a_1_new_cell;
         region.constrain_equal(q_cell, q_new_cell)?;
         q_cell = q_new_cell;
 
@@ -114,8 +118,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_running.cells[2], a_2_new_cell)?;
-        a_running.cells[2] = a_2_new_cell;
+        region.constrain_equal(a_cycling.cells[2], a_2_new_cell)?;
+        a_cycling.cells[2] = a_2_new_cell;
         region.constrain_equal(q_cell, q_new_cell)?;
         q_cell = q_new_cell;
 
@@ -139,8 +143,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_running.cells[3], a_3_new_cell)?;
-        a_running.cells[3] = a_3_new_cell;
+        region.constrain_equal(a_cycling.cells[3], a_3_new_cell)?;
+        a_cycling.cells[3] = a_3_new_cell;
         region.constrain_equal(q_cell, q_new_cell)?;
         q_cell = q_new_cell;
 
@@ -154,7 +158,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | t_0 | t_1 | r_0 | r_1   |
         // | -   | -   | v_0 | u_0   |
 
-        let mut result_cells: Vec<Cell> = vec![];
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
 
@@ -171,8 +174,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[1]),
         )?;
 
-        let r_0_cell = region.assign_advice(|| "r_0", main_gate.c, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[0]))?;
-        let r_1_cell = region.assign_advice(|| "r_1", main_gate.d, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[1]))?;
+        let r_0_new_cell = region.assign_advice(|| "r_0", main_gate.c, offset, || Ok(result_integer.as_ref().ok_or(Error::SynthesisError)?[0]))?;
+        let r_1_new_cell = region.assign_advice(|| "r_1", main_gate.d, offset, || Ok(result_integer.as_ref().ok_or(Error::SynthesisError)?[1]))?;
 
         region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
         region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
@@ -185,13 +188,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         region.constrain_equal(t_0_cell, t_0_new_cell)?;
         region.constrain_equal(t_1_cell, t_1_new_cell)?;
-
-        result_cells.push(r_0_cell);
-        result_cells.push(r_1_cell);
+        region.constrain_equal(r_cycling.cells[0], r_0_new_cell)?;
+        region.constrain_equal(r_cycling.cells[1], r_1_new_cell)?;
+        r_cycling.cells[0] = r_0_new_cell;
+        r_cycling.cells[1] = r_1_new_cell;
 
         offset += 1;
 
-        let u_0_cell = region.assign_advice(|| "u_0", main_gate.d, offset, || u_0.ok_or(Error::SynthesisError))?;
+        let _ = region.assign_advice(|| "u_0", main_gate.d, offset, || u_0.ok_or(Error::SynthesisError))?;
         let v_0_cell = region.assign_advice(|| "v_0", main_gate.c, offset, || v_0.ok_or(Error::SynthesisError))?;
 
         region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(left_shifter_2r))?;
@@ -226,8 +230,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[3]),
         )?;
 
-        let r_2_cell = region.assign_advice(|| "r_2", main_gate.c, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[2]))?;
-        let r_3_cell = region.assign_advice(|| "r_3", main_gate.d, offset, || Ok(result.as_ref().ok_or(Error::SynthesisError)?[3]))?;
+        let r_2_new_cell = region.assign_advice(|| "r_2", main_gate.c, offset, || Ok(result_integer.as_ref().ok_or(Error::SynthesisError)?[2]))?;
+        let r_3_new_cell = region.assign_advice(|| "r_3", main_gate.d, offset, || Ok(result_integer.as_ref().ok_or(Error::SynthesisError)?[3]))?;
 
         region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
         region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
@@ -240,9 +244,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         region.constrain_equal(t_2_cell, t_2_new_cell)?;
         region.constrain_equal(t_3_cell, t_3_new_cell)?;
-
-        result_cells.push(r_2_cell);
-        result_cells.push(r_3_cell);
+        region.constrain_equal(r_cycling.cells[2], r_2_new_cell)?;
+        region.constrain_equal(r_cycling.cells[3], r_3_new_cell)?;
+        r_cycling.cells[2] = r_2_new_cell;
+        r_cycling.cells[3] = r_3_new_cell;
 
         offset += 1;
 
@@ -267,33 +272,42 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let v_1 = &mut AssignedLimb::<N>::new(v_1_cell, v_1.map(|e| Limb::<N>::from_fe(e)));
 
         // ranges
+
         let range_chip = self.range_chip();
 
-        // quotient
         let quotient = &mut AssignedLimb::<N>::new(q_cell, quotient.map(|e| Limb::<N>::from_fe(e)));
-        let (_, updated_offset) = range_chip.range_limb(region, &quotient, Overflow::NoOverflow, offset)?;
-        offset = updated_offset;
+        range_chip.range_limb(region, &quotient, Overflow::NoOverflow, &mut offset)?;
+        range_chip.range_integer(region, &result, &mut offset)?;
+        let _ = range_chip.range_limb(region, &v_0, self.red_v0_overflow(), &mut offset)?;
+        let _ = range_chip.range_limb(region, &v_1, self.red_v1_overflow(), &mut offset)?;
 
-        // range result
-        for (i, cell) in result_cells.clone().iter().enumerate() {
-            let value = result.as_ref().map(|result| Limb::<N>::from_fe(result[i]));
-            let limb = AssignedLimb::new(cell.clone(), value);
-            let (new_limb, updated_offset) = range_chip.range_limb(region, &limb, Overflow::NoOverflow, offset)?;
-            offset = updated_offset;
+        // native red
 
-            // cycle and update cell
-            region.constrain_equal(result_cells[i], new_limb.cell)?;
-            result_cells[i] = new_limb.cell;
-        }
+        let a_native: Option<N> = a_cycling.value.as_ref().map(|e| e.native());
+        let r_native: Option<N> = r_cycling.value.as_ref().map(|e| e.native());
+        let q_native: Option<N> = quotient.value.as_ref().map(|e| e.native());
 
-        let (_, offset) = range_chip.range_limb(region, &v_0, self.red_v0_overflow(), offset)?;
-        let (_, _) = range_chip.range_limb(region, &v_1, self.red_v1_overflow(), offset)?;
+        let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(a_native.ok_or(Error::SynthesisError)?))?;
+        let _ = region.assign_advice(|| "b", main_gate.b, offset, || Ok(N::zero()))?;
+        let r_native_new_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(q_native.ok_or(Error::SynthesisError)?))?;
+        let q_native_new_cell = region.assign_advice(|| "d", main_gate.d, offset, || Ok(r_native.ok_or(Error::SynthesisError)?))?;
 
-        let a: AssignedInteger<N> = a_running.clone();
+        region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(-N::one()))?;
+        region.assign_fixed(|| "c", main_gate.sc, offset, || Ok(self.rns.wrong_modulus_in_native_modulus))?;
+        region.assign_fixed(|| "d", main_gate.sd, offset, || Ok(N::one()))?;
 
-        let result_integer = result.map(|limbs| self.rns.new_from_limbs(limbs.iter().map(|limb| Limb::<N>::from_fe(*limb)).collect()));
-        let result = AssignedInteger::<N>::new(result_cells, result_integer);
+        region.assign_fixed(|| "a * b", main_gate.s_mul, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "b", main_gate.sb, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
-        Ok((a, result))
+        region.constrain_equal(a_cycling.native_value_cell, a_native_new_cell)?;
+        region.constrain_equal(quotient.cell, q_native_new_cell)?;
+        region.constrain_equal(r_cycling.native_value_cell, r_native_new_cell)?;
+
+        let a: AssignedInteger<N> = a_cycling.clone();
+        let r: AssignedInteger<N> = r_cycling.clone();
+
+        Ok((a, r))
     }
 }

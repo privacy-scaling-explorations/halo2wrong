@@ -1,5 +1,5 @@
 use crate::{
-    rns::{Integer, Limb},
+    rns::{Common, Integer, Limb},
     NUMBER_OF_LIMBS,
 };
 use halo2::{arithmetic::FieldExt, circuit::Cell};
@@ -34,6 +34,7 @@ impl<F: FieldExt> AssignedCondition<F> {
 pub struct AssignedInteger<F: FieldExt> {
     pub value: Option<Integer<F>>,
     pub cells: Vec<Cell>,
+    pub native_value_cell: Cell,
 }
 
 impl<F: FieldExt> AssignedInteger<F> {
@@ -41,14 +42,36 @@ impl<F: FieldExt> AssignedInteger<F> {
         self.value.clone()
     }
 
-    fn new(cells: Vec<Cell>, value: Option<Integer<F>>) -> Self {
-        Self { value, cells }
+    fn new(cells: Vec<Cell>, value: Option<Integer<F>>, native_value_cell: Cell) -> Self {
+        Self {
+            value,
+            cells,
+            native_value_cell,
+        }
     }
 
-    pub fn clone_with_cells(&self, cells: Vec<Cell>) -> Self {
+    pub fn clone_with_cells(&self, cells: Vec<Cell>, native_value_cell: Cell) -> Self {
         Self {
             value: self.value.clone(),
-            cells: cells,
+            cells,
+            native_value_cell,
+        }
+    }
+
+    pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
+        let cell = self.cells[idx];
+        let value = self.value.as_ref().map(|value| Limb::<F>::from_fe(value.limb(idx)));
+        AssignedLimb { cell, value }
+    }
+
+    pub fn limbs(&self) -> Vec<AssignedLimb<F>> {
+        (0..NUMBER_OF_LIMBS).map(|i| self.limb(i)).collect()
+    }
+
+    pub fn native(&self) -> AssignedValue<F> {
+        AssignedValue {
+            value: self.value.as_ref().map(|e| e.native()),
+            cell: self.native_value_cell,
         }
     }
 }
@@ -103,7 +126,7 @@ impl<F: FieldExt> From<&AssignedInteger<F>> for Vec<AssignedValue<F>> {
 
         let res = (0..NUMBER_OF_LIMBS)
             .map(|i| AssignedValue {
-                value: limbs.as_ref().map(|limbs| limbs[i].fe()),
+                value: limbs.as_ref().map(|limbs| limbs[i]),
                 cell: cells[i],
             })
             .collect();

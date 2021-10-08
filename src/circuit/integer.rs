@@ -1,10 +1,10 @@
 use super::main_gate::MainGate;
 use super::{AssignedCondition, AssignedInteger};
 use crate::circuit::main_gate::{MainGateConfig, MainGateInstructions};
-use crate::circuit::range::{Overflow, RangeChip, RangeConfig};
+use crate::circuit::range::{RangeChip, RangeConfig};
 use crate::circuit::AssignedValue;
-use crate::rns::{Integer, Limb, Rns};
-use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::rns::{Common, Integer, Limb, Rns};
+use crate::NUMBER_OF_LOOKUP_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{ConstraintSystem, Error};
@@ -49,7 +49,7 @@ trait IntegerInstructions<F: FieldExt> {
 
     fn reduce(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
 
-    fn assign_input(&self, region: &mut Region<'_, F>, integer: Option<Integer<F>>) -> Result<AssignedInteger<F>, Error>;
+    fn assign(&self, region: &mut Region<'_, F>, integer: Option<Integer<F>>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
 
     fn equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
 
@@ -96,41 +96,60 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._sub(region, a, b)
     }
 
-    fn assign_input(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>) -> Result<AssignedInteger<N>, Error> {
+    fn assign(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate_config();
 
-        let u_0 = integer.as_ref().map(|e| e.get_limb(0));
-        let u_1 = integer.as_ref().map(|e| e.get_limb(1));
-        let u_2 = integer.as_ref().map(|e| e.get_limb(2));
-        let u_3 = integer.as_ref().map(|e| e.get_limb(3));
-        let cell_0 = region.assign_advice(|| "a", main_gate.a, 0, || Ok(u_0.ok_or(Error::SynthesisError)?))?;
-        let cell_1 = region.assign_advice(|| "b", main_gate.b, 0, || Ok(u_1.ok_or(Error::SynthesisError)?))?;
-        let cell_2 = region.assign_advice(|| "c", main_gate.c, 0, || Ok(u_2.ok_or(Error::SynthesisError)?))?;
-        let cell_3 = region.assign_advice(|| "d", main_gate.d, 0, || Ok(u_3.ok_or(Error::SynthesisError)?))?;
+        let u_0 = integer.as_ref().map(|e| e.limb(0));
+        let u_1 = integer.as_ref().map(|e| e.limb(1));
+        let u_2 = integer.as_ref().map(|e| e.limb(2));
+        let u_3 = integer.as_ref().map(|e| e.limb(3));
 
-        region.assign_fixed(|| "sa", main_gate.sa, 0, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sb", main_gate.sb, 0, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sc", main_gate.sc, 0, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sd", main_gate.sd, 0, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_mul", main_gate.s_mul, 0, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sd_next", main_gate.sd_next, 0, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, 0, || Ok(N::zero()))?;
+        let cell_0 = region.assign_advice(|| "a", main_gate.a, *offset, || Ok(u_0.ok_or(Error::SynthesisError)?))?;
+        let cell_1 = region.assign_advice(|| "b", main_gate.b, *offset, || Ok(u_1.ok_or(Error::SynthesisError)?))?;
+        let cell_2 = region.assign_advice(|| "c", main_gate.c, *offset, || Ok(u_2.ok_or(Error::SynthesisError)?))?;
+        let cell_3 = region.assign_advice(|| "d", main_gate.d, *offset, || Ok(u_3.ok_or(Error::SynthesisError)?))?;
+
+        region.assign_fixed(|| "sa", main_gate.sa, *offset, || Ok(N::one()))?;
+        region.assign_fixed(|| "sb", main_gate.sb, *offset, || Ok(self.rns.left_shifter_r))?;
+        region.assign_fixed(|| "sc", main_gate.sc, *offset, || Ok(self.rns.left_shifter_2r))?;
+        region.assign_fixed(|| "sd", main_gate.sd, *offset, || Ok(self.rns.left_shifter_3r))?;
+        region.assign_fixed(|| "sd_next", main_gate.sd_next, *offset, || Ok(-N::one()))?;
+
+        region.assign_fixed(|| "s_mul", main_gate.s_mul, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_constant", main_gate.s_constant, *offset, || Ok(N::zero()))?;
+
+        *offset = *offset + 1;
+
+        let native_value = integer.as_ref().map(|integer| integer.native());
+
+        let _ = region.assign_advice(|| "a", main_gate.a, *offset, || Ok(N::zero()))?;
+        let _ = region.assign_advice(|| "b", main_gate.b, *offset, || Ok(N::zero()))?;
+        let _ = region.assign_advice(|| "c", main_gate.c, *offset, || Ok(N::zero()))?;
+        let native_value_cell = region.assign_advice(|| "d", main_gate.d, *offset, || Ok(native_value.ok_or(Error::SynthesisError)?))?;
+
+        region.assign_fixed(|| "sa", main_gate.sa, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "sb", main_gate.sb, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "sc", main_gate.sc, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "sd", main_gate.sd, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "sd_next", main_gate.sd_next, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_mul", main_gate.s_mul, *offset, || Ok(N::zero()))?;
+        region.assign_fixed(|| "s_constant", main_gate.s_constant, *offset, || Ok(N::zero()))?;
 
         let cells = vec![cell_0, cell_1, cell_2, cell_3];
-        let assigned_integer = AssignedInteger::<_>::new(cells, integer);
+        let assigned_integer = AssignedInteger::<_>::new(cells, integer, native_value_cell);
 
         Ok(assigned_integer)
     }
 
     fn equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
-        // TODO: equality can be constained only using permutation
+        // TODO: equality can be constained only using permutation?
         let main_gate = self.main_gate_config();
 
         let mut a_updated_cells: Vec<Cell> = a.cells.clone();
         let mut b_updated_cells: Vec<Cell> = b.cells.clone();
 
-        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
-        let b_integer: Option<Vec<N>> = b.value.as_ref().map(|integer| integer.limbs().iter().map(|limb| limb.fe()).collect());
+        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|e| e.limbs());
+        let b_integer: Option<Vec<N>> = b.value.as_ref().map(|e| e.limbs());
 
         let mut offset = 0;
 
@@ -156,8 +175,8 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
             offset += 1;
         }
 
-        let a = a.clone_with_cells(a_updated_cells);
-        let b = b.clone_with_cells(b_updated_cells);
+        let a = a.clone_with_cells(a_updated_cells, a.native_value_cell);
+        let b = b.clone_with_cells(b_updated_cells, b.native_value_cell);
         Ok((a, b))
     }
 
@@ -172,11 +191,14 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
 
         let a_: Vec<AssignedValue<N>> = a.into();
         let b_: Vec<AssignedValue<N>> = b.into();
+        let native_value_a = a.native();
+        let native_value_b = a.native();
 
         let (a_new_0, b_new_0, cond_new, res_0) = main_gate.cond_swap(region, &a_[0], &b_[0], cond)?;
         let (a_new_1, b_new_1, cond_new, res_1) = main_gate.cond_swap(region, &a_[1], &b_[1], &cond_new)?;
         let (a_new_2, b_new_2, cond_new, res_2) = main_gate.cond_swap(region, &a_[2], &b_[2], &cond_new)?;
-        let (a_new_3, b_new_3, cond_ret, res_3) = main_gate.cond_swap(region, &a_[3], &b_[3], &cond_new)?;
+        let (a_new_3, b_new_3, cond_new, res_3) = main_gate.cond_swap(region, &a_[3], &b_[3], &cond_new)?;
+        let (_, _, cond_ret, res_native_value) = main_gate.cond_swap(region, &native_value_a, &native_value_b, &cond_new)?;
 
         let a_new = vec![a_new_0, a_new_1, a_new_2, a_new_3];
         let a_new_cells: Vec<Cell> = a_new.iter().map(|a_new_i| a_new_i.cell).collect();
@@ -189,9 +211,9 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         let res: Option<Vec<Limb<N>>> = res[0].value.map(|_| res.iter().map(|res_i| Limb::from_fe(res_i.value.unwrap())).collect());
         let res = res.map(|res| self.rns.new_from_limbs(res));
 
-        let a = a.clone_with_cells(a_new_cells);
-        let b = b.clone_with_cells(b_new_cells);
-        let r = AssignedInteger::new(res_cells, res);
+        let a = a.clone_with_cells(a_new_cells, a.native_value_cell);
+        let b = b.clone_with_cells(b_new_cells, b.native_value_cell);
+        let r = AssignedInteger::new(res_cells, res, res_native_value.cell);
 
         Ok((a, b, cond_ret, r))
     }
@@ -255,7 +277,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         IntegerChip { config, rns }
     }
 
-    pub fn configure(meta: &mut ConstraintSystem<N>, range_config: &RangeConfig, main_gate_config: &MainGateConfig) -> IntegerConfig {
+    pub fn configure(_: &mut ConstraintSystem<N>, range_config: &RangeConfig, main_gate_config: &MainGateConfig) -> IntegerConfig {
         IntegerConfig {
             range_config: range_config.clone(),
             main_gate_config: main_gate_config.clone(),
@@ -329,8 +351,8 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_0 = layouter.assign_region(|| "region 0", |mut region| integer_chip.assign_input(&mut region, self.integer_0.clone()))?;
-            let integer_1 = layouter.assign_region(|| "region 1", |mut region| integer_chip.assign_input(&mut region, self.integer_1.clone()))?;
+            let integer_0 = layouter.assign_region(|| "region 0", |mut region| integer_chip.assign(&mut region, self.integer_0.clone(), &mut 0))?;
+            let integer_1 = layouter.assign_region(|| "region 1", |mut region| integer_chip.assign(&mut region, self.integer_1.clone(), &mut 0))?;
             let (integer_0, integer_1) = layouter.assign_region(|| "region 2", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
             let (integer_0, integer_1) = layouter.assign_region(|| "region 3", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
             let (integer_0, integer_1) = layouter.assign_region(|| "region 4", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
@@ -374,8 +396,8 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "no_lookup")]
-        println!("{:#?}", prover);
+        // #[cfg(feature = "no_lookup")]
+        // println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));
 
@@ -426,10 +448,12 @@ mod tests {
 
             let integer_overflows_0 = &layouter.assign_region(
                 || "region 0",
-                |mut region| integer_chip.assign_input(&mut region, self.integer_overflows.clone()),
+                |mut region| integer_chip.assign(&mut region, self.integer_overflows.clone(), &mut 0),
             )?;
-            let integer_reduced_0 =
-                &layouter.assign_region(|| "region 1", |mut region| integer_chip.assign_input(&mut region, self.integer_reduced.clone()))?;
+            let integer_reduced_0 = &layouter.assign_region(
+                || "region 1",
+                |mut region| integer_chip.assign(&mut region, self.integer_reduced.clone(), &mut 0),
+            )?;
             let (integer_overflows_1, integer_reduced_1) =
                 &layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, &integer_overflows_0))?;
 
@@ -525,9 +549,9 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_a_0 = &layouter.assign_region(|| "region 0", |mut region| integer_chip.assign_input(&mut region, self.integer_a.clone()))?;
-            let integer_b_0 = &layouter.assign_region(|| "region 1", |mut region| integer_chip.assign_input(&mut region, self.integer_b.clone()))?;
-            let integer_c_0 = &layouter.assign_region(|| "region 2", |mut region| integer_chip.assign_input(&mut region, self.integer_c.clone()))?;
+            let integer_a_0 = &layouter.assign_region(|| "region 0", |mut region| integer_chip.assign(&mut region, self.integer_a.clone(), &mut 0))?;
+            let integer_b_0 = &layouter.assign_region(|| "region 1", |mut region| integer_chip.assign(&mut region, self.integer_b.clone(), &mut 0))?;
+            let integer_c_0 = &layouter.assign_region(|| "region 2", |mut region| integer_chip.assign(&mut region, self.integer_c.clone(), &mut 0))?;
 
             let (integer_a_1, integer_b_1, integer_c_1) =
                 &layouter.assign_region(|| "region 3", |mut region| integer_chip.mul(&mut region, &integer_a_0, &integer_b_0))?;
