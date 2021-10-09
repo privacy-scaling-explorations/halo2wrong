@@ -10,6 +10,7 @@ use halo2::circuit::{Cell, Region};
 use halo2::plonk::{ConstraintSystem, Error};
 
 mod add;
+mod assert_zero;
 mod mul;
 mod reduce;
 mod sub;
@@ -51,7 +52,19 @@ trait IntegerInstructions<F: FieldExt> {
 
     fn assign(&self, region: &mut Region<'_, F>, integer: Option<Integer<F>>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
 
-    fn equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
+    fn equal_strict(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedInteger<F>,
+        b: &AssignedInteger<F>,
+    ) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
+
+    fn assert_equal(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedInteger<F>,
+        b: &AssignedInteger<F>,
+    ) -> Result<(AssignedInteger<F>, AssignedInteger<F>), Error>;
 
     fn cond_swap(
         &self,
@@ -143,8 +156,13 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         Ok(assigned_integer)
     }
 
-    fn equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
-        // TODO: equality can be constained only using permutation?
+    fn equal_strict(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
+        // TODO: strict equality can be constained only using permutation?
         let main_gate = self.main_gate_config();
 
         let mut a_updated_cells: Vec<Cell> = a.cells.clone();
@@ -179,6 +197,17 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
 
         let a = a.clone_with_cells(a_updated_cells, a.native_value_cell);
         let b = b.clone_with_cells(b_updated_cells, b.native_value_cell);
+        Ok((a, b))
+    }
+
+    fn assert_equal(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>), Error> {
+        let (a, b, c) = self._sub(region, a, b)?;
+        let _ = self._assert_zero(region, &c)?;
         Ok((a, b))
     }
 
@@ -355,11 +384,11 @@ mod tests {
 
             let integer_0 = layouter.assign_region(|| "region 0", |mut region| integer_chip.assign(&mut region, self.integer_0.clone(), &mut 0))?;
             let integer_1 = layouter.assign_region(|| "region 1", |mut region| integer_chip.assign(&mut region, self.integer_1.clone(), &mut 0))?;
-            let (integer_0, integer_1) = layouter.assign_region(|| "region 2", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
-            let (integer_0, integer_1) = layouter.assign_region(|| "region 3", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
-            let (integer_0, integer_1) = layouter.assign_region(|| "region 4", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
-            let (integer_0, integer_1) = layouter.assign_region(|| "region 5", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
-            let (_, _) = layouter.assign_region(|| "region 6", |mut region| integer_chip.equal(&mut region, &integer_0, &integer_1))?;
+            let (integer_0, integer_1) = layouter.assign_region(|| "region 2", |mut region| integer_chip.equal_strict(&mut region, &integer_0, &integer_1))?;
+            let (integer_0, integer_1) = layouter.assign_region(|| "region 3", |mut region| integer_chip.equal_strict(&mut region, &integer_0, &integer_1))?;
+            let (integer_0, integer_1) = layouter.assign_region(|| "region 4", |mut region| integer_chip.equal_strict(&mut region, &integer_0, &integer_1))?;
+            let (integer_0, integer_1) = layouter.assign_region(|| "region 5", |mut region| integer_chip.equal_strict(&mut region, &integer_0, &integer_1))?;
+            let (_, _) = layouter.assign_region(|| "region 6", |mut region| integer_chip.equal_strict(&mut region, &integer_0, &integer_1))?;
 
             // TODO: think we should move table loading somewhere else?
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
@@ -459,15 +488,15 @@ mod tests {
             let (integer_overflows_1, integer_reduced_1) =
                 &layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, &integer_overflows_0))?;
 
-            // let (_, _) = layouter.assign_region(
-            //     || "region 3",
-            //     |mut region| integer_chip.equal(&mut region, &integer_reduced_0, &integer_reduced_1),
-            // )?;
+            let (_, _) = layouter.assign_region(
+                || "region 3",
+                |mut region| integer_chip.equal_strict(&mut region, &integer_reduced_0, &integer_reduced_1),
+            )?;
 
-            // let (_, _) = layouter.assign_region(
-            //     || "region 4",
-            //     |mut region| integer_chip.equal(&mut region, &integer_overflows_0, &integer_overflows_1),
-            // )?;
+            let (_, _) = layouter.assign_region(
+                || "region 4",
+                |mut region| integer_chip.equal_strict(&mut region, &integer_overflows_0, &integer_overflows_1),
+            )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
             #[cfg(not(feature = "no_lookup"))]
@@ -558,7 +587,7 @@ mod tests {
             let (integer_a_1, integer_b_1, integer_c_1) =
                 &layouter.assign_region(|| "region 3", |mut region| integer_chip.mul(&mut region, &integer_a_0, &integer_b_0))?;
 
-            let (_, _) = layouter.assign_region(|| "region 4", |mut region| integer_chip.equal(&mut region, &integer_c_0, &integer_c_1))?;
+            let (_, _) = layouter.assign_region(|| "region 4", |mut region| integer_chip.equal_strict(&mut region, &integer_c_0, &integer_c_1))?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
             #[cfg(not(feature = "no_lookup"))]
