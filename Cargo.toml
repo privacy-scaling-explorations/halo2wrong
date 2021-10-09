@@ -22,3 +22,4 @@ rand_xorshift = "0.3"
 
 [features]
 no_lookup = []
+debug_prover = []

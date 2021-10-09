@@ -321,7 +321,9 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        // println!("{:?}", prover);
+        #[cfg(feature = "print_prover")]
+        println!("{:?}", prover);
+
         assert_eq!(prover.verify(), Ok(()));
     }
 }

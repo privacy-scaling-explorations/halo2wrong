@@ -138,6 +138,8 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         let cells = vec![cell_0, cell_1, cell_2, cell_3];
         let assigned_integer = AssignedInteger::<_>::new(cells, integer, native_value_cell);
 
+        *offset = *offset + 1;
+
         Ok(assigned_integer)
     }
 
@@ -396,8 +398,8 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        // #[cfg(feature = "no_lookup")]
-        // println!("{:#?}", prover);
+        #[cfg(feature = "print_prover")]
+        println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));
 
@@ -457,15 +459,15 @@ mod tests {
             let (integer_overflows_1, integer_reduced_1) =
                 &layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, &integer_overflows_0))?;
 
-            let (_, _) = layouter.assign_region(
-                || "region 3",
-                |mut region| integer_chip.equal(&mut region, &integer_reduced_0, &integer_reduced_1),
-            )?;
+            // let (_, _) = layouter.assign_region(
+            //     || "region 3",
+            //     |mut region| integer_chip.equal(&mut region, &integer_reduced_0, &integer_reduced_1),
+            // )?;
 
-            let (_, _) = layouter.assign_region(
-                || "region 4",
-                |mut region| integer_chip.equal(&mut region, &integer_overflows_0, &integer_overflows_1),
-            )?;
+            // let (_, _) = layouter.assign_region(
+            //     || "region 4",
+            //     |mut region| integer_chip.equal(&mut region, &integer_overflows_0, &integer_overflows_1),
+            // )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
             #[cfg(not(feature = "no_lookup"))]
@@ -513,7 +515,7 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "no_lookup")]
+        #[cfg(feature = "print_prover")]
         println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));
@@ -597,7 +599,7 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "no_lookup")]
+        #[cfg(feature = "print_prover")]
         println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));

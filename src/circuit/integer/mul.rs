@@ -286,8 +286,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(a_native.ok_or(Error::SynthesisError)?))?;
         let b_native_new_cell = region.assign_advice(|| "b", main_gate.b, offset, || Ok(b_native.ok_or(Error::SynthesisError)?))?;
-        let r_native_new_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(q_native.ok_or(Error::SynthesisError)?))?;
-        let q_native_new_cell = region.assign_advice(|| "d", main_gate.d, offset, || Ok(r_native.ok_or(Error::SynthesisError)?))?;
+        let q_native_new_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(q_native.ok_or(Error::SynthesisError)?))?;
+        let r_native_new_cell = region.assign_advice(|| "d", main_gate.d, offset, || Ok(r_native.ok_or(Error::SynthesisError)?))?;
 
         region.assign_fixed(|| "a * b", main_gate.s_mul, offset, || Ok(-N::one()))?;
         region.assign_fixed(|| "c", main_gate.sc, offset, || Ok(self.rns.wrong_modulus_in_native_modulus))?;

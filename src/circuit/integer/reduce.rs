@@ -3,7 +3,7 @@ use crate::circuit::range::{Overflow, RangeInstructions};
 use crate::circuit::{AssignedInteger, AssignedLimb};
 use crate::rns::{Common, Integer, Limb, Quotient};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Cell, Region};
+use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
@@ -289,8 +289,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(a_native.ok_or(Error::SynthesisError)?))?;
         let _ = region.assign_advice(|| "b", main_gate.b, offset, || Ok(N::zero()))?;
-        let r_native_new_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(q_native.ok_or(Error::SynthesisError)?))?;
-        let q_native_new_cell = region.assign_advice(|| "d", main_gate.d, offset, || Ok(r_native.ok_or(Error::SynthesisError)?))?;
+        let q_native_new_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(q_native.ok_or(Error::SynthesisError)?))?;
+        let r_native_new_cell = region.assign_advice(|| "d", main_gate.d, offset, || Ok(r_native.ok_or(Error::SynthesisError)?))?;
 
         region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(-N::one()))?;
         region.assign_fixed(|| "c", main_gate.sc, offset, || Ok(self.rns.wrong_modulus_in_native_modulus))?;
@@ -304,6 +304,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.constrain_equal(a_cycling.native_value_cell, a_native_new_cell)?;
         region.constrain_equal(quotient.cell, q_native_new_cell)?;
         region.constrain_equal(r_cycling.native_value_cell, r_native_new_cell)?;
+
+        a_cycling.native_value_cell = a_native_new_cell;
+        r_cycling.native_value_cell = r_native_new_cell;
 
         let a: AssignedInteger<N> = a_cycling.clone();
         let r: AssignedInteger<N> = r_cycling.clone();
