@@ -16,12 +16,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         Overflow::Size(3)
     }
 
-    pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a_cycling: &mut AssignedInteger<N>) -> Result<(), Error> {
         let main_gate = self.main_gate_config();
         let mut offset = 0;
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs();
 
-        let reduction_result = a.value().map(|integer_a| self.rns.reduce(&integer_a));
+        let reduction_result = a_cycling.value().map(|integer_a| self.rns.reduce(&integer_a));
 
         // assert_eq!(reduction_result.result, N::zero());
 
@@ -33,7 +33,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             quotient.fe()
         });
 
-        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|integer| integer.limbs());
+        let a_integer: Option<Vec<N>> = a_cycling.value.as_ref().map(|integer| integer.limbs());
         let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.iter().map(|t| t.fe()).collect());
 
         let v_0 = reduction_result.as_ref().map(|u| u.v_0.fe());
@@ -46,7 +46,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_2 | q | t_2 | - |
         // | a_3 | q | t_3 | - |
 
-        let a_cycling = &mut a.clone();
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[0]);
 
         let a_0_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[0]))?;
@@ -260,8 +259,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         a_cycling.native_value_cell = a_native_new_cell;
 
-        let a: AssignedInteger<N> = a_cycling.clone();
-
-        Ok(a)
+        Ok(())
     }
 }

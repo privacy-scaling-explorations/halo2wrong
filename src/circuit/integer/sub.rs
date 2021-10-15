@@ -7,12 +7,7 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _sub(
-        &self,
-        region: &mut Region<'_, N>,
-        a: &AssignedInteger<N>,
-        b: &AssignedInteger<N>,
-    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
+    pub(crate) fn _sub(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate_config();
         let mut offset = 0;
 
@@ -20,7 +15,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let b_integer = b.value().unwrap();
             self.rns.sub(&integer_a, &b_integer)
         });
-        let c = self.assign(region, c, &mut offset)?;
+        let c = &mut self.assign(region, c, &mut offset)?;
         let aux: Vec<N> = self.rns.aux.limbs();
 
         let mut a_updated_cells = a.cells.clone();
@@ -78,10 +73,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.constrain_equal(b.native_value_cell, b_native_new_cell)?;
         region.constrain_equal(c.native_value_cell, c_native_new_cell)?;
 
-        let a = a.clone_with_cells(a_updated_cells, a_native_new_cell);
-        let b = b.clone_with_cells(b_updated_cells, b_native_new_cell);
-        let c = c.clone_with_cells(c_updated_cells, c_native_new_cell);
+        let a = a.update_cells(Some(a_updated_cells), Some(a_native_new_cell));
+        let b = b.update_cells(Some(b_updated_cells), Some(b_native_new_cell));
+        c.update_cells(Some(c_updated_cells), Some(c_native_new_cell));
 
-        Ok((a, b, c))
+        Ok(c.clone())
     }
 }

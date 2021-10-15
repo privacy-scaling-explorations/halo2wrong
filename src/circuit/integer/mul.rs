@@ -20,15 +20,15 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _mul(
         &self,
         region: &mut Region<'_, N>,
-        a: &AssignedInteger<N>,
-        b: &AssignedInteger<N>,
-    ) -> Result<(AssignedInteger<N>, AssignedInteger<N>, AssignedInteger<N>), Error> {
+        a_cycling: &mut AssignedInteger<N>,
+        b_cycling: &mut AssignedInteger<N>,
+    ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate_config();
         let mut offset = 0;
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs();
 
-        let reduction_result = a.value().map(|integer_a| {
-            let b_integer = b.value().unwrap();
+        let reduction_result = a_cycling.value().map(|integer_a| {
+            let b_integer = b_cycling.value().unwrap();
             self.rns.mul(&integer_a, &b_integer)
         });
 
@@ -44,8 +44,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let quotient = self.assign(region, quotient, &mut offset)?;
         let result = self.assign(region, result, &mut offset)?;
 
-        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|integer| integer.limbs());
-        let b_integer: Option<Vec<N>> = b.value.as_ref().map(|integer| integer.limbs());
+        let a_integer: Option<Vec<N>> = a_cycling.value.as_ref().map(|integer| integer.limbs());
+        let b_integer: Option<Vec<N>> = b_cycling.value.as_ref().map(|integer| integer.limbs());
         let quotient_integer: Option<Vec<N>> = quotient.value.as_ref().map(|integer| integer.limbs());
         let result_integer: Option<Vec<N>> = result.value.as_ref().map(|integer| integer.limbs());
         let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.iter().map(|t| t.fe()).collect());
@@ -88,8 +88,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_2 | b_2 | q_1 | tmp_a |
         // | a_3 | b_0 | q_0 | tmp_c |
 
-        let a_cycling = &mut a.clone();
-        let b_cycling = &mut b.clone();
+        // let a_cycling = &mut a.clone();
+        // let b_cycling = &mut b.clone();
         let q_cycling = &mut quotient.clone();
         let r_cycling = &mut result.clone();
 
@@ -303,10 +303,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.constrain_equal(q_cycling.native_value_cell, q_native_new_cell)?;
         region.constrain_equal(r_cycling.native_value_cell, r_native_new_cell)?;
 
-        let a: AssignedInteger<N> = a_cycling.clone();
-        let b: AssignedInteger<N> = b_cycling.clone();
-        let r: AssignedInteger<N> = r_cycling.clone();
-
-        Ok((a, b, r))
+        Ok(r_cycling.clone())
     }
 }

@@ -30,22 +30,22 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn cond_swap(
         &self,
         region: &mut Region<'_, F>,
-        a: &AssignedValue<F>,
-        b: &AssignedValue<F>,
-        cond: &AssignedCondition<F>,
-    ) -> Result<(AssignedValue<F>, AssignedValue<F>, AssignedCondition<F>, AssignedValue<F>), Error>;
+        a: &mut AssignedValue<F>,
+        b: &mut AssignedValue<F>,
+        cond: &mut AssignedCondition<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn bitness_check(&self, region: &mut Region<'_, F>, a: &AssignedValue<F>) -> Result<AssignedValue<F>, Error>;
+    fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn cond_swap(
         &self,
         region: &mut Region<'_, F>,
-        a: &AssignedValue<F>,
-        b: &AssignedValue<F>,
-        cond: &AssignedCondition<F>,
-    ) -> Result<(AssignedValue<F>, AssignedValue<F>, AssignedCondition<F>, AssignedValue<F>), Error> {
+        a: &mut AssignedValue<F>,
+        b: &mut AssignedValue<F>,
+        cond: &mut AssignedCondition<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         let diff = a.value.map(|a| a - b.value.unwrap());
         let res = a.value.map(|a| {
             let b = b.value.unwrap();
@@ -73,8 +73,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
 
-        region.constrain_equal(a.cell, a_new_cell)?;
-        region.constrain_equal(b.cell, b_new_cell_0)?;
+        a.cycle_cell(region, a_new_cell)?;
+        b.cycle_cell(region, b_new_cell_0)?;
 
         offset += 1;
 
@@ -96,14 +96,16 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.constrain_equal(b_new_cell_0, b_new_cell_1)?;
         region.constrain_equal(cond.cell, cond_new_cell)?;
 
-        let a = a.clone_with_cell(a_new_cell);
-        let b = b.clone_with_cell(b_new_cell_1);
+        cond.cycle_cell(region, cond_new_cell)?;
+        a.cycle_cell(region, a_new_cell)?;
+        b.cycle_cell(region, b_new_cell_1)?;
+
         let res = AssignedValue::new(res_cell, res);
-        let cond = cond.clone_with_cell(cond_new_cell);
-        Ok((a, b, cond, res))
+
+        Ok(res)
     }
 
-    fn bitness_check(&self, region: &mut Region<'_, F>, a: &AssignedValue<F>) -> Result<AssignedValue<F>, Error> {
+    fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error> {
         // a*a - a == 0
 
         let offset = 0;
@@ -122,13 +124,11 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
 
-        region.constrain_equal(a.cell, a_new_cell_0)?;
+        a.cycle_cell(region, a_new_cell_0)?;
         region.constrain_equal(a_new_cell_0, a_new_cell_1)?;
         region.constrain_equal(a_new_cell_1, a_new_cell_2)?;
 
-        let a = a.clone_with_cell(a_new_cell_2);
-
-        Ok(a)
+        Ok(())
     }
 }
 
@@ -195,7 +195,7 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    use super::{MainGate, MainGateConfig};
+    use super::{MainGate, MainGateConfig, MainGateInstructions};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -305,6 +305,14 @@ mod tests {
                     Ok(())
                 },
             )?;
+
+            // layouter.assign_region(
+            //     || "assign region 3",
+            //     |mut region| {
+            //         self.bitness_check(F::zero())?;
+            //         Ok(())
+            //     },
+            // )?;
 
             Ok(())
         }

@@ -2,7 +2,11 @@ use crate::{
     rns::{Common, Integer, Limb},
     NUMBER_OF_LIMBS,
 };
-use halo2::{arithmetic::FieldExt, circuit::Cell};
+use halo2::plonk::Error;
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::{Cell, Region},
+};
 use std::marker::PhantomData;
 
 mod integer;
@@ -28,13 +32,21 @@ impl<F: FieldExt> AssignedCondition<F> {
             _marker: PhantomData,
         }
     }
+
+    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+        region.constrain_equal(self.cell, new_cell)?;
+        self.cell = new_cell;
+        Ok(())
+    }
 }
+
+pub type AssignedBool<F: FieldExt> = AssignedCondition<F>;
 
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<F: FieldExt> {
-    pub value: Option<Integer<F>>,
-    pub cells: Vec<Cell>,
-    pub native_value_cell: Cell,
+    value: Option<Integer<F>>,
+    cells: Vec<Cell>,
+    native_value_cell: Cell,
 }
 
 impl<F: FieldExt> AssignedInteger<F> {
@@ -58,6 +70,24 @@ impl<F: FieldExt> AssignedInteger<F> {
         }
     }
 
+    pub fn update_cells(&mut self, cells: Option<Vec<Cell>>, native_value_cell: Option<Cell>) {
+        match cells {
+            Some(cells) => self.cells = cells,
+            _ => {}
+        }
+
+        match native_value_cell {
+            Some(native_value_cell) => self.native_value_cell = native_value_cell,
+            _ => {}
+        }
+    }
+
+    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, idx: usize, new_cell: Cell) -> Result<(), Error> {
+        region.constrain_equal(self.cells[idx], new_cell)?;
+        self.cells[idx] = new_cell;
+        Ok(())
+    }
+
     pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
         let cell = self.cells[idx];
         let value = self.value.as_ref().map(|value| Limb::<F>::from_fe(value.limb(idx)));
@@ -66,6 +96,10 @@ impl<F: FieldExt> AssignedInteger<F> {
 
     pub fn limbs(&self) -> Vec<AssignedLimb<F>> {
         (0..NUMBER_OF_LIMBS).map(|i| self.limb(i)).collect()
+    }
+
+    pub fn values(&self) -> Vec<AssignedValue<F>> {
+        self.limbs().iter().map(|limb| limb.into()).collect()
     }
 
     pub fn native(&self) -> AssignedValue<F> {
@@ -91,6 +125,15 @@ impl<F: FieldExt> From<AssignedValue<F>> for AssignedLimb<F> {
     }
 }
 
+impl<F: FieldExt> From<&AssignedValue<F>> for AssignedLimb<F> {
+    fn from(assigned_value: &AssignedValue<F>) -> Self {
+        Self {
+            value: assigned_value.value.map(|e| Limb::<F>::from_fe(e)),
+            cell: assigned_value.cell,
+        }
+    }
+}
+
 impl<F: FieldExt> AssignedLimb<F> {
     pub fn clone_with_cell(&self, cell: Cell) -> Self {
         Self {
@@ -102,12 +145,27 @@ impl<F: FieldExt> AssignedLimb<F> {
     fn new(cell: Cell, value: Option<Limb<F>>) -> Self {
         AssignedLimb { value, cell }
     }
+
+    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+        region.constrain_equal(self.cell, new_cell)?;
+        self.cell = new_cell;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct AssignedValue<F: FieldExt> {
     pub value: Option<F>,
     pub cell: Cell,
+}
+
+impl<F: FieldExt> From<&AssignedLimb<F>> for AssignedValue<F> {
+    fn from(limb: &AssignedLimb<F>) -> Self {
+        Self {
+            value: limb.value.clone().map(|e| e.fe()),
+            cell: limb.cell.clone(),
+        }
+    }
 }
 
 impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
@@ -119,28 +177,11 @@ impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
     }
 }
 
-impl<F: FieldExt> From<&AssignedInteger<F>> for Vec<AssignedValue<F>> {
-    fn from(integer: &AssignedInteger<F>) -> Self {
-        let limbs = integer.value().map(|integer| integer.limbs());
-        let cells = integer.cells.clone();
-
-        let res = (0..NUMBER_OF_LIMBS)
-            .map(|i| AssignedValue {
-                value: limbs.as_ref().map(|limbs| limbs[i]),
-                cell: cells[i],
-            })
-            .collect();
-
-        res
-    }
-}
-
 impl<F: FieldExt> AssignedValue<F> {
-    pub fn clone_with_cell(&self, cell: Cell) -> Self {
-        Self {
-            value: self.value.clone(),
-            cell,
-        }
+    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+        region.constrain_equal(self.cell, new_cell)?;
+        self.cell = new_cell;
+        Ok(())
     }
 
     fn new(cell: Cell, value: Option<F>) -> Self {
