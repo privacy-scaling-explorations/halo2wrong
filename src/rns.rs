@@ -1,4 +1,4 @@
-use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB, NUMBER_OF_LIMBS};
+use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB, BIT_LEN_PRENORMALIZED, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
@@ -177,11 +177,18 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         self.new_from_limbs(limbs)
     }
 
-    pub(crate) fn rand(&self) -> Integer<N> {
+    pub(crate) fn rand_normalized(&self) -> Integer<N> {
         self.new(W::rand())
     }
 
-    pub(crate) fn rand_in_max(&self) -> Integer<N> {
+    pub(crate) fn rand_prenormalized(&self) -> Integer<N> {
+        use num_bigint::RandBigInt;
+        let mut rng = thread_rng();
+        let el = rng.gen_biguint(BIT_LEN_PRENORMALIZED as u64);
+        self.new_from_big(el)
+    }
+
+    pub(crate) fn rand_in_crt(&self) -> Integer<N> {
         use num_bigint::RandBigInt;
         let mut rng = thread_rng();
         let el = rng.gen_biguint(BIT_LEN_CRT_MODULUS as u64);
@@ -202,12 +209,12 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         self.new_from_limbs(limbs)
     }
 
-    pub(crate) fn max(&self, bit_len: Option<usize>) -> Integer<N> {
+    fn max(&self, bit_len: Option<usize>) -> Integer<N> {
         let limbs = (0..NUMBER_OF_LIMBS).map(|_| self.max_limb(bit_len)).collect();
         self.new_from_limbs(limbs)
     }
 
-    pub(crate) fn max_limb(&self, bit_len: Option<usize>) -> Limb<N> {
+    fn max_limb(&self, bit_len: Option<usize>) -> Limb<N> {
         let bit_len = match bit_len {
             Some(bit_len) => bit_len,
             _ => BIT_LEN_LIMB,
@@ -254,6 +261,16 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         Integer { decomposed }
     }
 
+    pub(crate) fn field_element(&self, integer: &Integer<N>) -> Integer<N> {
+        assert!(integer.value() < self.wrong_modulus);
+
+        let b_0 = fe_to_big(self.wrong_modulus_decomposed.limb_value(0)) > fe_to_big(integer.limb_value(0));
+        let b_1 = fe_to_big(self.wrong_modulus_decomposed.limb_value(1)) > fe_to_big(integer.limb_value(1));
+        let b_2 = fe_to_big(self.wrong_modulus_decomposed.limb_value(2)) > fe_to_big(integer.limb_value(2));
+
+        unimplemented!();
+    }
+
     pub(crate) fn neg(&self, integer_0: &Integer<N>) -> Integer<N> {
         let aux = self.aux.clone();
 
@@ -286,7 +303,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         for k in 0..l {
             for i in 0..=k {
                 let j = k - i;
-                t[i + j] = t[i + j] + integer_0.limb(i) * integer_1.limb(j) + negative_modulus.limb(i) * quotient.limb(j);
+                t[i + j] = t[i + j] + integer_0.limb_value(i) * integer_1.limb_value(j) + negative_modulus.limb_value(i) * quotient.limb_value(j);
             }
         }
 
@@ -354,8 +371,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (Limb<N>, Limb<N>, Limb<N>, Limb<N>) {
         let s = self.left_shifter_r;
 
-        let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limb(0) - s * r.decomposed.limb(1);
-        let u_1 = t[2].fe() + s * t[3].fe() - r.decomposed.limb(2) - s * r.decomposed.limb(3);
+        let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limb_value(0) - s * r.decomposed.limb_value(1);
+        let u_1 = t[2].fe() + s * t[3].fe() - r.decomposed.limb_value(2) - s * r.decomposed.limb_value(3);
 
         // sanity check
         {
@@ -408,7 +425,11 @@ impl<N: FieldExt> Integer<N> {
         self.decomposed.limbs()
     }
 
-    pub fn limb(&self, idx: usize) -> N {
+    pub fn limb_value(&self, idx: usize) -> N {
+        self.decomposed.limb_value(idx)
+    }
+
+    pub fn limb(&self, idx: usize) -> Limb<N> {
         self.decomposed.limb(idx)
     }
 }
@@ -503,8 +524,12 @@ impl<F: FieldExt> Decomposed<F> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
     }
 
-    pub fn limb(&self, idx: usize) -> F {
-        self.limbs[idx].fe()
+    pub fn limb_value(&self, idx: usize) -> F {
+        self.limb(idx).fe()
+    }
+
+    pub fn limb(&self, idx: usize) -> Limb<F> {
+        self.limbs[idx].clone()
     }
 
     pub fn scale(&mut self, k: F) {
@@ -605,8 +630,8 @@ mod tests {
         assert_eq!(el_0, el_1);
 
         // add
-        let el_0 = &rns.rand_in_max();
-        let el_1 = &rns.rand_in_max();
+        let el_0 = &rns.rand_prenormalized();
+        let el_1 = &rns.rand_prenormalized();
 
         let r_0 = rns.add(el_0, el_1);
         let r_0: Wrong = r_0.fe();
@@ -614,8 +639,8 @@ mod tests {
         assert_eq!(r_0, r_1);
 
         // sub
-        let el_0 = &rns.rand_in_max();
-        let el_1 = &rns.rand_in_max();
+        let el_0 = &rns.rand_prenormalized();
+        let el_1 = &rns.rand_prenormalized();
 
         let r_0 = rns.sub(el_0, el_1);
         let r_0: Wrong = r_0.fe();
@@ -635,15 +660,15 @@ mod tests {
         assert_eq!(rns.aux.value() % &wrong_modulus, big_uint::zero());
 
         let aux = Integer { decomposed: rns.aux.clone() };
-        let el_0 = &rns.rand_in_max();
+        let el_0 = &rns.rand_prenormalized();
         let el_1 = rns.add(&aux, &el_0);
         let reduction_context = rns.reduce(&el_1);
         assert_eq!(el_0.value() % wrong_modulus.clone(), reduction_context.result.value());
 
         // mul
         for _ in 0..10000 {
-            let el_0 = &rns.rand_in_max();
-            let el_1 = &rns.rand_in_max();
+            let el_0 = &rns.rand_prenormalized();
+            let el_1 = &rns.rand_prenormalized();
             let result_0 = (el_0.value() * el_1.value()) % wrong_modulus.clone();
             let reduction_context = rns.mul(&el_0, &el_1);
             let result_1 = reduction_context.result;

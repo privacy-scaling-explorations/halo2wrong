@@ -25,14 +25,6 @@ impl<F: FieldExt> AssignedCondition<F> {
         self._value.map(|value| if value { F::one() } else { F::zero() })
     }
 
-    pub fn clone_with_cell(&self, cell: Cell) -> Self {
-        Self {
-            _value: self._value.clone(),
-            cell,
-            _marker: PhantomData,
-        }
-    }
-
     pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
         region.constrain_equal(self.cell, new_cell)?;
         self.cell = new_cell;
@@ -40,20 +32,14 @@ impl<F: FieldExt> AssignedCondition<F> {
     }
 }
 
-pub type AssignedBool<F: FieldExt> = AssignedCondition<F>;
-
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<F: FieldExt> {
-    value: Option<Integer<F>>,
+    pub value: Option<Integer<F>>,
     cells: Vec<Cell>,
     native_value_cell: Cell,
 }
 
 impl<F: FieldExt> AssignedInteger<F> {
-    pub fn value(&self) -> Option<Integer<F>> {
-        self.value.clone()
-    }
-
     fn new(cells: Vec<Cell>, value: Option<Integer<F>>, native_value_cell: Cell) -> Self {
         Self {
             value,
@@ -61,12 +47,33 @@ impl<F: FieldExt> AssignedInteger<F> {
             native_value_cell,
         }
     }
+    pub fn value(&self) -> Result<Integer<F>, Error> {
+        Ok(self.value.clone().ok_or(Error::SynthesisError)?)
+    }
 
-    pub fn clone_with_cells(&self, cells: Vec<Cell>, native_value_cell: Cell) -> Self {
-        Self {
-            value: self.value.clone(),
-            cells,
-            native_value_cell,
+    pub fn integer(&self) -> Option<Integer<F>> {
+        self.value.clone()
+    }
+
+    pub fn limb_value(&self, idx: usize) -> Result<F, Error> {
+        let limbs = self.value.as_ref().map(|e| e.limbs());
+        Ok(limbs.ok_or(Error::SynthesisError)?[idx])
+    }
+
+    pub fn native_value(&self) -> Result<F, Error> {
+        let native_value = self.value.as_ref().map(|e| e.native());
+        Ok(native_value.ok_or(Error::SynthesisError)?)
+    }
+
+    pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
+        let limb = self.value.as_ref().map(|e| e.limb(idx));
+        AssignedLimb::new(self.cells[idx], limb)
+    }
+
+    pub fn native(&self) -> AssignedValue<F> {
+        AssignedValue {
+            value: self.value.as_ref().map(|e| e.native()),
+            cell: self.native_value_cell,
         }
     }
 
@@ -88,32 +95,25 @@ impl<F: FieldExt> AssignedInteger<F> {
         Ok(())
     }
 
-    pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
-        let cell = self.cells[idx];
-        let value = self.value.as_ref().map(|value| Limb::<F>::from_fe(value.limb(idx)));
-        AssignedLimb { cell, value }
+    pub fn cycle_native_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+        region.constrain_equal(self.native_value_cell, new_cell)?;
+        self.native_value_cell = new_cell;
+        Ok(())
     }
 
-    pub fn limbs(&self) -> Vec<AssignedLimb<F>> {
+    pub fn to_assigned_limbs(&self) -> Vec<AssignedLimb<F>> {
         (0..NUMBER_OF_LIMBS).map(|i| self.limb(i)).collect()
     }
 
-    pub fn values(&self) -> Vec<AssignedValue<F>> {
-        self.limbs().iter().map(|limb| limb.into()).collect()
-    }
-
-    pub fn native(&self) -> AssignedValue<F> {
-        AssignedValue {
-            value: self.value.as_ref().map(|e| e.native()),
-            cell: self.native_value_cell,
-        }
+    pub fn to_assigned_values(&self) -> Vec<AssignedValue<F>> {
+        self.to_assigned_limbs().iter().map(|limb| limb.into()).collect()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AssignedLimb<F: FieldExt> {
     pub value: Option<Limb<F>>,
-    pub cell: Cell,
+    cell: Cell,
 }
 
 impl<F: FieldExt> From<AssignedValue<F>> for AssignedLimb<F> {
@@ -135,15 +135,12 @@ impl<F: FieldExt> From<&AssignedValue<F>> for AssignedLimb<F> {
 }
 
 impl<F: FieldExt> AssignedLimb<F> {
-    pub fn clone_with_cell(&self, cell: Cell) -> Self {
-        Self {
-            value: self.value.clone(),
-            cell,
-        }
+    pub fn new(cell: Cell, value: Option<Limb<F>>) -> Self {
+        AssignedLimb { value, cell }
     }
 
-    fn new(cell: Cell, value: Option<Limb<F>>) -> Self {
-        AssignedLimb { value, cell }
+    pub fn value(&self) -> Result<F, Error> {
+        Ok(self.value.clone().ok_or(Error::SynthesisError)?.fe())
     }
 
     pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
@@ -178,13 +175,16 @@ impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
 }
 
 impl<F: FieldExt> AssignedValue<F> {
+    fn new(cell: Cell, value: Option<F>) -> Self {
+        AssignedValue { value, cell }
+    }
+    pub fn value(&self) -> Result<F, Error> {
+        Ok(self.value.clone().ok_or(Error::SynthesisError)?)
+    }
+
     pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
         region.constrain_equal(self.cell, new_cell)?;
         self.cell = new_cell;
         Ok(())
-    }
-
-    fn new(cell: Cell, value: Option<F>) -> Self {
-        AssignedValue { value, cell }
     }
 }

@@ -125,8 +125,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
 
         a.cycle_cell(region, a_new_cell_0)?;
-        region.constrain_equal(a_new_cell_0, a_new_cell_1)?;
-        region.constrain_equal(a_new_cell_1, a_new_cell_2)?;
+        a.cycle_cell(region, a_new_cell_1)?;
+        a.cycle_cell(region, a_new_cell_2)?;
 
         Ok(())
     }

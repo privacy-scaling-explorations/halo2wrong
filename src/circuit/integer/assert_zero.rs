@@ -1,7 +1,7 @@
 use super::IntegerChip;
 use crate::circuit::range::{Overflow, RangeInstructions};
 use crate::circuit::{AssignedInteger, AssignedLimb};
-use crate::rns::{Common, Limb, Quotient};
+use crate::rns::{Limb, Quotient};
 
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
@@ -16,24 +16,23 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         Overflow::Size(3)
     }
 
-    pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a_cycling: &mut AssignedInteger<N>) -> Result<(), Error> {
+    pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>) -> Result<(), Error> {
         let main_gate = self.main_gate_config();
         let mut offset = 0;
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs();
 
-        let reduction_result = a_cycling.value().map(|integer_a| self.rns.reduce(&integer_a));
+        let reduction_result = a.integer().map(|integer_a| self.rns.reduce(&integer_a));
 
         // assert_eq!(reduction_result.result, N::zero());
 
-        let quotient: Option<N> = reduction_result.as_ref().map(|reduction_result| {
+        let quotient = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
                 Quotient::Short(quotient) => quotient,
                 _ => panic!("short quotient expected"),
             };
-            quotient.fe()
+            quotient
         });
 
-        let a_integer: Option<Vec<N>> = a_cycling.value.as_ref().map(|integer| integer.limbs());
         let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.iter().map(|t| t.fe()).collect());
 
         let v_0 = reduction_result.as_ref().map(|u| u.v_0.fe());
@@ -48,8 +47,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[0]);
 
-        let a_0_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[0]))?;
-        let mut q_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.ok_or(Error::SynthesisError)?))?;
+        let a_0_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(0))?;
+        let q_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.as_ref().ok_or(Error::SynthesisError)?.fe()))?;
         let t_0_cell = region.assign_advice(|| "t_", main_gate.c, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
         let _ = region.assign_advice(|| "zero", main_gate.d, offset, || Ok(N::zero()))?;
 
@@ -64,15 +63,16 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_cycling.cells[0], a_0_new_cell)?;
-        a_cycling.cells[0] = a_0_new_cell;
+        region.constrain_equal(a.cells[0], a_0_new_cell)?;
+        a.cells[0] = a_0_new_cell;
 
         offset += 1;
 
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[1]);
+        let quotient = &mut AssignedLimb::<N>::new(q_cell, quotient);
 
-        let a_1_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[1]))?;
-        let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.ok_or(Error::SynthesisError)?))?;
+        let a_1_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(1))?;
+        let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || quotient.value())?;
         let t_1_cell = region.assign_advice(|| "t_", main_gate.c, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
         let _ = region.assign_advice(|| "zero", main_gate.d, offset, || Ok(N::zero()))?;
 
@@ -87,17 +87,15 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_cycling.cells[1], a_1_new_cell)?;
-        a_cycling.cells[1] = a_1_new_cell;
-        region.constrain_equal(q_cell, q_new_cell)?;
-        q_cell = q_new_cell;
+        a.cycle_cell(region, 1, a_1_new_cell)?;
+        quotient.cycle_cell(region, q_new_cell)?;
 
         offset += 1;
 
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[2]);
 
-        let a_2_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[2]))?;
-        let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.ok_or(Error::SynthesisError)?))?;
+        let a_2_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(2))?;
+        let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || quotient.value())?;
         let t_2_cell = region.assign_advice(|| "t_", main_gate.c, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
         let _ = region.assign_advice(|| "zero", main_gate.d, offset, || Ok(N::zero()))?;
 
@@ -112,17 +110,15 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_cycling.cells[2], a_2_new_cell)?;
-        a_cycling.cells[2] = a_2_new_cell;
-        region.constrain_equal(q_cell, q_new_cell)?;
-        q_cell = q_new_cell;
+        a.cycle_cell(region, 2, a_2_new_cell)?;
+        quotient.cycle_cell(region, q_new_cell)?;
 
         offset += 1;
 
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[3]);
 
-        let a_3_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[3]))?;
-        let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.ok_or(Error::SynthesisError)?))?;
+        let a_3_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(3))?;
+        let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || quotient.value())?;
         let t_3_cell = region.assign_advice(|| "t_", main_gate.c, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
         let _ = region.assign_advice(|| "zero", main_gate.d, offset, || Ok(N::zero()))?;
 
@@ -137,10 +133,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
         // cycle and update operand limb assignments
-        region.constrain_equal(a_cycling.cells[3], a_3_new_cell)?;
-        a_cycling.cells[3] = a_3_new_cell;
-        region.constrain_equal(q_cell, q_new_cell)?;
-        q_cell = q_new_cell;
+        a.cycle_cell(region, 3, a_3_new_cell)?;
+        quotient.cycle_cell(region, q_new_cell)?;
 
         offset += 1;
 
@@ -230,19 +224,15 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let range_chip = self.range_chip();
 
-        let quotient = &mut AssignedLimb::<N>::new(q_cell, quotient.map(|e| Limb::<N>::from_fe(e)));
-        range_chip.range_limb(region, &quotient, Overflow::NoOverflow, &mut offset)?;
-        let _ = range_chip.range_limb(region, &v_0, self.assert_zero_v0_overflow(), &mut offset)?;
-        let _ = range_chip.range_limb(region, &v_1, self.assert_zero_v1_overflow(), &mut offset)?;
+        range_chip.range_limb(region, quotient, Overflow::NoOverflow, &mut offset)?;
+        let _ = range_chip.range_limb(region, v_0, self.assert_zero_v0_overflow(), &mut offset)?;
+        let _ = range_chip.range_limb(region, v_1, self.assert_zero_v1_overflow(), &mut offset)?;
 
         // native red
 
-        let a_native: Option<N> = a_cycling.value.as_ref().map(|e| e.native());
-        let q_native: Option<N> = quotient.value.as_ref().map(|e| e.native());
-
-        let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(a_native.ok_or(Error::SynthesisError)?))?;
+        let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || a.native_value())?;
         let _ = region.assign_advice(|| "b", main_gate.b, offset, || Ok(N::zero()))?;
-        let q_native_new_cell = region.assign_advice(|| "c", main_gate.c, offset, || Ok(q_native.ok_or(Error::SynthesisError)?))?;
+        let q_new_cell = region.assign_advice(|| "d", main_gate.c, offset, || quotient.value())?;
         let _ = region.assign_advice(|| "d", main_gate.d, offset, || Ok(N::zero()))?;
 
         region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(-N::one()))?;
@@ -254,10 +244,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         region.assign_fixed(|| "d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
         region.assign_fixed(|| "constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
 
-        region.constrain_equal(a_cycling.native_value_cell, a_native_new_cell)?;
-        region.constrain_equal(quotient.cell, q_native_new_cell)?;
-
-        a_cycling.native_value_cell = a_native_new_cell;
+        a.cycle_native_cell(region, a_native_new_cell)?;
+        quotient.cycle_cell(region, q_new_cell)?;
 
         Ok(())
     }
