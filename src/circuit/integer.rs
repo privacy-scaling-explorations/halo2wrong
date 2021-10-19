@@ -158,8 +158,8 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
 
-        let a_values: &mut Vec<AssignedValue<N>> = &mut a.to_assigned_values();
-        let b_values: &mut Vec<AssignedValue<N>> = &mut b.to_assigned_values();
+        let a_values: &mut Vec<AssignedValue<N>> = &mut a.limbs();
+        let b_values: &mut Vec<AssignedValue<N>> = &mut b.limbs();
         let native_value_a = &mut a.native();
         let native_value_b = &mut b.native();
 
@@ -246,7 +246,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     fn range_chip(&self) -> RangeChip<N> {
-        RangeChip::<N>::new(self.config.range_config.clone())
+        let bit_len_lookup = self.rns.bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
+        RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
     }
 
     fn main_gate_config(&self) -> MainGateConfig {
@@ -254,7 +255,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     fn main_gate(&self) -> MainGate<N> {
-        MainGate::<N>::new(self.config.main_gate_config.clone())
+        MainGate::<N>::new(self.main_gate_config())
     }
 }
 
@@ -264,7 +265,7 @@ mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeInstructions};
-    use crate::rns::{Common, Integer, Rns};
+    use crate::rns::{Integer, Rns};
     use crate::BIT_LEN_LIMB;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
@@ -328,7 +329,8 @@ mod tests {
             layouter.assign_region(|| "region 2", |mut region| integer_chip.assert_strict_equal(&mut region, integer_1, integer_3))?;
 
             // TODO: think we should move table loading somewhere else?
-            let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
+
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(&mut layouter)?;
             #[cfg(not(feature = "no_lookup"))]
@@ -342,14 +344,16 @@ mod tests {
     fn test_equality_circuit() {
         use halo2::pasta::Fp as Wrong;
         use halo2::pasta::Fq as Native;
-        const BIT_LEN_LOOKUP_LIMB: usize = 16;
+        let bit_len_limb = 64;
+
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         #[cfg(not(feature = "no_lookup"))]
-        const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
+        let k: u32 = (rns.bit_len_lookup + 1) as u32;
         #[cfg(feature = "no_lookup")]
-        const K: u32 = 5;
+        let k: u32 = 8;
 
-        let rns = Rns::<Wrong, Native>::construct();
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
         let integer_0 = rns.rand_prenormalized();
         let integer_1 = integer_0.clone();
 
@@ -359,7 +363,7 @@ mod tests {
             rns: rns.clone(),
         };
 
-        let prover = match MockProver::run(K, &circuit, vec![]) {
+        let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -378,7 +382,7 @@ mod tests {
             rns: rns.clone(),
         };
 
-        let prover = match MockProver::run(K, &circuit, vec![]) {
+        let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -436,7 +440,7 @@ mod tests {
                 |mut region| integer_chip.assert_strict_equal(&mut region, integer_overflows_0, integer_overflows_1),
             )?;
 
-            let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(&mut layouter)?;
             #[cfg(not(feature = "no_lookup"))]
@@ -450,14 +454,15 @@ mod tests {
     fn test_reduction_circuit() {
         use halo2::pasta::Fp as Wrong;
         use halo2::pasta::Fq as Native;
-        const BIT_LEN_LOOKUP_LIMB: usize = 16;
+
+        let bit_len_limb = 64;
+
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         #[cfg(not(feature = "no_lookup"))]
-        const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
+        let k: u32 = (rns.bit_len_lookup + 1) as u32;
         #[cfg(feature = "no_lookup")]
-        const K: u32 = 6;
-
-        let rns = Rns::<Wrong, Native>::construct();
+        let k: u32 = 8;
 
         // let input = vec![
         //     "1dfce0ed73516265cde2b9496841f18c",
@@ -477,7 +482,7 @@ mod tests {
             rns: rns.clone(),
         };
 
-        let prover = match MockProver::run(K, &circuit, vec![]) {
+        let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -532,23 +537,23 @@ mod tests {
             )?;
 
             let integer_c_1 = &mut layouter.assign_region(|| "region 3", |mut region| integer_chip.mul(&mut region, integer_a_0, integer_b_0))?;
-            // let integer_a_1 = &mut integer_a_0.clone();
-            // let integer_b_1 = &mut integer_b_0.clone();
+            let integer_a_1 = &mut integer_a_0.clone();
+            let integer_b_1 = &mut integer_b_0.clone();
 
-            // layouter.assign_region(
-            //     || "region 4",
-            //     |mut region| integer_chip.assert_strict_equal(&mut region, integer_c_0, integer_c_1),
-            // )?;
-            // layouter.assign_region(
-            //     || "region 4",
-            //     |mut region| integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1),
-            // )?;
-            // layouter.assign_region(
-            //     || "region 5",
-            //     |mut region| integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1),
-            // )?;
+            layouter.assign_region(
+                || "region 4",
+                |mut region| integer_chip.assert_strict_equal(&mut region, integer_c_0, integer_c_1),
+            )?;
+            layouter.assign_region(
+                || "region 4",
+                |mut region| integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1),
+            )?;
+            layouter.assign_region(
+                || "region 5",
+                |mut region| integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1),
+            )?;
 
-            let range_chip = RangeChip::<N>::new(config.integer_config.range_config);
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(&mut layouter)?;
             #[cfg(not(feature = "no_lookup"))]
@@ -562,14 +567,14 @@ mod tests {
     fn test_multiplication_circuit() {
         use halo2::pasta::Fp as Wrong;
         use halo2::pasta::Fq as Native;
-        const BIT_LEN_LOOKUP_LIMB: usize = 16;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         #[cfg(not(feature = "no_lookup"))]
-        const K: u32 = (BIT_LEN_LOOKUP_LIMB + 1) as u32;
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
         #[cfg(feature = "no_lookup")]
-        const K: u32 = 8;
-
-        let rns = Rns::<Wrong, Native>::construct();
+        let K: u32 = 8;
 
         let integer_a = rns.rand_prenormalized();
         let integer_b = rns.rand_prenormalized();

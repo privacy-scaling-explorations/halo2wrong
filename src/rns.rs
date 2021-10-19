@@ -1,4 +1,4 @@
-use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB, BIT_LEN_PRENORMALIZED, NUMBER_OF_LIMBS};
+use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_PRENORMALIZED, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
@@ -81,6 +81,8 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub negative_wrong_modulus: Decomposed<Native>,
     pub wrong_modulus_decomposed: Decomposed<Native>,
     pub wrong_modulus_in_native_modulus: Native,
+    pub bit_len_limb: usize,
+    pub bit_len_lookup: usize,
     wrong_modulus: big_uint,
     native_modulus: big_uint,
     two_limb_mask: big_uint,
@@ -88,11 +90,11 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 }
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
-    fn aux() -> Decomposed<N> {
+    fn aux(bit_len_limb: usize) -> Decomposed<N> {
         let two = N::from_u64(2);
-        let r = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
+        let r = &fe_to_big(two.pow(&[bit_len_limb as u64, 0, 0, 0]));
         let wrong_modulus = modulus::<W>();
-        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
         let wrong_modulus_decomposed: Vec<big_uint> = wrong_modulus_decomposed.limbs.iter().map(|limb| limb.value()).collect();
         let wrong_modulus_top = wrong_modulus_decomposed[NUMBER_OF_LIMBS - 1].clone();
         let range_correct_factor = r.div(wrong_modulus_top) + 1usize;
@@ -116,28 +118,30 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let aux = Decomposed {
             limbs: aux.iter().map(|aux| aux.clone().into()).collect(),
-            bit_len: BIT_LEN_LIMB,
+            bit_len: bit_len_limb,
         };
 
         aux
     }
 
-    pub(crate) fn construct() -> Self {
+    pub(crate) fn construct(bit_len_limb: usize) -> Self {
+        let bit_len_crt_modulus = bit_len_limb * NUMBER_OF_LIMBS;
+        let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
         let two = N::from_u64(2);
         let two_inv = two.invert().unwrap();
-        let right_shifter_r = two_inv.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
-        let right_shifter_2r = two_inv.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
-        let left_shifter_r = two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]);
-        let left_shifter_2r = two.pow(&[2 * BIT_LEN_LIMB as u64, 0, 0, 0]);
-        let left_shifter_3r = two.pow(&[3 * BIT_LEN_LIMB as u64, 0, 0, 0]);
+        let right_shifter_r = two_inv.pow(&[bit_len_limb as u64, 0, 0, 0]);
+        let right_shifter_2r = two_inv.pow(&[2 * bit_len_limb as u64, 0, 0, 0]);
+        let left_shifter_r = two.pow(&[bit_len_limb as u64, 0, 0, 0]);
+        let left_shifter_2r = two.pow(&[2 * bit_len_limb as u64, 0, 0, 0]);
+        let left_shifter_3r = two.pow(&[3 * bit_len_limb as u64, 0, 0, 0]);
         let wrong_modulus = modulus::<W>();
         let native_modulus = modulus::<N>();
         let wrong_modulus_in_native_modulus: N = big_to_fe(wrong_modulus.clone() % native_modulus.clone());
-        let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
-        let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-        let two_limb_mask = (big_uint::one() << (BIT_LEN_LIMB * 2)) - 1usize;
-        let aux = Self::aux();
+        let t = big_uint::one() << bit_len_crt_modulus;
+        let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let two_limb_mask = (big_uint::one() << (bit_len_limb * 2)) - 1usize;
+        let aux = Self::aux(bit_len_limb);
 
         Rns {
             right_shifter_r,
@@ -152,6 +156,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             wrong_modulus_in_native_modulus,
             aux,
             two_limb_mask,
+            bit_len_limb,
+            bit_len_lookup,
             _marker_wrong: PhantomData,
         }
     }
@@ -162,13 +168,16 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
         Integer {
-            decomposed: Decomposed::from_big(e, NUMBER_OF_LIMBS, BIT_LEN_LIMB),
+            decomposed: Decomposed::from_big(e, NUMBER_OF_LIMBS, self.bit_len_limb),
         }
     }
 
     pub(crate) fn new_from_limbs(&self, limbs: Vec<Limb<N>>) -> Integer<N> {
         assert_eq!(NUMBER_OF_LIMBS, limbs.len());
-        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
+        let decomposed = Decomposed {
+            limbs,
+            bit_len: self.bit_len_limb,
+        };
         Integer { decomposed }
     }
 
@@ -217,7 +226,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     fn max_limb(&self, bit_len: Option<usize>) -> Limb<N> {
         let bit_len = match bit_len {
             Some(bit_len) => bit_len,
-            _ => BIT_LEN_LIMB,
+            _ => self.bit_len_limb,
         };
 
         let el = (big_uint::one() << bit_len) - 1usize;
@@ -237,7 +246,10 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .map(|(self_limb, other_limb)| (self_limb.value() + other_limb.value()).into())
             .collect();
 
-        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
+        let decomposed = Decomposed {
+            limbs,
+            bit_len: self.bit_len_limb,
+        };
 
         assert_eq!(decomposed.value(), integer_1.value() + integer_0.value());
 
@@ -256,7 +268,10 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
             .collect();
 
-        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
+        let decomposed = Decomposed {
+            limbs,
+            bit_len: self.bit_len_limb,
+        };
 
         Integer { decomposed }
     }
@@ -283,7 +298,10 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
             .collect();
 
-        let decomposed = Decomposed { limbs, bit_len: BIT_LEN_LIMB };
+        let decomposed = Decomposed {
+            limbs,
+            bit_len: self.bit_len_limb,
+        };
 
         Integer { decomposed }
     }
@@ -335,7 +353,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         // apply modulus shifted values
 
         // keep quotient value under the size of a dense limb
-        assert!(quotient < big_uint::one() << BIT_LEN_LIMB);
+        assert!(quotient < big_uint::one() << self.bit_len_limb);
 
         let quotient: Limb<N> = quotient.into();
 
@@ -503,6 +521,10 @@ impl<F: FieldExt> Decomposed<F> {
         Decomposed::from_big(limb.value(), number_of_limbs, bit_len)
     }
 
+    pub fn from_fe(e: F, number_of_limbs: usize, bit_len: usize) -> Self {
+        Decomposed::from_big(fe_to_big(e), number_of_limbs, bit_len)
+    }
+
     pub fn from_big(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Self {
         let mut e = e;
         let mask = big_uint::from(1usize).shl(bit_len) - 1usize;
@@ -542,7 +564,7 @@ impl<F: FieldExt> Decomposed<F> {
 #[cfg(test)]
 mod tests {
 
-    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Rns, BIT_LEN_CRT_MODULUS, BIT_LEN_LIMB};
+    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Rns, BIT_LEN_CRT_MODULUS};
     use crate::rns::Common;
     use crate::rns::Integer;
     use halo2::arithmetic::FieldExt;
@@ -569,7 +591,9 @@ mod tests {
         use halo2::pasta::Fp as Wrong;
         use halo2::pasta::Fq as Native;
 
-        let rns = Rns::<Wrong, Native>::construct();
+        let bit_len_limb = 64;
+
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         let wrong_modulus = rns.wrong_modulus.clone();
         let native_modulus = modulus::<Native>();
@@ -578,7 +602,7 @@ mod tests {
 
         let el_0 = Native::rand();
         let shifted_0 = el_0 * rns.left_shifter_r;
-        let left_shifter_r = big_uint::one() << BIT_LEN_LIMB;
+        let left_shifter_r = big_uint::one() << rns.bit_len_limb;
         let el = fe_to_big(el_0);
         let shifted_1 = (el * left_shifter_r) % native_modulus.clone();
         let shifted_0 = fe_to_big(shifted_0);
@@ -589,7 +613,7 @@ mod tests {
 
         let el_0 = Native::rand();
         let shifted_0 = el_0 * rns.left_shifter_2r;
-        let left_shifter_2r = big_uint::one() << (2 * BIT_LEN_LIMB);
+        let left_shifter_2r = big_uint::one() << (2 * rns.bit_len_limb);
         let el = fe_to_big(el_0);
         let shifted_1 = (el * left_shifter_2r) % native_modulus.clone();
         let shifted_0 = fe_to_big(shifted_0);
@@ -618,8 +642,9 @@ mod tests {
         use halo2::pasta::Fp as Wrong;
         use halo2::pasta::Fq as Native;
         let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+        let bit_len_limb = 64;
 
-        let rns = Rns::<Wrong, Native>::construct();
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         let wrong_modulus = rns.wrong_modulus.clone();
 
@@ -648,7 +673,7 @@ mod tests {
         assert_eq!(r_0, r_1);
 
         // reduce
-        let overflow = BIT_LEN_LIMB + 10;
+        let overflow = rns.bit_len_limb + 10;
         let el = rns.rand_with_limb_bit_size(overflow);
         let result_0 = el.value() % wrong_modulus.clone();
         let reduction_context = rns.reduce(&el);

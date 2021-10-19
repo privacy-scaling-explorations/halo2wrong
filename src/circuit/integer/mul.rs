@@ -1,7 +1,7 @@
 use super::{IntegerChip, IntegerInstructions};
-use crate::circuit::range::{Overflow, RangeInstructions};
-use crate::circuit::{AssignedInteger, AssignedLimb};
-use crate::rns::{Common, Limb, Quotient};
+use crate::circuit::range::{RangeInstructions, RangeTune};
+use crate::circuit::{AssignedInteger, AssignedValue};
+use crate::rns::Quotient;
 use crate::NUMBER_OF_LIMBS;
 
 use halo2::arithmetic::FieldExt;
@@ -9,12 +9,22 @@ use halo2::circuit::{Cell, Region};
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn mul_v0_overflow(&self) -> Overflow {
-        Overflow::Size(2)
+    fn mul_v0_range_tune(&self) -> RangeTune {
+        RangeTune::Overflow(2)
     }
 
-    fn mul_v1_overflow(&self) -> Overflow {
-        Overflow::Size(3)
+    fn mul_v1_range_tune(&self) -> RangeTune {
+        RangeTune::Overflow(3)
+    }
+
+    fn mul_quotient_range_tune(&self) -> RangeTune {
+        // TODO:
+        RangeTune::Fits
+    }
+
+    fn mul_result_range_tune(&self) -> RangeTune {
+        // TODO:
+        RangeTune::Fits
     }
 
     pub(crate) fn _mul(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
@@ -244,8 +254,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         region.constrain_equal(v_0_cell, v_0_new_cell)?;
 
-        let v_0 = &mut AssignedLimb::<N>::new(v_0_new_cell, v_0.map(|v_0| Limb::<N>::from_fe(v_0)));
-        let v_1 = &mut AssignedLimb::<N>::new(v_1_cell, v_1.map(|e| Limb::<N>::from_fe(e)));
+        let v_0 = &mut AssignedValue::<N>::new(v_0_new_cell, v_0);
+        let v_1 = &mut AssignedValue::<N>::new(v_1_cell, v_1);
 
         offset += 1;
 
@@ -253,10 +263,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let range_chip = self.range_chip();
 
-        range_chip.range_integer(region, quotient, &mut offset)?;
-        range_chip.range_integer(region, result, &mut offset)?;
-        let _ = range_chip.range_limb(region, v_0, self.mul_v0_overflow(), &mut offset)?;
-        let _ = range_chip.range_limb(region, v_1, self.mul_v1_overflow(), &mut offset)?;
+        range_chip.range_integer(region, quotient, self.mul_quotient_range_tune(), &mut offset)?;
+        range_chip.range_integer(region, result, self.mul_result_range_tune(), &mut offset)?;
+        let _ = range_chip.range_value(region, v_0, self.mul_v0_range_tune(), &mut offset)?;
+        let _ = range_chip.range_value(region, v_1, self.mul_v1_range_tune(), &mut offset)?;
 
         let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || a.native_value())?;
         let b_native_new_cell = region.assign_advice(|| "b", main_gate.b, offset, || b.native_value())?;

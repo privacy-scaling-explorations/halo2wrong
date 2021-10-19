@@ -1,7 +1,4 @@
-use crate::{
-    rns::{Common, Integer, Limb},
-    NUMBER_OF_LIMBS,
-};
+use crate::rns::{Common, Decomposed, Integer};
 use halo2::plonk::Error;
 use halo2::{
     arithmetic::FieldExt,
@@ -60,14 +57,25 @@ impl<F: FieldExt> AssignedInteger<F> {
         Ok(limbs.ok_or(Error::SynthesisError)?[idx])
     }
 
+    pub fn limbs(&self) -> Vec<AssignedValue<F>> {
+        self.cells
+            .iter()
+            .enumerate()
+            .map(|(i, cell)| {
+                let limb = self.value.as_ref().map(|e| e.limb_value(i));
+                AssignedValue::new(*cell, limb)
+            })
+            .collect()
+    }
+
     pub fn native_value(&self) -> Result<F, Error> {
         let native_value = self.value.as_ref().map(|e| e.native());
         Ok(native_value.ok_or(Error::SynthesisError)?)
     }
 
-    pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
-        let limb = self.value.as_ref().map(|e| e.limb(idx));
-        AssignedLimb::new(self.cells[idx], limb)
+    pub fn limb(&self, idx: usize) -> AssignedValue<F> {
+        let limb = self.value.as_ref().map(|e| e.limb_value(idx));
+        AssignedValue::new(self.cells[idx], limb)
     }
 
     pub fn native(&self) -> AssignedValue<F> {
@@ -100,84 +108,19 @@ impl<F: FieldExt> AssignedInteger<F> {
         self.native_value_cell = new_cell;
         Ok(())
     }
-
-    pub fn to_assigned_limbs(&self) -> Vec<AssignedLimb<F>> {
-        (0..NUMBER_OF_LIMBS).map(|i| self.limb(i)).collect()
-    }
-
-    pub fn to_assigned_values(&self) -> Vec<AssignedValue<F>> {
-        self.to_assigned_limbs().iter().map(|limb| limb.into()).collect()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AssignedLimb<F: FieldExt> {
-    pub value: Option<Limb<F>>,
-    cell: Cell,
-}
-
-impl<F: FieldExt> From<AssignedValue<F>> for AssignedLimb<F> {
-    fn from(assigned_value: AssignedValue<F>) -> Self {
-        Self {
-            value: assigned_value.value.map(|e| Limb::<F>::from_fe(e)),
-            cell: assigned_value.cell,
-        }
-    }
-}
-
-impl<F: FieldExt> From<&AssignedValue<F>> for AssignedLimb<F> {
-    fn from(assigned_value: &AssignedValue<F>) -> Self {
-        Self {
-            value: assigned_value.value.map(|e| Limb::<F>::from_fe(e)),
-            cell: assigned_value.cell,
-        }
-    }
-}
-
-impl<F: FieldExt> AssignedLimb<F> {
-    pub fn new(cell: Cell, value: Option<Limb<F>>) -> Self {
-        AssignedLimb { value, cell }
-    }
-
-    pub fn value(&self) -> Result<F, Error> {
-        Ok(self.value.clone().ok_or(Error::SynthesisError)?.fe())
-    }
-
-    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
-        region.constrain_equal(self.cell, new_cell)?;
-        self.cell = new_cell;
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct AssignedValue<F: FieldExt> {
     pub value: Option<F>,
-    pub cell: Cell,
-}
-
-impl<F: FieldExt> From<&AssignedLimb<F>> for AssignedValue<F> {
-    fn from(limb: &AssignedLimb<F>) -> Self {
-        Self {
-            value: limb.value.clone().map(|e| e.fe()),
-            cell: limb.cell.clone(),
-        }
-    }
-}
-
-impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
-    fn from(limb: AssignedLimb<F>) -> Self {
-        Self {
-            value: limb.value.map(|e| e.fe()),
-            cell: limb.cell,
-        }
-    }
+    cell: Cell,
 }
 
 impl<F: FieldExt> AssignedValue<F> {
     fn new(cell: Cell, value: Option<F>) -> Self {
         AssignedValue { value, cell }
     }
+
     pub fn value(&self) -> Result<F, Error> {
         Ok(self.value.clone().ok_or(Error::SynthesisError)?)
     }
@@ -187,4 +130,13 @@ impl<F: FieldExt> AssignedValue<F> {
         self.cell = new_cell;
         Ok(())
     }
+
+    pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
+        self.value.map(|e| Decomposed::<F>::from_fe(e, number_of_limbs, bit_len).limbs())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UnassignedValue<F: FieldExt> {
+    pub value: Option<F>,
 }

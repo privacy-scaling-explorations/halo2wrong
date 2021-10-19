@@ -1,19 +1,23 @@
 use super::IntegerChip;
-use crate::circuit::range::{Overflow, RangeInstructions};
-use crate::circuit::{AssignedInteger, AssignedLimb};
-use crate::rns::{Limb, Quotient};
+use crate::circuit::range::{RangeInstructions, RangeTune};
+use crate::circuit::{AssignedInteger, AssignedValue};
+use crate::rns::Quotient;
 
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn assert_zero_v0_overflow(&self) -> Overflow {
-        Overflow::Size(2)
+    fn assert_zero_v0_range_tune(&self) -> RangeTune {
+        RangeTune::Overflow(2)
     }
 
-    fn assert_zero_v1_overflow(&self) -> Overflow {
-        Overflow::Size(3)
+    fn assert_zero_v1_range_tune(&self) -> RangeTune {
+        RangeTune::Overflow(3)
+    }
+
+    fn assert_zero_quotient_range_tune(&self) -> RangeTune {
+        RangeTune::Fits
     }
 
     pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>) -> Result<(), Error> {
@@ -27,7 +31,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let quotient = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
-                Quotient::Short(quotient) => quotient,
+                Quotient::Short(quotient) => quotient.fe(),
                 _ => panic!("short quotient expected"),
             };
             quotient
@@ -48,7 +52,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[0]);
 
         let a_0_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(0))?;
-        let q_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.as_ref().ok_or(Error::SynthesisError)?.fe()))?;
+        let q_cell = region.assign_advice(|| "q", main_gate.b, offset, || Ok(quotient.ok_or(Error::SynthesisError)?))?;
         let t_0_cell = region.assign_advice(|| "t_", main_gate.c, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
         let _ = region.assign_advice(|| "zero", main_gate.d, offset, || Ok(N::zero()))?;
 
@@ -69,7 +73,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         offset += 1;
 
         let t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[1]);
-        let quotient = &mut AssignedLimb::<N>::new(q_cell, quotient);
+        let quotient = &mut AssignedValue::<N>::new(q_cell, quotient);
 
         let a_1_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(1))?;
         let q_new_cell = region.assign_advice(|| "q", main_gate.b, offset, || quotient.value())?;
@@ -217,16 +221,16 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         offset += 1;
 
-        let v_0 = &mut AssignedLimb::<N>::new(v_0_new_cell, v_0.map(|v_0| Limb::<N>::from_fe(v_0)));
-        let v_1 = &mut AssignedLimb::<N>::new(v_1_cell, v_1.map(|e| Limb::<N>::from_fe(e)));
+        let v_0 = &mut AssignedValue::<N>::new(v_0_new_cell, v_0);
+        let v_1 = &mut AssignedValue::<N>::new(v_1_cell, v_1);
 
         // ranges
 
         let range_chip = self.range_chip();
 
-        range_chip.range_limb(region, quotient, Overflow::NoOverflow, &mut offset)?;
-        let _ = range_chip.range_limb(region, v_0, self.assert_zero_v0_overflow(), &mut offset)?;
-        let _ = range_chip.range_limb(region, v_1, self.assert_zero_v1_overflow(), &mut offset)?;
+        range_chip.range_value(region, quotient, self.assert_zero_quotient_range_tune(), &mut offset)?;
+        let _ = range_chip.range_value(region, v_0, self.assert_zero_v0_range_tune(), &mut offset)?;
+        let _ = range_chip.range_value(region, v_1, self.assert_zero_v1_range_tune(), &mut offset)?;
 
         // native red
 
