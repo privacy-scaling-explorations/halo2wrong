@@ -1,6 +1,6 @@
 use super::{AssignedCondition, AssignedValue};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Region;
+use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
@@ -26,6 +26,26 @@ pub struct MainGate<F: FieldExt> {
     _marker: PhantomData<F>,
 }
 
+impl<F: FieldExt> MainGate<F> {
+    pub fn width(&self) -> usize {
+        4
+    }
+
+    fn advice_columns(&self) -> Vec<Column<Advice>> {
+        vec![self.config.a, self.config.b, self.config.c, self.config.d]
+    }
+
+    fn fixed_columns(&self) -> Vec<Column<Fixed>> {
+        vec![self.config.sa, self.config.sb, self.config.sc, self.config.sd]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum CombinationOption<F: FieldExt> {
+    SingleLiner,
+    CombineToNext(F),
+}
+
 pub trait MainGateInstructions<F: FieldExt> {
     fn cond_swap(
         &self,
@@ -36,6 +56,15 @@ pub trait MainGateInstructions<F: FieldExt> {
     ) -> Result<AssignedValue<F>, Error>;
 
     fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error>;
+
+    fn combine(
+        &self,
+        region: &mut Region<'_, F>,
+        coeffs: Option<Vec<F>>,
+        bases: Vec<F>,
+        offset: &mut usize,
+        options: CombinationOption<F>,
+    ) -> Result<Vec<Cell>, Error>;
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
@@ -106,8 +135,6 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     }
 
     fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error> {
-        // a*a - a == 0
-
         let offset = 0;
 
         let a_new_cell_0 = region.assign_advice(|| "a", self.config.a, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
@@ -129,6 +156,54 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         a.cycle_cell(region, a_new_cell_2)?;
 
         Ok(())
+    }
+
+    fn combine(
+        &self,
+        region: &mut Region<'_, F>,
+        coeffs: Option<Vec<F>>,
+        bases: Vec<F>,
+        offset: &mut usize,
+        option: CombinationOption<F>,
+    ) -> Result<Vec<Cell>, Error> {
+        assert!(bases.len() == self.width());
+        match coeffs.clone() {
+            Some(coeffs) => {
+                assert_eq!(coeffs.len(), bases.len());
+            }
+            _ => {}
+        }
+
+        let mut cells = Vec::new();
+        for i in 0..self.width() {
+            let coeff_i_cell = region.assign_advice(
+                || format!("coeff {}", i),
+                self.advice_columns()[i],
+                *offset,
+                || Ok(coeffs.as_ref().ok_or(Error::SynthesisError)?[i]),
+            )?;
+            region.assign_fixed(|| format!("base {}", i), self.fixed_columns()[i], *offset, || Ok(bases[i]))?;
+            cells.push(coeff_i_cell);
+        }
+
+        region.assign_fixed(|| format!("s_constant unused"), self.config.s_constant, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| format!("s_mul unused"), self.config.s_mul, *offset, || Ok(F::zero()))?;
+
+        match option {
+            CombinationOption::CombineToNext(base) => {
+                region.assign_fixed(|| format!("sd_next"), self.config.sd_next, *offset, || Ok(base))?;
+            }
+            CombinationOption::SingleLiner => {
+                region.assign_fixed(|| format!("sd_next unused"), self.config.sd_next, *offset, || Ok(F::zero()))?;
+            }
+            _ => {
+                panic!("option is not applicable")
+            }
+        };
+
+        *offset = *offset + 1;
+
+        Ok(cells)
     }
 }
 
@@ -195,7 +270,7 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    use super::{MainGate, MainGateConfig, MainGateInstructions};
+    use super::{CombinationOption, MainGate, MainGateConfig, MainGateInstructions};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -208,11 +283,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuit<F: FieldExt> {
+    struct TestCircuitMainGate<F: FieldExt> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+    impl<F: FieldExt> Circuit<F> for TestCircuitMainGate<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -306,14 +381,6 @@ mod tests {
                 },
             )?;
 
-            // layouter.assign_region(
-            //     || "assign region 3",
-            //     |mut region| {
-            //         self.bitness_check(F::zero())?;
-            //         Ok(())
-            //     },
-            // )?;
-
             Ok(())
         }
     }
@@ -322,16 +389,141 @@ mod tests {
     fn test_main_gate() {
         const K: u32 = 4;
 
-        let circuit = TestCircuit::<Fp> { _marker: PhantomData };
+        let circuit = TestCircuitMainGate::<Fp> { _marker: PhantomData };
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        #[cfg(feature = "print_prover")]
+        println!("{:?}", prover);
+        assert_eq!(prover.verify(), Ok(()));
+    }
 
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitCombination<F: FieldExt> {
+        single_liner_coeffs: Option<Vec<F>>,
+        single_liner_bases: Vec<F>,
+        double_liner_coeffs: Option<Vec<F>>,
+        double_liner_bases: Vec<F>,
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitCombination<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+            let main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                _marker: PhantomData,
+            };
+
+            &mut layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let mut offset = 0;
+                    let coeffs = self.single_liner_coeffs.clone();
+                    let bases = self.single_liner_bases.clone();
+                    main_gate.combine(&mut region, coeffs, bases, &mut offset, CombinationOption::SingleLiner)?;
+
+                    let coeffs = self.double_liner_coeffs.clone().map(|coeffs| coeffs[0..4].to_vec());
+                    let bases = self.double_liner_bases.clone()[0..4].to_vec();
+                    let next = *self.double_liner_bases.last().unwrap();
+                    main_gate.combine(&mut region, coeffs, bases, &mut offset, CombinationOption::CombineToNext(next))?;
+
+                    let coeffs = self.double_liner_coeffs.clone().map(|coeffs| coeffs[4..8].to_vec());
+                    let bases = self.double_liner_bases.clone()[4..8].to_vec();
+                    main_gate.combine(&mut region, coeffs, bases, &mut offset, CombinationOption::SingleLiner)?;
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_main_gate_combination() {
+        const K: u32 = 4;
+
+        let a_0 = Fp::rand();
+        let a_1 = Fp::rand();
+        let a_2 = Fp::rand();
+        let r_0 = Fp::rand();
+        let r_1 = Fp::rand();
+        let r_2 = Fp::rand();
+        let r_3 = Fp::one();
+        let a_3 = -(a_0 * r_0 + a_1 * r_1 + a_2 * r_2);
+
+        let single_liner_coeffs = Some(vec![a_0, a_1, a_2, a_3]);
+        let single_liner_bases = vec![r_0, r_1, r_2, r_3];
+
+        let a_0 = Fp::rand();
+        let a_1 = Fp::rand();
+        let a_2 = Fp::rand();
+        let a_3 = Fp::rand();
+        let r_0 = Fp::rand();
+        let r_1 = Fp::rand();
+        let r_2 = Fp::rand();
+        let r_3 = Fp::rand();
+        // intermediate value
+        let a_last = -(a_0 * r_0 + a_1 * r_1 + a_2 * r_2 + a_3 * r_3);
+        let r_last = Fp::one();
+
+        let a_4 = Fp::rand();
+        let a_5 = Fp::rand();
+        let r_4 = Fp::rand();
+        let r_5 = Fp::rand();
+
+        let r_6 = Fp::one();
+        let a_6 = -(a_4 * r_4 + a_5 * r_5 + a_last * r_last);
+
+        let double_liner_coeffs = Some(vec![a_0, a_1, a_2, a_3, a_4, a_5, a_6, a_last]);
+        let double_liner_bases = vec![r_0, r_1, r_2, r_3, r_4, r_5, r_6, r_last];
+
+        let circuit = TestCircuitCombination::<Fp> {
+            single_liner_coeffs,
+            single_liner_bases,
+            double_liner_coeffs,
+            double_liner_bases,
+            _marker: PhantomData,
+        };
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
 
         #[cfg(feature = "print_prover")]
-        println!("{:?}", prover);
-
+        println!("{:#?}", prover);
         assert_eq!(prover.verify(), Ok(()));
+
+        let single_liner_coeffs = Some(vec![a_0, a_1, a_2, a_3 + Fp::one()]);
+        let single_liner_bases = vec![r_0, r_1, r_2, r_3];
+        let double_liner_coeffs = Some(vec![a_0, a_1, a_2, a_3, a_4, a_5, a_6, a_last + Fp::one()]);
+        let double_liner_bases = vec![r_0, r_1, r_2, r_3, r_4, r_5, r_6, r_last];
+
+        let circuit = TestCircuitCombination::<Fp> {
+            single_liner_coeffs,
+            single_liner_bases,
+            double_liner_coeffs,
+            double_liner_bases,
+            _marker: PhantomData,
+        };
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_ne!(prover.verify(), Ok(()));
     }
 }
