@@ -5,6 +5,13 @@ use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
 
+pub enum MainGateColumn {
+    A = 0,
+    B,
+    C,
+    D,
+}
+
 #[derive(Clone, Debug)]
 pub struct MainGateConfig {
     pub a: Column<Advice>,
@@ -54,6 +61,12 @@ pub trait MainGateInstructions<F: FieldExt> {
         b: &mut AssignedValue<F>,
         cond: &mut AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
+
+    fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error>;
+
+    fn cycle_to(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, column: MainGateColumn, offset: usize) -> Result<(), Error>;
+
+    fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 
     fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error>;
 
@@ -196,14 +209,48 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             CombinationOption::SingleLiner => {
                 region.assign_fixed(|| format!("sd_next unused"), self.config.sd_next, *offset, || Ok(F::zero()))?;
             }
-            _ => {
-                panic!("option is not applicable")
-            }
         };
 
         *offset = *offset + 1;
 
         Ok(cells)
+    }
+
+    fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error> {
+        let column = match column {
+            MainGateColumn::A => self.config.a,
+            MainGateColumn::B => self.config.b,
+            MainGateColumn::C => self.config.c,
+            MainGateColumn::D => self.config.d,
+        };
+        let cell = region.assign_advice(|| "assign value", column, offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
+
+        Ok(AssignedValue::new(cell, value))
+    }
+
+    fn cycle_to(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, column: MainGateColumn, offset: usize) -> Result<(), Error> {
+        let column = match column {
+            MainGateColumn::A => self.config.a,
+            MainGateColumn::B => self.config.b,
+            MainGateColumn::C => self.config.c,
+            MainGateColumn::D => self.config.d,
+        };
+        let value = input.value;
+        let new_cell = region.assign_advice(|| "assign value", column, offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
+        input.cycle_cell(region, new_cell)?;
+        Ok(())
+    }
+
+    fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error> {
+        region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sc", self.config.sc, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sa", self.config.sa, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sb", self.config.sb, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd", self.config.sd, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(F::zero()))?;
+        *offset = *offset + 1;
+        Ok(())
     }
 }
 
