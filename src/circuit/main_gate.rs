@@ -1,4 +1,4 @@
-use super::{AssignedCondition, AssignedValue};
+use super::{AssignedBit, AssignedCondition, AssignedValue};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
@@ -54,6 +54,10 @@ pub enum CombinationOption<F: FieldExt> {
 }
 
 pub trait MainGateInstructions<F: FieldExt> {
+    fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error>;
+
+    fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error>;
+
     fn cond_swap(
         &self,
         region: &mut Region<'_, F>,
@@ -84,8 +88,6 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn cycle_to(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, column: MainGateColumn, offset: usize) -> Result<(), Error>;
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
-
-    fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error>;
 
     fn combine(
         &self,
@@ -148,7 +150,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         let diff = a.value.map(|a| a - b.value.unwrap());
         let res = a.value.map(|a| {
             let b = b.value.unwrap();
-            let cond = cond._value.unwrap();
+            let cond = cond.bool_value.unwrap();
             if cond {
                 a
             } else {
@@ -204,28 +206,34 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(res)
     }
 
-    fn bitness_check(&self, region: &mut Region<'_, F>, a: &mut AssignedValue<F>) -> Result<(), Error> {
-        let offset = 0;
+    fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error> {
+        // val * val - val  = 0
 
-        let a_new_cell_0 = region.assign_advice(|| "a", self.config.a, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
-        let a_new_cell_1 = region.assign_advice(|| "b", self.config.b, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
-        let a_new_cell_2 = region.assign_advice(|| "c", self.config.c, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
-        let _ = region.assign_advice(|| "d", self.config.d, offset, || Ok(F::zero()))?;
+        // Layout:
+        // | A   | B   | C   | D |
+        // | --- | --- | --- | - |
+        // | val | val | val | - |
 
-        region.assign_fixed(|| "s_mul", self.config.s_mul, offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "sc", self.config.sc, offset, || Ok(-F::one()))?;
+        let cell_0 = region.assign_advice(|| "a", self.config.a, *offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
+        let cell_1 = region.assign_advice(|| "b", self.config.b, *offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
+        let cell_2 = region.assign_advice(|| "c", self.config.c, *offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
+        let _ = region.assign_advice(|| "d", self.config.d, *offset, || Ok(F::zero()))?;
 
-        region.assign_fixed(|| "sa", self.config.sa, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sb", self.config.sb, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd", self.config.sd, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "sc", self.config.sc, *offset, || Ok(-F::one()))?;
 
-        a.cycle_cell(region, a_new_cell_0)?;
-        a.cycle_cell(region, a_new_cell_1)?;
-        a.cycle_cell(region, a_new_cell_2)?;
+        region.assign_fixed(|| "sa", self.config.sa, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sb", self.config.sb, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd", self.config.sd, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(F::zero()))?;
 
-        Ok(())
+        region.constrain_equal(cell_0, cell_1)?;
+        region.constrain_equal(cell_1, cell_2)?;
+
+        *offset = *offset + 1;
+
+        Ok(AssignedBit::<F>::new(cell_2, value))
     }
 
     fn combine(
@@ -509,7 +517,6 @@ mod tests {
         single_liner_bases: Vec<F>,
         double_liner_coeffs: Option<Vec<F>>,
         double_liner_bases: Vec<F>,
-        _marker: PhantomData<F>,
     }
 
     impl<F: FieldExt> Circuit<F> for TestCircuitCombination<F> {
@@ -600,7 +607,6 @@ mod tests {
             single_liner_bases,
             double_liner_coeffs,
             double_liner_bases,
-            _marker: PhantomData,
         };
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,
@@ -621,13 +627,96 @@ mod tests {
             single_liner_bases,
             double_liner_coeffs,
             double_liner_bases,
-            _marker: PhantomData,
         };
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
 
+        assert_ne!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitBitness<F: FieldExt> {
+        value: Option<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitBitness<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+            let main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                _marker: PhantomData,
+            };
+
+            &mut layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let mut offset = 0;
+                    let value = self.value;
+                    let _ = main_gate.assign_bit(&mut region, value, &mut offset)?;
+                    let _ = main_gate.assign_bit(&mut region, value, &mut offset)?;
+                    let _ = main_gate.assign_bit(&mut region, value, &mut offset)?;
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_main_gate_bitness() {
+        const K: u32 = 4;
+
+        let value = Fp::one();
+
+        let circuit = TestCircuitBitness::<Fp> { value: Some(value) };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        #[cfg(feature = "print_prover")]
+        println!("{:#?}", prover);
+        assert_eq!(prover.verify(), Ok(()));
+
+        let value = Fp::zero();
+
+        let circuit = TestCircuitBitness::<Fp> { value: Some(value) };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        #[cfg(feature = "print_prover")]
+        println!("{:#?}", prover);
+        assert_eq!(prover.verify(), Ok(()));
+
+        let value = Fp::rand();
+
+        let circuit = TestCircuitBitness::<Fp> { value: Some(value) };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        #[cfg(feature = "print_prover")]
+        println!("{:#?}", prover);
         assert_ne!(prover.verify(), Ok(()));
     }
 }

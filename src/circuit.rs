@@ -12,14 +12,25 @@ mod range;
 
 #[derive(Debug, Clone)]
 pub struct AssignedCondition<F: FieldExt> {
-    _value: Option<bool>,
+    bool_value: Option<bool>,
     cell: Cell,
     _marker: PhantomData<F>,
 }
 
 impl<F: FieldExt> AssignedCondition<F> {
+    fn new(cell: Cell, value: Option<F>) -> Self {
+        // bool_value is true when value is non zero
+        // we want to keep it not too strict with no assertation to be able to test bad paths of bitness check
+        let bool_value = value.map(|value| if value == F::zero() { false } else { true });
+        AssignedCondition {
+            bool_value,
+            cell,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn value(&self) -> Option<F> {
-        self._value.map(|value| if value { F::one() } else { F::zero() })
+        self.bool_value.map(|value| if value { F::one() } else { F::zero() })
     }
 
     pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
@@ -28,6 +39,8 @@ impl<F: FieldExt> AssignedCondition<F> {
         Ok(())
     }
 }
+
+type AssignedBit<F> = AssignedCondition<F>;
 
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<F: FieldExt> {
@@ -68,14 +81,19 @@ impl<F: FieldExt> AssignedInteger<F> {
             .collect()
     }
 
+    pub fn limb(&self, idx: usize) -> AssignedValue<F> {
+        let limb = self.value.as_ref().map(|e| e.limb_value(idx));
+        AssignedValue::new(self.cells[idx], limb)
+    }
+
     pub fn native_value(&self) -> Result<F, Error> {
         let native_value = self.value.as_ref().map(|e| e.native());
         Ok(native_value.ok_or(Error::SynthesisError)?)
     }
 
-    pub fn limb(&self, idx: usize) -> AssignedValue<F> {
-        let limb = self.value.as_ref().map(|e| e.limb_value(idx));
-        AssignedValue::new(self.cells[idx], limb)
+    pub fn native_value_x(&self) -> AssignedValue<F> {
+        let native_value = self.value.as_ref().map(|e| e.native());
+        AssignedValue::new(self.native_value_cell, native_value)
     }
 
     pub fn native(&self) -> AssignedValue<F> {
@@ -95,6 +113,14 @@ impl<F: FieldExt> AssignedInteger<F> {
             Some(native_value_cell) => self.native_value_cell = native_value_cell,
             _ => {}
         }
+    }
+
+    pub fn update_limb_cell(&mut self, idx: usize, new_cell: Cell) {
+        self.cells[idx] = new_cell;
+    }
+
+    pub fn update_native_cell(&mut self, new_cell: Cell) {
+        self.native_value_cell = new_cell;
     }
 
     pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, idx: usize, new_cell: Cell) -> Result<(), Error> {
@@ -133,6 +159,10 @@ impl<F: FieldExt> AssignedValue<F> {
 
     pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
         self.value.map(|e| Decomposed::<F>::from_fe(e, number_of_limbs, bit_len).limbs())
+    }
+
+    pub fn negate(&mut self) {
+        self.value = self.value.map(|value| -value);
     }
 }
 
