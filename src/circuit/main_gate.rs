@@ -62,7 +62,24 @@ pub trait MainGateInstructions<F: FieldExt> {
         cond: &mut AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error>;
+    fn assert_add(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &mut AssignedValue<F>,
+        b: &mut AssignedValue<F>,
+        c: &mut AssignedValue<F>,
+        offset: &mut usize,
+    ) -> Result<(), Error>;
+
+    fn assert_add_with_aux(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &mut AssignedValue<F>,
+        b: &mut AssignedValue<F>,
+        c: &mut AssignedValue<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<(), Error>;
 
     fn cycle_to(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, column: MainGateColumn, offset: usize) -> Result<(), Error>;
 
@@ -81,6 +98,46 @@ pub trait MainGateInstructions<F: FieldExt> {
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
+    fn assert_add_with_aux(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &mut AssignedValue<F>,
+        b: &mut AssignedValue<F>,
+        c: &mut AssignedValue<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        let a_new_cell = region.assign_advice(|| "a", self.config.a, *offset, || a.value())?;
+        let b_new_cell = region.assign_advice(|| "b", self.config.b, *offset, || b.value())?;
+        let c_new_cell = region.assign_advice(|| "c", self.config.c, *offset, || c.value())?;
+
+        region.assign_fixed(|| "a", self.config.sa, *offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "b", self.config.sb, *offset, || Ok(F::one()))?;
+        region.assign_fixed(|| "c", self.config.sc, *offset, || Ok(-F::one()))?;
+
+        region.assign_fixed(|| "constant", self.config.s_constant, *offset, || Ok(aux))?;
+
+        region.assign_fixed(|| "d", self.config.sd, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "d_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "a * b", self.config.s_mul, *offset, || Ok(F::zero()))?;
+
+        a.cycle_cell(region, a_new_cell)?;
+        b.cycle_cell(region, b_new_cell)?;
+        c.cycle_cell(region, c_new_cell)?;
+
+        Ok(())
+    }
+    fn assert_add(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &mut AssignedValue<F>,
+        b: &mut AssignedValue<F>,
+        c: &mut AssignedValue<F>,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        self.assert_add_with_aux(region, a, b, c, F::zero(), offset)
+    }
+
     fn cond_swap(
         &self,
         region: &mut Region<'_, F>,
