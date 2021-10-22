@@ -53,6 +53,45 @@ pub enum CombinationOption<F: FieldExt> {
     CombineToNext(F),
 }
 
+pub enum AssignedCombinationTerm<'a, F: FieldExt> {
+    Assigned(&'a mut AssignedValue<F>, F),
+    Zero,
+}
+
+impl<'a, F: FieldExt> AssignedCombinationTerm<'a, F> {
+    fn resolve(&self) -> CombinationTerm<F> {
+        match self {
+            Self::Assigned(assigned, base) => CombinationTerm::Value(assigned.value, *base),
+            Self::Zero => CombinationTerm::Zero,
+        }
+    }
+
+    fn cycle_cell(self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+        match self {
+            Self::Assigned(assigned, _) => assigned.cycle_cell(region, new_cell),
+            _ => Ok(()),
+        }
+    }
+}
+
+pub enum CombinationTerm<F: FieldExt> {
+    Value(Option<F>, F),
+    Zero,
+}
+
+impl<F: FieldExt> CombinationTerm<F> {
+    fn resolve(self) -> (Option<F>, F) {
+        match self {
+            Self::Value(coeff, base) => (coeff, base),
+            Self::Zero => (Some(F::zero()), F::zero()),
+        }
+    }
+}
+
+// impl<F::FieldExt> CombinationTerm<F>{
+
+// }
+
 pub trait MainGateInstructions<F: FieldExt> {
     fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error>;
 
@@ -89,14 +128,29 @@ pub trait MainGateInstructions<F: FieldExt> {
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 
+    fn combine_assigned(
+        &self,
+        region: &mut Region<'_, F>,
+        term_0: AssignedCombinationTerm<F>,
+        term_1: AssignedCombinationTerm<F>,
+        term_2: AssignedCombinationTerm<F>,
+        term_3: AssignedCombinationTerm<F>,
+        constant_aux: F,
+        offset: &mut usize,
+        options: CombinationOption<F>,
+    ) -> Result<(), Error>;
+
     fn combine(
         &self,
         region: &mut Region<'_, F>,
-        coeffs: Option<Vec<F>>,
-        bases: Vec<F>,
+        c_0: CombinationTerm<F>,
+        c_1: CombinationTerm<F>,
+        c_2: CombinationTerm<F>,
+        c_3: CombinationTerm<F>,
+        constant_aux: F,
         offset: &mut usize,
         options: CombinationOption<F>,
-    ) -> Result<Vec<Cell>, Error>;
+    ) -> Result<(Cell, Cell, Cell, Cell), Error>;
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
@@ -236,49 +290,75 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(AssignedBit::<F>::new(cell_2, value))
     }
 
+    fn combine_assigned(
+        &self,
+        region: &mut Region<'_, F>,
+        term_0: AssignedCombinationTerm<F>,
+        term_1: AssignedCombinationTerm<F>,
+        term_2: AssignedCombinationTerm<F>,
+        term_3: AssignedCombinationTerm<F>,
+        constant_aux: F,
+        offset: &mut usize,
+        options: CombinationOption<F>,
+    ) -> Result<(), Error> {
+        let (cell_0, cell_1, cell_2, cell_3) = self.combine(
+            region,
+            term_0.resolve(),
+            term_1.resolve(),
+            term_2.resolve(),
+            term_3.resolve(),
+            constant_aux,
+            offset,
+            options,
+        )?;
+        term_0.cycle_cell(region, cell_0)?;
+        term_1.cycle_cell(region, cell_1)?;
+        term_2.cycle_cell(region, cell_2)?;
+        term_3.cycle_cell(region, cell_3)?;
+        Ok(())
+    }
+
     fn combine(
         &self,
         region: &mut Region<'_, F>,
-        coeffs: Option<Vec<F>>,
-        bases: Vec<F>,
+        term_0: CombinationTerm<F>,
+        term_1: CombinationTerm<F>,
+        term_2: CombinationTerm<F>,
+        term_3: CombinationTerm<F>,
+        constant_aux: F,
         offset: &mut usize,
         option: CombinationOption<F>,
-    ) -> Result<Vec<Cell>, Error> {
-        assert!(bases.len() == self.width());
-        match coeffs.clone() {
-            Some(coeffs) => {
-                assert_eq!(coeffs.len(), bases.len());
-            }
-            _ => {}
-        }
+    ) -> Result<(Cell, Cell, Cell, Cell), Error> {
+        let (c_0, u_0) = term_0.resolve();
+        let (c_1, u_1) = term_1.resolve();
+        let (c_2, u_2) = term_2.resolve();
+        let (c_3, u_3) = term_3.resolve();
 
-        let mut cells = Vec::new();
-        for i in 0..self.width() {
-            let coeff_i_cell = region.assign_advice(
-                || format!("coeff {}", i),
-                self.advice_columns()[i],
-                *offset,
-                || Ok(coeffs.as_ref().ok_or(Error::SynthesisError)?[i]),
-            )?;
-            region.assign_fixed(|| format!("base {}", i), self.fixed_columns()[i], *offset, || Ok(bases[i]))?;
-            cells.push(coeff_i_cell);
-        }
+        let cell_0 = region.assign_advice(|| "coeff_0", self.config.a, *offset, || Ok(c_0.ok_or(Error::SynthesisError)?))?;
+        let cell_1 = region.assign_advice(|| "coeff_1", self.config.b, *offset, || Ok(c_1.ok_or(Error::SynthesisError)?))?;
+        let cell_2 = region.assign_advice(|| "coeff_2", self.config.c, *offset, || Ok(c_2.ok_or(Error::SynthesisError)?))?;
+        let cell_3 = region.assign_advice(|| "coeff_3", self.config.d, *offset, || Ok(c_3.ok_or(Error::SynthesisError)?))?;
 
-        region.assign_fixed(|| format!("s_constant unused"), self.config.s_constant, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| format!("s_mul unused"), self.config.s_mul, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "base_0", self.config.sa, *offset, || Ok(u_0))?;
+        region.assign_fixed(|| "base_1", self.config.sb, *offset, || Ok(u_1))?;
+        region.assign_fixed(|| "base_2", self.config.sc, *offset, || Ok(u_2))?;
+        region.assign_fixed(|| "base_3", self.config.sd, *offset, || Ok(u_3))?;
+
+        region.assign_fixed(|| "s_constant unused", self.config.s_constant, *offset, || Ok(constant_aux))?;
+        region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
 
         match option {
             CombinationOption::CombineToNext(base) => {
-                region.assign_fixed(|| format!("sd_next"), self.config.sd_next, *offset, || Ok(base))?;
+                region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(base))?;
             }
             CombinationOption::SingleLiner => {
-                region.assign_fixed(|| format!("sd_next unused"), self.config.sd_next, *offset, || Ok(F::zero()))?;
+                region.assign_fixed(|| "sd_next unused", self.config.sd_next, *offset, || Ok(F::zero()))?;
             }
         };
 
         *offset = *offset + 1;
 
-        Ok(cells)
+        Ok((cell_0, cell_1, cell_2, cell_3))
     }
 
     fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error> {
@@ -382,7 +462,7 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    use super::{CombinationOption, MainGate, MainGateConfig, MainGateInstructions};
+    use super::{CombinationOption, CombinationTerm, MainGate, MainGateConfig, MainGateInstructions};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -544,16 +624,68 @@ mod tests {
                     let mut offset = 0;
                     let coeffs = self.single_liner_coeffs.clone();
                     let bases = self.single_liner_bases.clone();
-                    main_gate.combine(&mut region, coeffs, bases, &mut offset, CombinationOption::SingleLiner)?;
+                    let c_0 = coeffs.as_ref().map(|coeffs| coeffs[0]);
+                    let c_1 = coeffs.as_ref().map(|coeffs| coeffs[1]);
+                    let c_2 = coeffs.as_ref().map(|coeffs| coeffs[2]);
+                    let c_3 = coeffs.as_ref().map(|coeffs| coeffs[3]);
+                    let u_0 = bases[0];
+                    let u_1 = bases[1];
+                    let u_2 = bases[2];
+                    let u_3 = bases[3];
+                    main_gate.combine(
+                        &mut region,
+                        CombinationTerm::Value(c_0, u_0),
+                        CombinationTerm::Value(c_1, u_1),
+                        CombinationTerm::Value(c_2, u_2),
+                        CombinationTerm::Value(c_3, u_3),
+                        F::zero(),
+                        &mut offset,
+                        CombinationOption::SingleLiner,
+                    )?;
 
                     let coeffs = self.double_liner_coeffs.clone().map(|coeffs| coeffs[0..4].to_vec());
                     let bases = self.double_liner_bases.clone()[0..4].to_vec();
+                    let c_0 = coeffs.as_ref().map(|coeffs| coeffs[0]);
+                    let c_1 = coeffs.as_ref().map(|coeffs| coeffs[1]);
+                    let c_2 = coeffs.as_ref().map(|coeffs| coeffs[2]);
+                    let c_3 = coeffs.as_ref().map(|coeffs| coeffs[3]);
+                    let u_0 = bases[0];
+                    let u_1 = bases[1];
+                    let u_2 = bases[2];
+                    let u_3 = bases[3];
+
                     let next = *self.double_liner_bases.last().unwrap();
-                    main_gate.combine(&mut region, coeffs, bases, &mut offset, CombinationOption::CombineToNext(next))?;
+                    main_gate.combine(
+                        &mut region,
+                        CombinationTerm::Value(c_0, u_0),
+                        CombinationTerm::Value(c_1, u_1),
+                        CombinationTerm::Value(c_2, u_2),
+                        CombinationTerm::Value(c_3, u_3),
+                        F::zero(),
+                        &mut offset,
+                        CombinationOption::CombineToNext(next),
+                    )?;
 
                     let coeffs = self.double_liner_coeffs.clone().map(|coeffs| coeffs[4..8].to_vec());
                     let bases = self.double_liner_bases.clone()[4..8].to_vec();
-                    main_gate.combine(&mut region, coeffs, bases, &mut offset, CombinationOption::SingleLiner)?;
+                    let c_0 = coeffs.as_ref().map(|coeffs| coeffs[0]);
+                    let c_1 = coeffs.as_ref().map(|coeffs| coeffs[1]);
+                    let c_2 = coeffs.as_ref().map(|coeffs| coeffs[2]);
+                    let c_3 = coeffs.as_ref().map(|coeffs| coeffs[3]);
+                    let u_0 = bases[0];
+                    let u_1 = bases[1];
+                    let u_2 = bases[2];
+                    let u_3 = bases[3];
+                    main_gate.combine(
+                        &mut region,
+                        CombinationTerm::Value(c_0, u_0),
+                        CombinationTerm::Value(c_1, u_1),
+                        CombinationTerm::Value(c_2, u_2),
+                        CombinationTerm::Value(c_3, u_3),
+                        F::zero(),
+                        &mut offset,
+                        CombinationOption::SingleLiner,
+                    )?;
 
                     Ok(())
                 },

@@ -1,4 +1,4 @@
-use crate::circuit::main_gate::{CombinationOption, MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
+use crate::circuit::main_gate::{CombinationOption, CombinationTerm, MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
@@ -64,15 +64,17 @@ impl<F: FieldExt> RangeChip<F> {
     fn range_value_fits(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS;
+        let one = F::one();
+        let zero = F::zero();
+        let r = self.left_shifter[0];
+        let rr = self.left_shifter[1];
+        let rrr = self.left_shifter[2];
 
-        // Layout of RangeTune::Fits
+        // Witness layout of RangeTune::Fits
         // | A   | B   | C   | D   |
         // | --- | --- | --- | --- |
         // | a_0 | a_1 | a_2 | a_3 |
         // | -   | -   | -   | in  |
-
-        // first row must constain
-        // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - in = 0
 
         // enable dense decomposion range check
         self.config.s_dense_limb_range.enable(region, *offset)?;
@@ -80,25 +82,33 @@ impl<F: FieldExt> RangeChip<F> {
         // input is decomposed insto smaller limbs
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
 
-        // limbs.clone().map(|limbs| {
-        //     for e in limbs {
-        //         println!("limb fits: {:?}", e);
-        //     }
-        // });
-
-        // make first combination witness values
-        let coeffs = limbs;
-
-        // make fixed bases of first combination
-        let bases = vec![F::one(), self.left_shifter[0], self.left_shifter[1], self.left_shifter[2]];
-
         // enable further wire for intermediate sum
         let combination_option = CombinationOption::CombineToNext(-F::one());
 
         // combine limbs into the next row
-        let _ = main_gate.combine(region, coeffs, bases, offset, combination_option)?;
+        // returned cells are subjected to small range lookup
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | a_0 | a_1 | a_2 | a_3 |
+        // this row must constain
+        // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - in = 0
+        let _ = main_gate.combine(
+            region,
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[0]), one),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[1]), r),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[3]), rrr),
+            zero,
+            offset,
+            combination_option,
+        )?;
 
         // proceeed to next row
+
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | -   | -   | -   | in  |
+        // only cycle input value to the futher cell
 
         // cycle the input before proceeding the next row
         main_gate.cycle_to(region, input, MainGateColumn::D, *offset)?;
@@ -112,15 +122,18 @@ impl<F: FieldExt> RangeChip<F> {
     fn range_value_overflow(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, offset: &mut usize, bit_len: usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS + 1;
+        let one = F::one();
+        let minus_one = -F::one();
+        let zero = F::zero();
+        let r = self.left_shifter[0];
+        let rr = self.left_shifter[1];
+        let rrr = self.left_shifter[2];
 
-        // Layout of RangeTune::Overflow
+        // Witness layout of RangeTune::Overflow
         // | A   | B   | C   | D   |
         // | --- | --- | --- | --- |
         // | a_0 | a_1 | a_2 | a_3 |
         // | -   | a_4 | in  | t   |
-
-        // first row must constain
-        // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - t = 0
 
         // enable dense decomposion range check
         self.config.s_dense_limb_range.enable(region, *offset)?;
@@ -128,29 +141,34 @@ impl<F: FieldExt> RangeChip<F> {
         // input is decomposed insto smaller limbs
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
 
-        // make first combination witness values
-        let coeffs = limbs.as_ref().map(|limbs| limbs[0..NUMBER_OF_LOOKUP_LIMBS].to_vec());
-
-        // make fixed bases of first combination
-        let bases = vec![F::one(), self.left_shifter[0], self.left_shifter[1], self.left_shifter[2]];
-
         // enable further wire for intermediate sum
         let combination_option = CombinationOption::CombineToNext(-F::one());
 
         // combine limbs into the next row
-        // ignore returned cells
-        let _ = main_gate.combine(region, coeffs, bases, offset, combination_option)?;
+        // returned cells are subjected to small range lookup
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | a_0 | a_1 | a_2 | a_3 |
+        // first row must constain
+        // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - t = 0
+        let _ = main_gate.combine(
+            region,
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[0]), one),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[1]), r),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[3]), rrr),
+            zero,
+            offset,
+            combination_option,
+        )?;
 
         // proceeed to next row
-
-        // second row must constain
-        // a_4 * R^4 - input + t  = 0
 
         // enable fine decomposion range check of main gate B column
         self.get_table(bit_len)?.selector.enable(region, *offset)?;
 
         // get most significant shifter for overflow value
-        let msb_shifter = *self.left_shifter.last().unwrap();
+        let msb_shifter = self.left_shifter[3];
 
         // make first combination witness values
         let coeffs = limbs.as_ref().map(|limbs| {
@@ -160,17 +178,27 @@ impl<F: FieldExt> RangeChip<F> {
             let input_value = input.value().unwrap();
             // combination of previous row must go to column 'D'
             let intermediate_combination = input_value - overflow_value * msb_shifter;
-            vec![F::zero(), overflow_value, input_value, intermediate_combination]
+            (overflow_value, input_value, intermediate_combination)
         });
 
-        // make fixed bases of final combination
-        let bases = vec![F::zero(), msb_shifter, -F::one(), F::one()];
-
-        // cycle the input before proceeding the next row
+        // cycle the input to the composition before proceeding the next row
         main_gate.cycle_to(region, input, MainGateColumn::C, *offset)?;
 
-        // combine overflow value with intermadiate result
-        let _ = main_gate.combine(region, coeffs, bases, offset, CombinationOption::SingleLiner)?;
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | -   | a_4 | in  | t   |
+        // second row must constain
+        // a_4 * R^4 - input + t  = 0
+        let _ = main_gate.combine(
+            region,
+            CombinationTerm::Zero,
+            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.0), msb_shifter),
+            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.1), minus_one),
+            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.2), one),
+            zero,
+            offset,
+            CombinationOption::SingleLiner,
+        )?;
 
         Ok(())
     }
@@ -178,6 +206,11 @@ impl<F: FieldExt> RangeChip<F> {
     fn range_value_fine(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, offset: &mut usize, bit_len: usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS;
+        let one = F::one();
+        let minus_one = -F::one();
+        let zero = F::zero();
+        let r = self.left_shifter[0];
+        let rr = self.left_shifter[1];
 
         // Layout of RangeTune::Fine
         // | A   | B   | C   | D   |
@@ -185,38 +218,34 @@ impl<F: FieldExt> RangeChip<F> {
         // | a_0 | a_1 | a_2 | -   |
         // | -   | a_3 | in  | t   |
 
-        // first row must constain
-        // a_0 + a_1 * R + a_2 * R^2 - t = 0
-
         // enable dense decomposion range check
         self.config.s_dense_limb_range.enable(region, *offset)?;
 
         // input is decomposed insto smaller limbs
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
 
-        // make first combination witness values
-        // it contains first 3 term of the combination
-        let coeffs = limbs.as_ref().map(|limbs| {
-            let mut coeffs = limbs[0..number_of_limbs - 1].to_vec();
-            coeffs.push(F::zero()); // it just can be any value in the dense range since selector D is zero
-            coeffs
-        });
-
-        // make fixed bases of first combination
-        // we delay the last limb since dense range selector is open at this row
-        let bases = vec![F::one(), self.left_shifter[0], self.left_shifter[1], F::zero()];
-
         // enable further wire for intermediate sum
         let combination_option = CombinationOption::CombineToNext(-F::one());
 
-        // combine first three limbs into the next row
-        // ignore returned cells
-        let _ = main_gate.combine(region, coeffs, bases, offset, combination_option)?;
+        // combine limbs into the next row
+        // returned cells are subjected to small range lookup
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | a_0 | a_1 | a_2 | -   |
+        // this row must constain
+        // a_0 + a_1 * R + a_2 * R^2 - t = 0
+        let _ = main_gate.combine(
+            region,
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[0]), one),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[1]), r),
+            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            CombinationTerm::Zero,
+            zero,
+            offset,
+            combination_option,
+        )?;
 
         // proceeed to next row
-
-        // second row must constain
-        // a_3 * R^3 - input + t  = 0
 
         // enable fine decomposion range check of main gate B column
         self.get_table(bit_len)?.selector.enable(region, *offset)?;
@@ -232,17 +261,30 @@ impl<F: FieldExt> RangeChip<F> {
             let input_value = input.value().unwrap();
             // combination of previous row must go to column 'D'
             let intermediate_combination = input_value - fine_tune_value * msb_shifter;
-            vec![F::zero(), fine_tune_value, input_value, intermediate_combination]
+            (fine_tune_value, input_value, intermediate_combination)
         });
 
         // make fixed bases of final combination
-        let bases = vec![F::zero(), msb_shifter, -F::one(), F::one()];
+        // let bases = vec![F::zero(), msb_shifter, -F::one(), F::one()];
 
         // cycle the input before proceeding the next row
         main_gate.cycle_to(region, input, MainGateColumn::C, *offset)?;
 
-        // // combine overflow value with intermadiate result
-        let _ = main_gate.combine(region, coeffs, bases, offset, CombinationOption::SingleLiner)?;
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | -   | a_3 | in  | t   |
+        // second row must constain
+        // a_3 * R^3 - input + t  = 0
+        let _ = main_gate.combine(
+            region,
+            CombinationTerm::Zero,
+            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.0), msb_shifter),
+            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.1), minus_one),
+            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.2), one),
+            zero,
+            offset,
+            CombinationOption::SingleLiner,
+        )?;
 
         Ok(())
     }
