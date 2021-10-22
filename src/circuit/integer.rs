@@ -10,6 +10,7 @@ use halo2::circuit::{Cell, Region};
 use halo2::plonk::{ConstraintSystem, Error};
 
 mod add;
+mod assert_in_field;
 mod assert_zero;
 mod mul;
 mod reduce;
@@ -185,51 +186,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn assert_in_field(&self, region: &mut Region<'_, N>, input: &mut AssignedInteger<N>) -> Result<(), Error> {
-        // p - a
-        //  p = [p_3,p_2,p_1,p_0]
-        //  a = [a_3,a_2,a_1,a_0]
-
-        // c0 = p0 - a0 + b0 * R
-        // c1 = p1 - a1 - b0 + b1 * R
-        // c2 = p2 - a2 - b1 + b2 * R
-        // c3 = p3 - a3 - b2
-
-        // c0 = d0 + b0 * R
-        // b0 = (c0 - p0 + a0) / R
-        // b0 = (c0 - p0 + a0) ***
-
-        // c1 = d1 - b0 + b1 * R
-        // b1 = (c1 - d1 + b0) / R
-        // b1 = (c1 - d1 + (c0 - d0) / R) / R
-        // b1 = (c1 - p1 + a1 + b0) ***
-
-        // c2 = d2 - b1 + b2 * R
-        // b2 = (c2 - d2 + b1 ) / R
-        // b2 = (c2 - d2 + (c1 - d1 + (c0 - d0) / R) / R) / R
-        // b2 = (c2 - p2 + a1 + b1) ***
-
-        // c3 = d3 - b2
-        // b2 = d3 - c3
-        // b2 = p3 - a3 - c3 ***
-
-        // 0 = c3 - d3 + (c2 - d2 + (c1 - d1 + (c0 - d0) / R) / R) / R
-        // 0 = (c3 - d3) + (c2 - d2) / R + (c1 - d1) / RR + (c0 - d0) / RRR
-        // 0 = (c3 - p3 + a3) * RRR
-        //   + (c2 - p2 + a2) * RR
-        //   + (c1 - p1 + a1) * R
-        //   + (c0 - p0 + a0)
-
-        // b2 = d3 - c3
-        // c3 = p3 - a3 - b2
-
-        // b0 = (c0 - p0 + a0)
-        // b1 = (c1 - p1 + a1 + b0)
-        // b2 = (c2 - p2 + a2 + b1)
-        // b2 = p3 - a3 - c3
-
-        let main_gate = self.main_gate_config();
-
-        unimplemented!()
+        self._assert_in_field(region, input)
     }
 }
 
@@ -265,7 +222,7 @@ mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeInstructions};
-    use crate::rns::{Integer, Rns};
+    use crate::rns::{Common, Integer, Limb, Rns};
     use crate::BIT_LEN_LIMB;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
@@ -597,5 +554,98 @@ mod tests {
         println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitInField<W: FieldExt, N: FieldExt> {
+        input: Option<Integer<N>>,
+        rns: Rns<W, N>,
+    }
+
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitInField<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            let main_gate_config = MainGate::<N>::configure(meta);
+            let overflow_bit_lengths = TestCircuitConfig::overflow_bit_lengths();
+            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let integer_config = IntegerChip::<W, N>::configure(meta, &range_config, &main_gate_config);
+            TestCircuitConfig {
+                integer_config,
+                main_gate_config,
+            }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+
+            let integer_a_0 = &mut layouter.assign_region(|| "region 0", |mut region| integer_chip.assign_integer(&mut region, self.input.clone(), &mut 0))?;
+            layouter.assign_region(|| "region 1", |mut region| integer_chip.assert_in_field(&mut region, integer_a_0))?;
+
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_limb_range_table(&mut layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_overflow_range_tables(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_assert_in_field_circuit() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+
+        let rns = &Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let k: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let k: u32 = 8;
+
+        for i in 0..10 {
+            let integer_in_field = if i == 0 {
+                rns.wrong_modulus_minus_one.clone().into()
+            } else {
+                rns.rand_normalized()
+            };
+
+            let circuit = TestCircuitInField::<Wrong, Native> {
+                input: Some(integer_in_field),
+                rns: rns.clone(),
+            };
+
+            let prover = match MockProver::run(k, &circuit, vec![]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+
+            #[cfg(feature = "print_prover")]
+            println!("{:#?}", prover);
+
+            assert_eq!(prover.verify(), Ok(()));
+        }
+
+        let integer_not_in_field = rns.wrong_modulus_decomposed.clone().into();
+
+        let circuit = TestCircuitInField::<Wrong, Native> {
+            input: Some(integer_not_in_field),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(k, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_ne!(prover.verify(), Ok(()));
     }
 }

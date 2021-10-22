@@ -46,6 +46,14 @@ impl<F: FieldExt> From<Decomposed<F>> for big_uint {
     }
 }
 
+fn bool_to_big(truth: bool) -> big_uint {
+    if truth {
+        big_uint::one()
+    } else {
+        big_uint::zero()
+    }
+}
+
 impl<F: FieldExt> From<Limb<F>> for big_uint {
     fn from(limb: Limb<F>) -> Self {
         limb.value()
@@ -70,6 +78,11 @@ pub struct ReductionContext<N: FieldExt> {
     pub v_1: Limb<N>,
 }
 
+pub struct ComparisionResult<N: FieldExt> {
+    pub result: Integer<N>,
+    pub borrow: [bool; NUMBER_OF_LIMBS],
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub right_shifter_r: Native,
@@ -80,10 +93,11 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub aux: Decomposed<Native>,
     pub negative_wrong_modulus: Decomposed<Native>,
     pub wrong_modulus_decomposed: Decomposed<Native>,
+    pub wrong_modulus_minus_one: Decomposed<Native>,
     pub wrong_modulus_in_native_modulus: Native,
     pub bit_len_limb: usize,
     pub bit_len_lookup: usize,
-    wrong_modulus: big_uint,
+    pub wrong_modulus: big_uint,
     native_modulus: big_uint,
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
@@ -140,6 +154,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let t = big_uint::one() << bit_len_crt_modulus;
         let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
         let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let wrong_modulus_minus_one = Decomposed::<N>::from_big(wrong_modulus.clone() - 1usize, NUMBER_OF_LIMBS, bit_len_limb);
         let two_limb_mask = (big_uint::one() << (bit_len_limb * 2)) - 1usize;
         let aux = Self::aux(bit_len_limb);
 
@@ -153,6 +168,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             native_modulus,
             negative_wrong_modulus,
             wrong_modulus_decomposed,
+            wrong_modulus_minus_one,
             wrong_modulus_in_native_modulus,
             aux,
             two_limb_mask,
@@ -276,14 +292,39 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         Integer { decomposed }
     }
 
-    pub(crate) fn field_element(&self, integer: &Integer<N>) -> Integer<N> {
-        assert!(integer.value() < self.wrong_modulus);
+    pub(crate) fn compare_to_modulus(&self, integer: &Integer<N>) -> ComparisionResult<N> {
+        let mut borrow = [false; NUMBER_OF_LIMBS];
+        let modulus_minus_one = self.wrong_modulus_minus_one.clone();
 
-        let b_0 = fe_to_big(self.wrong_modulus_decomposed.limb_value(0)) > fe_to_big(integer.limb_value(0));
-        let b_1 = fe_to_big(self.wrong_modulus_decomposed.limb_value(1)) > fe_to_big(integer.limb_value(1));
-        let b_2 = fe_to_big(self.wrong_modulus_decomposed.limb_value(2)) > fe_to_big(integer.limb_value(2));
+        let mut prev_borrow = big_uint::zero();
+        let limbs: Vec<Limb<N>> = integer
+            .decomposed
+            .limbs
+            .iter()
+            .zip(modulus_minus_one.limbs.iter())
+            .zip(borrow.iter_mut())
+            .map(|((limb, modulus_limb), borrow)| {
+                let limb = &limb.value();
+                let modulus_limb = &modulus_limb.value();
+                let cur_borrow = *modulus_limb < limb + prev_borrow.clone();
+                *borrow = cur_borrow;
+                let cur_borrow = bool_to_big(cur_borrow) << self.bit_len_limb;
+                let res_limb = (((modulus_limb + cur_borrow) - prev_borrow.clone()) - limb).into();
+                prev_borrow = bool_to_big(*borrow);
 
-        unimplemented!();
+                res_limb
+            })
+            .collect();
+
+        let result: Integer<N> = Decomposed {
+            limbs,
+            bit_len: self.bit_len_limb,
+        }
+        .into();
+
+        // assert!(result.value() + integer.value() == modulus_minus_one.value());
+
+        ComparisionResult { result, borrow }
     }
 
     pub(crate) fn neg(&self, integer_0: &Integer<N>) -> Integer<N> {
@@ -424,13 +465,27 @@ impl<F: FieldExt> fmt::Debug for Integer<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = self.value();
         let value = value.to_str_radix(16);
-        write!(f, "{}\n", value)?;
+        write!(f, "value: {}\n", value)?;
         for limb in self.limbs().iter() {
             let value = fe_to_big(*limb);
             let value = value.to_str_radix(16);
-            write!(f, "{}\n", value)?;
+            write!(f, "limb: {}\n", value)?;
         }
         Ok(())
+    }
+}
+
+impl<F: FieldExt> From<Decomposed<F>> for Integer<F> {
+    fn from(decomposed: Decomposed<F>) -> Self {
+        Integer { decomposed }
+    }
+}
+
+impl<F: FieldExt> From<&Decomposed<F>> for Integer<F> {
+    fn from(decomposed: &Decomposed<F>) -> Self {
+        Integer {
+            decomposed: decomposed.clone(),
+        }
     }
 }
 
@@ -567,6 +622,7 @@ mod tests {
     use super::{big_to_fe, fe_to_big, modulus, Decomposed, Rns, BIT_LEN_CRT_MODULUS};
     use crate::rns::Common;
     use crate::rns::Integer;
+    use crate::rns::Limb;
     use halo2::arithmetic::FieldExt;
     use halo2::pasta::Fp;
     use halo2::pasta::Fq;
@@ -699,5 +755,36 @@ mod tests {
             let result_1 = reduction_context.result;
             assert_eq!(result_1.value(), result_0);
         }
+    }
+
+    #[test]
+    fn test_comparison() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+        let bit_len_limb = 64;
+
+        let rns = &Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        let wrong_modulus = rns.wrong_modulus_decomposed.clone();
+
+        let a_0 = Limb::<Native> {
+            _value: wrong_modulus.limb_value(0),
+        };
+        let a_1 = Limb::<Native> {
+            _value: wrong_modulus.limb_value(1),
+        };
+        let a_2 = Limb::<Native> {
+            _value: wrong_modulus.limb_value(2),
+        };
+        let a_3 = Limb::<Native> {
+            _value: wrong_modulus.limb_value(3),
+        };
+
+        let a = &rns.new_from_limbs(vec![a_0, a_1, a_2, a_3]);
+
+        let comparison_result = rns.compare_to_modulus(a);
+
+        println!("{:?}", comparison_result.borrow);
+        println!("{:?}", comparison_result.result);
     }
 }

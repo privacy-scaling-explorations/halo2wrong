@@ -44,7 +44,7 @@ type AssignedBit<F> = AssignedCondition<F>;
 
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<F: FieldExt> {
-    pub value: Option<Integer<F>>,
+    value: Option<Integer<F>>,
     cells: Vec<Cell>,
     native_value_cell: Cell,
 }
@@ -140,6 +140,15 @@ impl<F: FieldExt> AssignedInteger<F> {
 pub struct AssignedValue<F: FieldExt> {
     pub value: Option<F>,
     cell: Cell,
+}
+
+impl<F: FieldExt> From<AssignedCondition<F>> for AssignedValue<F> {
+    fn from(cond: AssignedCondition<F>) -> Self {
+        AssignedValue {
+            value: cond.value(),
+            cell: cond.cell,
+        }
+    }
 }
 
 impl<F: FieldExt> AssignedValue<F> {
