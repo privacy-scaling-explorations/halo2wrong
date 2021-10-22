@@ -39,8 +39,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.iter().map(|t| t.fe()).collect());
 
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0.fe());
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1.fe());
+        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
+        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
 
         // | A   | B | C   | D |
         // | --- | - | --- | - |

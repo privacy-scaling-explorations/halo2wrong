@@ -72,10 +72,10 @@ pub struct ReductionContext<N: FieldExt> {
     pub quotient: Quotient<N>,
     pub t: Vec<Limb<N>>,
     pub negative_modulus: Vec<Limb<N>>,
-    pub u_0: Limb<N>,
-    pub u_1: Limb<N>,
-    pub v_0: Limb<N>,
-    pub v_1: Limb<N>,
+    pub u_0: N,
+    pub u_1: N,
+    pub v_0: N,
+    pub v_1: N,
 }
 
 pub struct ComparisionResult<N: FieldExt> {
@@ -427,7 +427,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         }
     }
 
-    fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (Limb<N>, Limb<N>, Limb<N>, Limb<N>) {
+    fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (N, N, N, N) {
         let s = self.left_shifter_r;
 
         let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limb_value(0) - s * r.decomposed.limb_value(1);
@@ -446,7 +446,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let v_0 = u_0 * self.right_shifter_2r;
         let v_1 = (u_1 + v_0) * self.right_shifter_2r;
 
-        (Limb::from_fe(u_0), Limb::from_fe(u_1), Limb::from_fe(v_0), Limb::from_fe(v_1))
+        (u_0, u_1, v_0, v_1)
     }
 }
 

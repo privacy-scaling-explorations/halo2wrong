@@ -55,16 +55,26 @@ pub enum CombinationOption<F: FieldExt> {
     CombineToNextAdd(F),
 }
 
-pub enum AssignedCombinationTerm<'a, F: FieldExt> {
+pub enum CombinationTerm<'a, F: FieldExt> {
     Assigned(&'a mut AssignedValue<F>, F),
+    Unassigned(Option<F>, F),
     Zero,
 }
 
-impl<'a, F: FieldExt> AssignedCombinationTerm<'a, F> {
-    fn resolve(&self) -> CombinationTerm<F> {
+impl<'a, F: FieldExt> CombinationTerm<'a, F> {
+    fn coeff(&self) -> Option<F> {
         match self {
-            Self::Assigned(assigned, base) => CombinationTerm::Value(assigned.value, *base),
-            Self::Zero => CombinationTerm::Zero,
+            Self::Assigned(assigned, _) => assigned.value,
+            Self::Unassigned(unassigned, _) => *unassigned,
+            Self::Zero => Some(F::zero()),
+        }
+    }
+
+    fn base(&self) -> F {
+        match self {
+            Self::Assigned(_, base) => *base,
+            Self::Unassigned(_, base) => *base,
+            Self::Zero => F::zero(),
         }
     }
 
@@ -75,24 +85,6 @@ impl<'a, F: FieldExt> AssignedCombinationTerm<'a, F> {
         }
     }
 }
-
-pub enum CombinationTerm<F: FieldExt> {
-    Value(Option<F>, F),
-    Zero,
-}
-
-impl<F: FieldExt> CombinationTerm<F> {
-    fn resolve(self) -> (Option<F>, F) {
-        match self {
-            Self::Value(coeff, base) => (coeff, base),
-            Self::Zero => (Some(F::zero()), F::zero()),
-        }
-    }
-}
-
-// impl<F::FieldExt> CombinationTerm<F>{
-
-// }
 
 pub trait MainGateInstructions<F: FieldExt> {
     fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error>;
@@ -130,18 +122,6 @@ pub trait MainGateInstructions<F: FieldExt> {
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 
-    fn combine_assigned(
-        &self,
-        region: &mut Region<'_, F>,
-        term_0: AssignedCombinationTerm<F>,
-        term_1: AssignedCombinationTerm<F>,
-        term_2: AssignedCombinationTerm<F>,
-        term_3: AssignedCombinationTerm<F>,
-        constant_aux: F,
-        offset: &mut usize,
-        options: CombinationOption<F>,
-    ) -> Result<(), Error>;
-
     fn combine(
         &self,
         region: &mut Region<'_, F>,
@@ -167,12 +147,12 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     ) -> Result<(), Error> {
         let (one, minus_one) = (F::one(), -F::one());
 
-        self.combine_assigned(
+        self.combine(
             region,
-            AssignedCombinationTerm::Assigned(a, one),
-            AssignedCombinationTerm::Assigned(b, one),
-            AssignedCombinationTerm::Assigned(c, minus_one),
-            AssignedCombinationTerm::Zero,
+            CombinationTerm::Assigned(a, one),
+            CombinationTerm::Assigned(b, one),
+            CombinationTerm::Assigned(c, minus_one),
+            CombinationTerm::Zero,
             aux,
             offset,
             CombinationOption::SingleLinerAdd,
@@ -269,9 +249,9 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         let (cell_0, cell_1, cell_2, _) = self.combine(
             region,
-            CombinationTerm::Value(value, zero),
-            CombinationTerm::Value(value, zero),
-            CombinationTerm::Value(value, minus_one),
+            CombinationTerm::Unassigned(value, zero),
+            CombinationTerm::Unassigned(value, zero),
+            CombinationTerm::Unassigned(value, minus_one),
             CombinationTerm::Zero,
             zero,
             offset,
@@ -285,34 +265,6 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(AssignedBit::<F>::new(cell_2, value))
     }
 
-    fn combine_assigned(
-        &self,
-        region: &mut Region<'_, F>,
-        term_0: AssignedCombinationTerm<F>,
-        term_1: AssignedCombinationTerm<F>,
-        term_2: AssignedCombinationTerm<F>,
-        term_3: AssignedCombinationTerm<F>,
-        constant_aux: F,
-        offset: &mut usize,
-        options: CombinationOption<F>,
-    ) -> Result<(), Error> {
-        let (cell_0, cell_1, cell_2, cell_3) = self.combine(
-            region,
-            term_0.resolve(),
-            term_1.resolve(),
-            term_2.resolve(),
-            term_3.resolve(),
-            constant_aux,
-            offset,
-            options,
-        )?;
-        term_0.cycle_cell(region, cell_0)?;
-        term_1.cycle_cell(region, cell_1)?;
-        term_2.cycle_cell(region, cell_2)?;
-        term_3.cycle_cell(region, cell_3)?;
-        Ok(())
-    }
-
     fn combine(
         &self,
         region: &mut Region<'_, F>,
@@ -324,10 +276,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         offset: &mut usize,
         option: CombinationOption<F>,
     ) -> Result<(Cell, Cell, Cell, Cell), Error> {
-        let (c_0, u_0) = term_0.resolve();
-        let (c_1, u_1) = term_1.resolve();
-        let (c_2, u_2) = term_2.resolve();
-        let (c_3, u_3) = term_3.resolve();
+        let (c_0, u_0) = (term_0.coeff(), term_0.base());
+        let (c_1, u_1) = (term_1.coeff(), term_1.base());
+        let (c_2, u_2) = (term_2.coeff(), term_2.base());
+        let (c_3, u_3) = (term_3.coeff(), term_3.base());
 
         let cell_0 = region.assign_advice(|| "coeff_0", self.config.a, *offset, || Ok(c_0.ok_or(Error::SynthesisError)?))?;
         let cell_1 = region.assign_advice(|| "coeff_1", self.config.b, *offset, || Ok(c_1.ok_or(Error::SynthesisError)?))?;
@@ -359,6 +311,11 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
                 region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
             }
         };
+
+        term_0.cycle_cell(region, cell_0)?;
+        term_1.cycle_cell(region, cell_1)?;
+        term_2.cycle_cell(region, cell_2)?;
+        term_3.cycle_cell(region, cell_3)?;
 
         *offset = *offset + 1;
 
@@ -638,10 +595,10 @@ mod tests {
                     let u_3 = bases[3];
                     main_gate.combine(
                         &mut region,
-                        CombinationTerm::Value(c_0, u_0),
-                        CombinationTerm::Value(c_1, u_1),
-                        CombinationTerm::Value(c_2, u_2),
-                        CombinationTerm::Value(c_3, u_3),
+                        CombinationTerm::Unassigned(c_0, u_0),
+                        CombinationTerm::Unassigned(c_1, u_1),
+                        CombinationTerm::Unassigned(c_2, u_2),
+                        CombinationTerm::Unassigned(c_3, u_3),
                         F::zero(),
                         &mut offset,
                         CombinationOption::SingleLinerAdd,
@@ -661,10 +618,10 @@ mod tests {
                     let next = *self.double_liner_bases.last().unwrap();
                     main_gate.combine(
                         &mut region,
-                        CombinationTerm::Value(c_0, u_0),
-                        CombinationTerm::Value(c_1, u_1),
-                        CombinationTerm::Value(c_2, u_2),
-                        CombinationTerm::Value(c_3, u_3),
+                        CombinationTerm::Unassigned(c_0, u_0),
+                        CombinationTerm::Unassigned(c_1, u_1),
+                        CombinationTerm::Unassigned(c_2, u_2),
+                        CombinationTerm::Unassigned(c_3, u_3),
                         F::zero(),
                         &mut offset,
                         CombinationOption::CombineToNextAdd(next),
@@ -682,10 +639,10 @@ mod tests {
                     let u_3 = bases[3];
                     main_gate.combine(
                         &mut region,
-                        CombinationTerm::Value(c_0, u_0),
-                        CombinationTerm::Value(c_1, u_1),
-                        CombinationTerm::Value(c_2, u_2),
-                        CombinationTerm::Value(c_3, u_3),
+                        CombinationTerm::Unassigned(c_0, u_0),
+                        CombinationTerm::Unassigned(c_1, u_1),
+                        CombinationTerm::Unassigned(c_2, u_2),
+                        CombinationTerm::Unassigned(c_3, u_3),
                         F::zero(),
                         &mut offset,
                         CombinationOption::SingleLinerAdd,

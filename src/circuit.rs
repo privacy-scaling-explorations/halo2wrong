@@ -91,16 +91,8 @@ impl<F: FieldExt> AssignedInteger<F> {
         Ok(native_value.ok_or(Error::SynthesisError)?)
     }
 
-    pub fn native_value_x(&self) -> AssignedValue<F> {
-        let native_value = self.value.as_ref().map(|e| e.native());
-        AssignedValue::new(self.native_value_cell, native_value)
-    }
-
     pub fn native(&self) -> AssignedValue<F> {
-        AssignedValue {
-            value: self.value.as_ref().map(|e| e.native()),
-            cell: self.native_value_cell,
-        }
+        AssignedValue::new(self.native_value_cell, self.value.as_ref().map(|e| e.native()))
     }
 
     pub fn update_cells(&mut self, cells: Option<Vec<Cell>>, native_value_cell: Option<Cell>) {

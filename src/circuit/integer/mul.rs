@@ -50,10 +50,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let quotient = &mut self.assign_integer(region, quotient, &mut offset)?;
         let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.iter().map(|t| t.fe()).collect());
 
-        let u_0 = reduction_result.as_ref().map(|u| u.u_0.fe());
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0.fe());
-        let u_1 = reduction_result.as_ref().map(|u| u.u_1.fe());
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1.fe());
+        let u_0 = reduction_result.as_ref().map(|u| u.u_0);
+        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
+        let u_1 = reduction_result.as_ref().map(|u| u.u_1);
+        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
 
         // t_0 = a_0 * b_0 + q_0 * p_0
 

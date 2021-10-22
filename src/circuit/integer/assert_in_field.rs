@@ -1,5 +1,5 @@
 use super::{IntegerChip, IntegerInstructions};
-use crate::circuit::main_gate::{AssignedCombinationTerm, CombinationOption, MainGateInstructions};
+use crate::circuit::main_gate::{CombinationOption, CombinationTerm, MainGateInstructions};
 use crate::circuit::range::{RangeInstructions, RangeTune};
 use crate::circuit::{AssignedInteger, AssignedValue};
 use halo2::arithmetic::FieldExt;
@@ -70,12 +70,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | c_0 | a_0 | b_0 | -     |
 
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
-        main_gate.combine_assigned(
+        main_gate.combine(
             region,
-            AssignedCombinationTerm::Assigned(result_0, minus_one),
-            AssignedCombinationTerm::Assigned(input_0, minus_one),
-            AssignedCombinationTerm::Assigned(b_0, left_shifter),
-            AssignedCombinationTerm::Zero,
+            CombinationTerm::Assigned(result_0, minus_one),
+            CombinationTerm::Assigned(input_0, minus_one),
+            CombinationTerm::Assigned(b_0, left_shifter),
+            CombinationTerm::Zero,
             modulus_minus_one.limb_value(0),
             &mut offset,
             CombinationOption::SingleLinerAdd,
@@ -86,12 +86,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | c_1 | a_1 | b_1 | b_0   |
 
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
-        main_gate.combine_assigned(
+        main_gate.combine(
             region,
-            AssignedCombinationTerm::Assigned(result_1, minus_one),
-            AssignedCombinationTerm::Assigned(input_1, minus_one),
-            AssignedCombinationTerm::Assigned(b_1, left_shifter),
-            AssignedCombinationTerm::Assigned(b_0, minus_one),
+            CombinationTerm::Assigned(result_1, minus_one),
+            CombinationTerm::Assigned(input_1, minus_one),
+            CombinationTerm::Assigned(b_1, left_shifter),
+            CombinationTerm::Assigned(b_0, minus_one),
             modulus_minus_one.limb_value(1),
             &mut offset,
             CombinationOption::SingleLinerAdd,
@@ -102,12 +102,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | c_2 | a_2 | b_2 | b_1   |
 
         // 0 = -c_2 + p_2 - a_2 + b_2 * R - b_1
-        main_gate.combine_assigned(
+        main_gate.combine(
             region,
-            AssignedCombinationTerm::Assigned(result_2, minus_one),
-            AssignedCombinationTerm::Assigned(input_2, minus_one),
-            AssignedCombinationTerm::Assigned(b_2, left_shifter),
-            AssignedCombinationTerm::Assigned(b_1, minus_one),
+            CombinationTerm::Assigned(result_2, minus_one),
+            CombinationTerm::Assigned(input_2, minus_one),
+            CombinationTerm::Assigned(b_2, left_shifter),
+            CombinationTerm::Assigned(b_1, minus_one),
             modulus_minus_one.limb_value(2),
             &mut offset,
             CombinationOption::SingleLinerAdd,
@@ -119,12 +119,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         // 0 = -c_3 + p_3 - a_3 - b_2
 
-        main_gate.combine_assigned(
+        main_gate.combine(
             region,
-            AssignedCombinationTerm::Assigned(result_3, minus_one),
-            AssignedCombinationTerm::Assigned(input_3, minus_one),
-            AssignedCombinationTerm::Zero,
-            AssignedCombinationTerm::Assigned(b_2, minus_one),
+            CombinationTerm::Assigned(result_3, minus_one),
+            CombinationTerm::Assigned(input_3, minus_one),
+            CombinationTerm::Zero,
+            CombinationTerm::Assigned(b_2, minus_one),
             modulus_minus_one.limb_value(3),
             &mut offset,
             CombinationOption::SingleLinerAdd,

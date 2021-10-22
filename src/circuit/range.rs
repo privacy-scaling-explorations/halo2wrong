@@ -94,10 +94,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - in = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[0]), one),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[1]), r),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[3]), rrr),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
             zero,
             offset,
             combination_option,
@@ -153,10 +153,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - t = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[0]), one),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[1]), r),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[3]), rrr),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
             zero,
             offset,
             combination_option,
@@ -192,9 +192,9 @@ impl<F: FieldExt> RangeChip<F> {
         let _ = main_gate.combine(
             region,
             CombinationTerm::Zero,
-            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.1), minus_one),
-            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.2), one),
+            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
+            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
+            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,
@@ -236,9 +236,9 @@ impl<F: FieldExt> RangeChip<F> {
         // a_0 + a_1 * R + a_2 * R^2 - t = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[0]), one),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[1]), r),
-            CombinationTerm::Value(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
+            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
             CombinationTerm::Zero,
             zero,
             offset,
@@ -278,9 +278,9 @@ impl<F: FieldExt> RangeChip<F> {
         let _ = main_gate.combine(
             region,
             CombinationTerm::Zero,
-            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.1), minus_one),
-            CombinationTerm::Value(coeffs.map(|coeffs| coeffs.2), one),
+            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
+            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
+            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,

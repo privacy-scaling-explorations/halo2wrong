@@ -31,9 +31,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset += 1;
         }
 
-        let a_native = &mut a.native_value_x();
-        let b_native = &mut b.native_value_x();
-        let c_native = &mut c.native_value_x();
+        let a_native = &mut a.native();
+        let b_native = &mut b.native();
+        let c_native = &mut c.native();
         main_gate.assert_add(region, a_native, b_native, c_native, &mut offset)?;
         a.update_native_cell(a_native.cell);
         b.update_native_cell(b_native.cell);
