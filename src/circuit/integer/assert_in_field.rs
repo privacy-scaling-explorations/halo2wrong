@@ -78,7 +78,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             AssignedCombinationTerm::Zero,
             modulus_minus_one.limb_value(0),
             &mut offset,
-            CombinationOption::SingleLiner,
+            CombinationOption::SingleLinerAdd,
         )?;
 
         // | A   | B   | C   | D     |
@@ -94,7 +94,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             AssignedCombinationTerm::Assigned(b_0, minus_one),
             modulus_minus_one.limb_value(1),
             &mut offset,
-            CombinationOption::SingleLiner,
+            CombinationOption::SingleLinerAdd,
         )?;
 
         // | A   | B   | C   | D     |
@@ -110,7 +110,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             AssignedCombinationTerm::Assigned(b_1, minus_one),
             modulus_minus_one.limb_value(2),
             &mut offset,
-            CombinationOption::SingleLiner,
+            CombinationOption::SingleLinerAdd,
         )?;
 
         // | A   | B   | C   | D     |
@@ -127,7 +127,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             AssignedCombinationTerm::Assigned(b_2, minus_one),
             modulus_minus_one.limb_value(3),
             &mut offset,
-            CombinationOption::SingleLiner,
+            CombinationOption::SingleLinerAdd,
         )?;
 
         // update cells

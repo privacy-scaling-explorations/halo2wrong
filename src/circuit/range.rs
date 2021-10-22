@@ -83,7 +83,7 @@ impl<F: FieldExt> RangeChip<F> {
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
 
         // enable further wire for intermediate sum
-        let combination_option = CombinationOption::CombineToNext(-F::one());
+        let combination_option = CombinationOption::CombineToNextAdd(-F::one());
 
         // combine limbs into the next row
         // returned cells are subjected to small range lookup
@@ -142,7 +142,7 @@ impl<F: FieldExt> RangeChip<F> {
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
 
         // enable further wire for intermediate sum
-        let combination_option = CombinationOption::CombineToNext(-F::one());
+        let combination_option = CombinationOption::CombineToNextAdd(-F::one());
 
         // combine limbs into the next row
         // returned cells are subjected to small range lookup
@@ -197,7 +197,7 @@ impl<F: FieldExt> RangeChip<F> {
             CombinationTerm::Value(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
-            CombinationOption::SingleLiner,
+            CombinationOption::SingleLinerAdd,
         )?;
 
         Ok(())
@@ -225,7 +225,7 @@ impl<F: FieldExt> RangeChip<F> {
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
 
         // enable further wire for intermediate sum
-        let combination_option = CombinationOption::CombineToNext(-F::one());
+        let combination_option = CombinationOption::CombineToNextAdd(-F::one());
 
         // combine limbs into the next row
         // returned cells are subjected to small range lookup
@@ -283,7 +283,7 @@ impl<F: FieldExt> RangeChip<F> {
             CombinationTerm::Value(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
-            CombinationOption::SingleLiner,
+            CombinationOption::SingleLinerAdd,
         )?;
 
         Ok(())

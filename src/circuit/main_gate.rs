@@ -49,8 +49,10 @@ impl<F: FieldExt> MainGate<F> {
 
 #[derive(Clone, Debug)]
 pub enum CombinationOption<F: FieldExt> {
-    SingleLiner,
-    CombineToNext(F),
+    SingleLinerMul,
+    SingleLinerAdd,
+    CombineToNextMul(F),
+    CombineToNextAdd(F),
 }
 
 pub enum AssignedCombinationTerm<'a, F: FieldExt> {
@@ -163,23 +165,18 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         aux: F,
         offset: &mut usize,
     ) -> Result<(), Error> {
-        let a_new_cell = region.assign_advice(|| "a", self.config.a, *offset, || a.value())?;
-        let b_new_cell = region.assign_advice(|| "b", self.config.b, *offset, || b.value())?;
-        let c_new_cell = region.assign_advice(|| "c", self.config.c, *offset, || c.value())?;
+        let (one, minus_one) = (F::one(), -F::one());
 
-        region.assign_fixed(|| "a", self.config.sa, *offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "b", self.config.sb, *offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "c", self.config.sc, *offset, || Ok(-F::one()))?;
-
-        region.assign_fixed(|| "constant", self.config.s_constant, *offset, || Ok(aux))?;
-
-        region.assign_fixed(|| "d", self.config.sd, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "d_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "a * b", self.config.s_mul, *offset, || Ok(F::zero()))?;
-
-        a.cycle_cell(region, a_new_cell)?;
-        b.cycle_cell(region, b_new_cell)?;
-        c.cycle_cell(region, c_new_cell)?;
+        self.combine_assigned(
+            region,
+            AssignedCombinationTerm::Assigned(a, one),
+            AssignedCombinationTerm::Assigned(b, one),
+            AssignedCombinationTerm::Assigned(c, minus_one),
+            AssignedCombinationTerm::Zero,
+            aux,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
 
         Ok(())
     }
@@ -261,30 +258,28 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     }
 
     fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error> {
-        // val * val - val  = 0
-
-        // Layout:
+        // Witness Layout:
         // | A   | B   | C   | D |
         // | --- | --- | --- | - |
         // | val | val | val | - |
 
-        let cell_0 = region.assign_advice(|| "a", self.config.a, *offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
-        let cell_1 = region.assign_advice(|| "b", self.config.b, *offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
-        let cell_2 = region.assign_advice(|| "c", self.config.c, *offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
-        let _ = region.assign_advice(|| "d", self.config.d, *offset, || Ok(F::zero()))?;
+        // val * val - val  = 0
 
-        region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "sc", self.config.sc, *offset, || Ok(-F::one()))?;
+        let (_, minus_one, zero) = (F::one(), -F::one(), -F::zero());
 
-        region.assign_fixed(|| "sa", self.config.sa, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sb", self.config.sb, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd", self.config.sd, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(F::zero()))?;
+        let (cell_0, cell_1, cell_2, _) = self.combine(
+            region,
+            CombinationTerm::Value(value, zero),
+            CombinationTerm::Value(value, zero),
+            CombinationTerm::Value(value, minus_one),
+            CombinationTerm::Zero,
+            zero,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
 
         region.constrain_equal(cell_0, cell_1)?;
         region.constrain_equal(cell_1, cell_2)?;
-
         *offset = *offset + 1;
 
         Ok(AssignedBit::<F>::new(cell_2, value))
@@ -344,15 +339,24 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "base_2", self.config.sc, *offset, || Ok(u_2))?;
         region.assign_fixed(|| "base_3", self.config.sd, *offset, || Ok(u_3))?;
 
-        region.assign_fixed(|| "s_constant unused", self.config.s_constant, *offset, || Ok(constant_aux))?;
-        region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
+        region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(constant_aux))?;
 
         match option {
-            CombinationOption::CombineToNext(base) => {
+            CombinationOption::CombineToNextMul(base) => {
+                region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
                 region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(base))?;
             }
-            CombinationOption::SingleLiner => {
+            CombinationOption::CombineToNextAdd(base) => {
+                region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(base))?;
+                region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
+            }
+            CombinationOption::SingleLinerMul => {
+                region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
                 region.assign_fixed(|| "sd_next unused", self.config.sd_next, *offset, || Ok(F::zero()))?;
+            }
+            CombinationOption::SingleLinerAdd => {
+                region.assign_fixed(|| "sd_next unused", self.config.sd_next, *offset, || Ok(F::zero()))?;
+                region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
             }
         };
 
@@ -640,7 +644,7 @@ mod tests {
                         CombinationTerm::Value(c_3, u_3),
                         F::zero(),
                         &mut offset,
-                        CombinationOption::SingleLiner,
+                        CombinationOption::SingleLinerAdd,
                     )?;
 
                     let coeffs = self.double_liner_coeffs.clone().map(|coeffs| coeffs[0..4].to_vec());
@@ -663,7 +667,7 @@ mod tests {
                         CombinationTerm::Value(c_3, u_3),
                         F::zero(),
                         &mut offset,
-                        CombinationOption::CombineToNext(next),
+                        CombinationOption::CombineToNextAdd(next),
                     )?;
 
                     let coeffs = self.double_liner_coeffs.clone().map(|coeffs| coeffs[4..8].to_vec());
@@ -684,7 +688,7 @@ mod tests {
                         CombinationTerm::Value(c_3, u_3),
                         F::zero(),
                         &mut offset,
-                        CombinationOption::SingleLiner,
+                        CombinationOption::SingleLinerAdd,
                     )?;
 
                     Ok(())
