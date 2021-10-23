@@ -222,7 +222,7 @@ mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeInstructions};
-    use crate::rns::{Common, Integer, Limb, Rns};
+    use crate::rns::{Integer, Rns};
     use crate::BIT_LEN_LIMB;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
@@ -497,18 +497,18 @@ mod tests {
             let integer_a_1 = &mut integer_a_0.clone();
             let integer_b_1 = &mut integer_b_0.clone();
 
-            // layouter.assign_region(
-            //     || "region 4",
-            //     |mut region| integer_chip.assert_strict_equal(&mut region, integer_c_0, integer_c_1),
-            // )?;
-            // layouter.assign_region(
-            //     || "region 4",
-            //     |mut region| integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1),
-            // )?;
-            // layouter.assign_region(
-            //     || "region 5",
-            //     |mut region| integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1),
-            // )?;
+            layouter.assign_region(
+                || "region 4",
+                |mut region| integer_chip.assert_strict_equal(&mut region, integer_c_0, integer_c_1),
+            )?;
+            layouter.assign_region(
+                || "region 4",
+                |mut region| integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1),
+            )?;
+            layouter.assign_region(
+                || "region 5",
+                |mut region| integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1),
+            )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]

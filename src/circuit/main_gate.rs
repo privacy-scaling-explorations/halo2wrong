@@ -55,13 +55,13 @@ pub enum CombinationOption<F: FieldExt> {
     CombineToNextAdd(F),
 }
 
-pub enum CombinationTerm<'a, F: FieldExt> {
+pub enum Term<'a, F: FieldExt> {
     Assigned(&'a mut AssignedValue<F>, F),
     Unassigned(Option<F>, F),
     Zero,
 }
 
-impl<'a, F: FieldExt> CombinationTerm<'a, F> {
+impl<'a, F: FieldExt> Term<'a, F> {
     fn coeff(&self) -> Option<F> {
         match self {
             Self::Assigned(assigned, _) => assigned.value,
@@ -125,10 +125,10 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn combine(
         &self,
         region: &mut Region<'_, F>,
-        c_0: CombinationTerm<F>,
-        c_1: CombinationTerm<F>,
-        c_2: CombinationTerm<F>,
-        c_3: CombinationTerm<F>,
+        c_0: Term<F>,
+        c_1: Term<F>,
+        c_2: Term<F>,
+        c_3: Term<F>,
         constant_aux: F,
         offset: &mut usize,
         options: CombinationOption<F>,
@@ -149,10 +149,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         self.combine(
             region,
-            CombinationTerm::Assigned(a, one),
-            CombinationTerm::Assigned(b, one),
-            CombinationTerm::Assigned(c, minus_one),
-            CombinationTerm::Zero,
+            Term::Assigned(a, one),
+            Term::Assigned(b, one),
+            Term::Assigned(c, minus_one),
+            Term::Zero,
             aux,
             offset,
             CombinationOption::SingleLinerAdd,
@@ -249,10 +249,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         let (cell_0, cell_1, cell_2, _) = self.combine(
             region,
-            CombinationTerm::Unassigned(value, zero),
-            CombinationTerm::Unassigned(value, zero),
-            CombinationTerm::Unassigned(value, minus_one),
-            CombinationTerm::Zero,
+            Term::Unassigned(value, zero),
+            Term::Unassigned(value, zero),
+            Term::Unassigned(value, minus_one),
+            Term::Zero,
             zero,
             offset,
             CombinationOption::SingleLinerMul,
@@ -268,10 +268,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn combine(
         &self,
         region: &mut Region<'_, F>,
-        term_0: CombinationTerm<F>,
-        term_1: CombinationTerm<F>,
-        term_2: CombinationTerm<F>,
-        term_3: CombinationTerm<F>,
+        term_0: Term<F>,
+        term_1: Term<F>,
+        term_2: Term<F>,
+        term_3: Term<F>,
         constant_aux: F,
         offset: &mut usize,
         option: CombinationOption<F>,
@@ -423,7 +423,7 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    use super::{CombinationOption, CombinationTerm, MainGate, MainGateConfig, MainGateInstructions};
+    use super::{CombinationOption, Term, MainGate, MainGateConfig, MainGateInstructions};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -595,10 +595,10 @@ mod tests {
                     let u_3 = bases[3];
                     main_gate.combine(
                         &mut region,
-                        CombinationTerm::Unassigned(c_0, u_0),
-                        CombinationTerm::Unassigned(c_1, u_1),
-                        CombinationTerm::Unassigned(c_2, u_2),
-                        CombinationTerm::Unassigned(c_3, u_3),
+                        Term::Unassigned(c_0, u_0),
+                        Term::Unassigned(c_1, u_1),
+                        Term::Unassigned(c_2, u_2),
+                        Term::Unassigned(c_3, u_3),
                         F::zero(),
                         &mut offset,
                         CombinationOption::SingleLinerAdd,
@@ -618,10 +618,10 @@ mod tests {
                     let next = *self.double_liner_bases.last().unwrap();
                     main_gate.combine(
                         &mut region,
-                        CombinationTerm::Unassigned(c_0, u_0),
-                        CombinationTerm::Unassigned(c_1, u_1),
-                        CombinationTerm::Unassigned(c_2, u_2),
-                        CombinationTerm::Unassigned(c_3, u_3),
+                        Term::Unassigned(c_0, u_0),
+                        Term::Unassigned(c_1, u_1),
+                        Term::Unassigned(c_2, u_2),
+                        Term::Unassigned(c_3, u_3),
                         F::zero(),
                         &mut offset,
                         CombinationOption::CombineToNextAdd(next),
@@ -639,10 +639,10 @@ mod tests {
                     let u_3 = bases[3];
                     main_gate.combine(
                         &mut region,
-                        CombinationTerm::Unassigned(c_0, u_0),
-                        CombinationTerm::Unassigned(c_1, u_1),
-                        CombinationTerm::Unassigned(c_2, u_2),
-                        CombinationTerm::Unassigned(c_3, u_3),
+                        Term::Unassigned(c_0, u_0),
+                        Term::Unassigned(c_1, u_1),
+                        Term::Unassigned(c_2, u_2),
+                        Term::Unassigned(c_3, u_3),
                         F::zero(),
                         &mut offset,
                         CombinationOption::SingleLinerAdd,

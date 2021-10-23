@@ -1,4 +1,4 @@
-use crate::circuit::main_gate::{CombinationOption, CombinationTerm, MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
+use crate::circuit::main_gate::{CombinationOption, Term, MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
@@ -94,10 +94,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - in = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
             zero,
             offset,
             combination_option,
@@ -153,10 +153,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - t = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
             zero,
             offset,
             combination_option,
@@ -191,10 +191,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_4 * R^4 - input + t  = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Zero,
-            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
-            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
+            Term::Zero,
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,
@@ -236,10 +236,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_0 + a_1 * R + a_2 * R^2 - t = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
-            CombinationTerm::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            CombinationTerm::Zero,
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
+            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
+            Term::Zero,
             zero,
             offset,
             combination_option,
@@ -277,10 +277,10 @@ impl<F: FieldExt> RangeChip<F> {
         // a_3 * R^3 - input + t  = 0
         let _ = main_gate.combine(
             region,
-            CombinationTerm::Zero,
-            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
-            CombinationTerm::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
+            Term::Zero,
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,

@@ -1,5 +1,5 @@
 use super::{IntegerChip, IntegerInstructions};
-use crate::circuit::main_gate::{CombinationOption, CombinationTerm, MainGateInstructions};
+use crate::circuit::main_gate::{CombinationOption, Term, MainGateInstructions};
 use crate::circuit::range::{RangeInstructions, RangeTune};
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::Quotient;
@@ -107,10 +107,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
                 let (a_j_new_cell, b_k_new_cell, q_k_new_cell, t_i_cell) = main_gate.combine(
                     region,
-                    CombinationTerm::Assigned(&mut a.limb(j), zero),
-                    CombinationTerm::Assigned(&mut b.limb(k), zero),
-                    CombinationTerm::Assigned(&mut quotient.limb(k), negative_wrong_modulus[j]),
-                    CombinationTerm::Unassigned(t, -one),
+                    Term::Assigned(&mut a.limb(j), zero),
+                    Term::Assigned(&mut b.limb(k), zero),
+                    Term::Assigned(&mut quotient.limb(k), negative_wrong_modulus[j]),
+                    Term::Unassigned(t, -one),
                     zero,
                     &mut offset,
                     combination_option,
@@ -150,10 +150,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, result_0_cell, result_1_cell) = main_gate.combine(
             region,
-            CombinationTerm::Assigned(&mut intermediate_values_cycling[0].clone(), one),
-            CombinationTerm::Assigned(&mut intermediate_values_cycling[1].clone(), left_shifter_r),
-            CombinationTerm::Assigned(&mut result.limb(0), -one),
-            CombinationTerm::Assigned(&mut result.limb(1), -left_shifter_r),
+            Term::Assigned(&mut intermediate_values_cycling[0].clone(), one),
+            Term::Assigned(&mut intermediate_values_cycling[1].clone(), left_shifter_r),
+            Term::Assigned(&mut result.limb(0), -one),
+            Term::Assigned(&mut result.limb(1), -left_shifter_r),
             zero,
             &mut offset,
             CombinationOption::CombineToNextAdd(-one),
@@ -164,10 +164,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, v_0_cell, _) = main_gate.combine(
             region,
-            CombinationTerm::Zero,
-            CombinationTerm::Zero,
-            CombinationTerm::Unassigned(v_0, left_shifter_2r),
-            CombinationTerm::Unassigned(u_0, -one),
+            Term::Zero,
+            Term::Zero,
+            Term::Unassigned(v_0, left_shifter_2r),
+            Term::Unassigned(u_0, -one),
             zero,
             &mut offset,
             CombinationOption::SingleLinerAdd,
@@ -184,10 +184,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, result_2_cell, result_3_cell) = main_gate.combine(
             region,
-            CombinationTerm::Assigned(&mut intermediate_values_cycling[2].clone(), one),
-            CombinationTerm::Assigned(&mut intermediate_values_cycling[3].clone(), left_shifter_r),
-            CombinationTerm::Assigned(&mut result.limb(2), -one),
-            CombinationTerm::Assigned(&mut result.limb(3), -left_shifter_r),
+            Term::Assigned(&mut intermediate_values_cycling[2].clone(), one),
+            Term::Assigned(&mut intermediate_values_cycling[3].clone(), left_shifter_r),
+            Term::Assigned(&mut result.limb(2), -one),
+            Term::Assigned(&mut result.limb(3), -left_shifter_r),
             zero,
             &mut offset,
             CombinationOption::CombineToNextAdd(-one),
@@ -198,10 +198,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, v_1_cell, _, _) = main_gate.combine(
             region,
-            CombinationTerm::Zero,
-            CombinationTerm::Unassigned(v_1, left_shifter_2r),
-            CombinationTerm::Assigned(v_0, -one),
-            CombinationTerm::Unassigned(u_1, -one),
+            Term::Zero,
+            Term::Unassigned(v_1, left_shifter_2r),
+            Term::Assigned(v_0, -one),
+            Term::Unassigned(u_1, -one),
             zero,
             &mut offset,
             CombinationOption::SingleLinerAdd,
@@ -219,10 +219,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (a_native_new_cell, b_native_new_cell, _, result_native_new_cell) = main_gate.combine(
             region,
-            CombinationTerm::Assigned(&mut a.native(), zero),
-            CombinationTerm::Assigned(&mut b.native(), zero),
-            CombinationTerm::Assigned(&mut quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
-            CombinationTerm::Assigned(&mut result.native(), -one),
+            Term::Assigned(&mut a.native(), zero),
+            Term::Assigned(&mut b.native(), zero),
+            Term::Assigned(&mut quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+            Term::Assigned(&mut result.native(), -one),
             zero,
             &mut offset,
             CombinationOption::SingleLinerMul,
