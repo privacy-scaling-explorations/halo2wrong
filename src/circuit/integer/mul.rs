@@ -1,11 +1,12 @@
 use super::{IntegerChip, IntegerInstructions};
+use crate::circuit::main_gate::{CombinationOption, CombinationTerm, MainGateInstructions};
 use crate::circuit::range::{RangeInstructions, RangeTune};
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::Quotient;
 use crate::NUMBER_OF_LIMBS;
 
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Cell, Region};
+use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
@@ -28,7 +29,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     pub(crate) fn _mul(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
-        let main_gate = self.main_gate_config();
+        let main_gate = self.main_gate();
+        let (zero, one) = (N::zero(), N::one());
+
         let mut offset = 0;
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.limbs();
 
@@ -88,7 +91,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_2 | b_2 | q_1 | tmp_a |
         // | a_3 | b_0 | q_0 | tmp_c |
 
-        let mut intermediate_values_cycling: Vec<Cell> = vec![];
+        let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
             let mut t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
@@ -96,35 +99,31 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             for j in 0..=i {
                 let k = i - j;
 
-                let a_j_new_cell = region.assign_advice(|| "a_", main_gate.a, offset, || a.limb_value(j))?;
-                let b_k_new_cell = region.assign_advice(|| "b_", main_gate.b, offset, || b.limb_value(k))?;
-                let q_k_new_cell = region.assign_advice(|| "q_", main_gate.c, offset, || quotient.limb_value(k))?;
-                let t_i_cell = region.assign_advice(|| "t_", main_gate.d, offset, || Ok(t.ok_or(Error::SynthesisError)?.clone()))?;
-
-                region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::one()))?;
-                region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(negative_wrong_modulus[j]))?;
-                region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
-
-                if k == 0 {
-                    region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
+                let combination_option = if k == 0 {
+                    CombinationOption::SingleLinerMul
                 } else {
-                    region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::one()))?;
-                }
+                    CombinationOption::CombineToNextMul(one)
+                };
 
-                // zero selectors
-                region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
-                region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(N::zero()))?;
-                region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
+                let (a_j_new_cell, b_k_new_cell, q_k_new_cell, t_i_cell) = main_gate.combine(
+                    region,
+                    CombinationTerm::Assigned(&mut a.limb(j), zero),
+                    CombinationTerm::Assigned(&mut b.limb(k), zero),
+                    CombinationTerm::Assigned(&mut quotient.limb(k), negative_wrong_modulus[j]),
+                    CombinationTerm::Unassigned(t, -one),
+                    zero,
+                    &mut offset,
+                    combination_option,
+                )?;
 
-                // cycle and update operand limb assignments
-
-                a.cycle_cell(region, j, a_j_new_cell)?;
-                b.cycle_cell(region, k, b_k_new_cell)?;
-                quotient.cycle_cell(region, k, q_k_new_cell)?;
+                // update operand limb assignments
+                a.update_limb_cell(j, a_j_new_cell);
+                b.update_limb_cell(k, b_k_new_cell);
+                quotient.update_limb_cell(k, q_k_new_cell);
 
                 if j == 0 {
                     // first time we see t_j assignment
-                    intermediate_values_cycling.push(t_i_cell);
+                    intermediate_values_cycling.push(AssignedValue::<N>::new(t_i_cell, t));
                 }
 
                 // update running temp value
@@ -135,8 +134,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                     let p = negative_wrong_modulus[j];
                     t - (a * b + q * p)
                 });
-
-                offset += 1;
             }
         }
 
@@ -151,52 +148,31 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
 
-        let t_0_new_cell = region.assign_advice(
-            || "t_0",
-            main_gate.a,
-            offset,
-            || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[0]),
-        )?;
-        let t_1_new_cell = region.assign_advice(
-            || "t_1",
-            main_gate.b,
-            offset,
-            || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[1]),
+        let (_, _, result_0_cell, result_1_cell) = main_gate.combine(
+            region,
+            CombinationTerm::Assigned(&mut intermediate_values_cycling[0].clone(), one),
+            CombinationTerm::Assigned(&mut intermediate_values_cycling[1].clone(), left_shifter_r),
+            CombinationTerm::Assigned(&mut result.limb(0), -one),
+            CombinationTerm::Assigned(&mut result.limb(1), -left_shifter_r),
+            zero,
+            &mut offset,
+            CombinationOption::CombineToNextAdd(-one),
         )?;
 
-        let r_0_new_cell = region.assign_advice(|| "r_0", main_gate.c, offset, || result.limb_value(0))?;
-        let r_1_new_cell = region.assign_advice(|| "r_1", main_gate.d, offset, || result.limb_value(1))?;
+        result.update_limb_cell(0, result_0_cell);
+        result.update_limb_cell(1, result_1_cell);
 
-        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(-N::one()))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-left_shifter_r))?;
-        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(-N::one()))?;
-
-        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
-
-        region.constrain_equal(intermediate_values_cycling[0], t_0_new_cell)?;
-        region.constrain_equal(intermediate_values_cycling[1], t_1_new_cell)?;
-
-        result.cycle_cell(region, 0, r_0_new_cell)?;
-        result.cycle_cell(region, 1, r_1_new_cell)?;
-
-        offset += 1;
-
-        let _ = region.assign_advice(|| "u_0", main_gate.d, offset, || u_0.ok_or(Error::SynthesisError))?;
-        let v_0_cell = region.assign_advice(|| "v_0", main_gate.c, offset, || v_0.ok_or(Error::SynthesisError))?;
-
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(left_shifter_2r))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
-
-        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
-
-        offset += 1;
+        let (_, _, v_0_cell, _) = main_gate.combine(
+            region,
+            CombinationTerm::Zero,
+            CombinationTerm::Zero,
+            CombinationTerm::Unassigned(v_0, left_shifter_2r),
+            CombinationTerm::Unassigned(u_0, -one),
+            zero,
+            &mut offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+        let v_0 = &mut AssignedValue::<N>::new(v_0_cell, v_0);
 
         // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
         // v_1 * 2R = u_1 + v_0
@@ -206,58 +182,31 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | t_2 | t_3 | r_2 | r_3   |
         // | -   | v_1 | v_0 | u_1   |
 
-        let t_2_new_cell = region.assign_advice(
-            || "t_2",
-            main_gate.a,
-            offset,
-            || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[2]),
-        )?;
-        let t_3_new_cell = region.assign_advice(
-            || "t_3",
-            main_gate.b,
-            offset,
-            || Ok(intermediate_values.as_ref().ok_or(Error::SynthesisError)?[3]),
+        let (_, _, result_2_cell, result_3_cell) = main_gate.combine(
+            region,
+            CombinationTerm::Assigned(&mut intermediate_values_cycling[2].clone(), one),
+            CombinationTerm::Assigned(&mut intermediate_values_cycling[3].clone(), left_shifter_r),
+            CombinationTerm::Assigned(&mut result.limb(2), -one),
+            CombinationTerm::Assigned(&mut result.limb(3), -left_shifter_r),
+            zero,
+            &mut offset,
+            CombinationOption::CombineToNextAdd(-one),
         )?;
 
-        let r_2_new_cell = region.assign_advice(|| "r_0", main_gate.c, offset, || result.limb_value(2))?;
-        let r_3_new_cell = region.assign_advice(|| "r_1", main_gate.d, offset, || result.limb_value(3))?;
+        result.update_limb_cell(2, result_2_cell);
+        result.update_limb_cell(3, result_3_cell);
 
-        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_r))?;
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(-N::one()))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-left_shifter_r))?;
-        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(-N::one()))?;
-
-        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
-
-        region.constrain_equal(intermediate_values_cycling[2], t_2_new_cell)?;
-        region.constrain_equal(intermediate_values_cycling[3], t_3_new_cell)?;
-
-        result.cycle_cell(region, 2, r_2_new_cell)?;
-        result.cycle_cell(region, 3, r_3_new_cell)?;
-
-        offset += 1;
-
-        let v_1_cell = region.assign_advice(|| "v_1", main_gate.b, offset, || v_1.ok_or(Error::SynthesisError))?;
-        let v_0_new_cell = region.assign_advice(|| "v_0", main_gate.c, offset, || v_0.ok_or(Error::SynthesisError))?;
-        let _ = region.assign_advice(|| "u_1", main_gate.d, offset, || u_1.ok_or(Error::SynthesisError))?;
-
-        region.assign_fixed(|| "s_b", main_gate.sb, offset, || Ok(left_shifter_2r))?;
-        region.assign_fixed(|| "s_c", main_gate.sc, offset, || Ok(-N::one()))?;
-        region.assign_fixed(|| "s_d", main_gate.sd, offset, || Ok(-N::one()))?;
-
-        region.assign_fixed(|| "s_a", main_gate.sa, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_m", main_gate.s_mul, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
-
-        region.constrain_equal(v_0_cell, v_0_new_cell)?;
-
-        let v_0 = &mut AssignedValue::<N>::new(v_0_new_cell, v_0);
+        let (_, v_1_cell, _, _) = main_gate.combine(
+            region,
+            CombinationTerm::Zero,
+            CombinationTerm::Unassigned(v_1, left_shifter_2r),
+            CombinationTerm::Assigned(v_0, -one),
+            CombinationTerm::Unassigned(u_1, -one),
+            zero,
+            &mut offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
         let v_1 = &mut AssignedValue::<N>::new(v_1_cell, v_1);
-
-        offset += 1;
 
         // ranges
 
@@ -268,24 +217,20 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let _ = range_chip.range_value(region, v_0, self.mul_v0_range_tune(), &mut offset)?;
         let _ = range_chip.range_value(region, v_1, self.mul_v1_range_tune(), &mut offset)?;
 
-        let a_native_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || a.native_value())?;
-        let b_native_new_cell = region.assign_advice(|| "b", main_gate.b, offset, || b.native_value())?;
-        let q_native_new_cell = region.assign_advice(|| "d", main_gate.c, offset, || quotient.native_value())?;
-        let r_native_new_cell = region.assign_advice(|| "c", main_gate.d, offset, || result.native_value())?;
+        let (a_native_new_cell, b_native_new_cell, _, result_native_new_cell) = main_gate.combine(
+            region,
+            CombinationTerm::Assigned(&mut a.native(), zero),
+            CombinationTerm::Assigned(&mut b.native(), zero),
+            CombinationTerm::Assigned(&mut quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+            CombinationTerm::Assigned(&mut result.native(), -one),
+            zero,
+            &mut offset,
+            CombinationOption::SingleLinerMul,
+        )?;
 
-        region.assign_fixed(|| "a * b", main_gate.s_mul, offset, || Ok(-N::one()))?;
-        region.assign_fixed(|| "c", main_gate.sc, offset, || Ok(self.rns.wrong_modulus_in_native_modulus))?;
-        region.assign_fixed(|| "d", main_gate.sd, offset, || Ok(N::one()))?;
-
-        region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "b", main_gate.sb, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
-
-        a.cycle_native_cell(region, a_native_new_cell)?;
-        b.cycle_native_cell(region, b_native_new_cell)?;
-        result.cycle_native_cell(region, r_native_new_cell)?;
-        quotient.cycle_native_cell(region, q_native_new_cell)?;
+        a.update_native_cell(a_native_new_cell);
+        b.update_native_cell(b_native_new_cell);
+        result.update_native_cell(result_native_new_cell);
 
         Ok(result.clone())
     }
