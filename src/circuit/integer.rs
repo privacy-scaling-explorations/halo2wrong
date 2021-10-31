@@ -1,13 +1,16 @@
 use super::main_gate::MainGate;
-use super::{AssignedCondition, AssignedInteger};
-use crate::circuit::main_gate::{MainGateConfig, MainGateInstructions};
-use crate::circuit::range::{RangeChip, RangeConfig};
-use crate::circuit::AssignedValue;
-use crate::rns::{Common, Integer, Limb, Rns};
-use crate::NUMBER_OF_LOOKUP_LIMBS;
+use super::range::RangeTune;
+use super::{AssignedCondition, AssignedInteger, UnassignedInteger};
+use crate::circuit::main_gate::{CombinationOption, MainGateConfig, MainGateInstructions, Term};
+use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
+use crate::circuit::{AssignedLimb, AssignedValue};
+use crate::rns::{Common, Integer, Rns};
+use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::{Cell, Region};
+use halo2::circuit::Region;
 use halo2::plonk::{ConstraintSystem, Error};
+use num_bigint::BigUint as big_uint;
+use num_traits::One;
 
 mod add;
 mod assert_in_field;
@@ -28,165 +31,225 @@ pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
 }
 
 trait IntegerInstructions<F: FieldExt> {
-    fn add(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>) -> Result<AssignedInteger<F>, Error>;
-    fn sub(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>) -> Result<AssignedInteger<F>, Error>;
-    fn mul(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>) -> Result<AssignedInteger<F>, Error>;
-    fn reduce(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>) -> Result<AssignedInteger<F>, Error>;
     fn assign_integer(&self, region: &mut Region<'_, F>, integer: Option<Integer<F>>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
-    fn assert_strict_equal(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>) -> Result<(), Error>;
-    fn assert_equal(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>) -> Result<(), Error>;
-    fn assert_in_field(&self, region: &mut Region<'_, F>, input: &mut AssignedInteger<F>) -> Result<(), Error>;
-    fn cond_swap(
+    fn range_assign_integer(
+        &self,
+        region: &mut Region<'_, F>,
+        integer: UnassignedInteger<F>,
+        range_tune: RangeTune,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<F>, Error>;
+    fn add(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
+    fn sub(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
+    fn mul(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
+    fn reduce(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
+    fn assert_strict_equal(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_equal(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_in_field(&self, region: &mut Region<'_, F>, input: &mut AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
+    fn cond_select(
         &self,
         region: &mut Region<'_, F>,
         a: &mut AssignedInteger<F>,
         b: &mut AssignedInteger<F>,
         cond: &mut AssignedCondition<F>,
+        offset: &mut usize,
     ) -> Result<AssignedInteger<F>, Error>;
-
-    // fn in_field(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>) -> Result<AssignedInteger<F>, Error>;
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
-    fn add(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
-        self._add(region, a, b)
+    fn add(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._add(region, a, b, offset)
     }
 
-    fn mul(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
-        self._mul(region, a, b)
+    fn mul(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._mul(region, a, b, offset)
     }
 
-    fn reduce(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
-        self._reduce(region, a)
+    fn reduce(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._reduce(region, a, offset)
     }
 
-    fn sub(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
-        self._sub(region, a, b)
+    fn sub(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._sub(region, a, b, offset)
+    }
+
+    fn range_assign_integer(
+        &self,
+        region: &mut Region<'_, N>,
+        integer: UnassignedInteger<N>,
+        range_tune: RangeTune,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let range_chip = self.range_chip();
+
+        let max_val = (big_uint::one() << self.rns.bit_len_limb) - 1usize;
+
+        let assigned = range_chip.range_value(region, &integer.limb(0), RangeTune::Fits, offset)?;
+        let limb_0 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
+
+        let assigned = range_chip.range_value(region, &integer.limb(1), RangeTune::Fits, offset)?;
+        let limb_1 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
+
+        let assigned = range_chip.range_value(region, &integer.limb(2), RangeTune::Fits, offset)?;
+        let limb_2 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
+
+        let bit_len = match range_tune {
+            RangeTune::Fits => self.rns.bit_len_limb,
+            RangeTune::Fine(bit_len) => self.rns.bit_len_limb - bit_len,
+            RangeTune::Overflow(_) => {
+                panic!("overflown integer not expected for ranging")
+            }
+        };
+        let max_val = (big_uint::one() << bit_len) - 1usize;
+        let assigned = range_chip.range_value(region, &integer.limb(3), range_tune.clone(), offset)?;
+        let limb_3 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val);
+
+        // find the native value
+        let main_gate = self.main_gate();
+        let (zero, one) = (N::zero(), N::one());
+        let r = self.rns.left_shifter_r;
+        let rr = self.rns.left_shifter_2r;
+        let rrr = self.rns.left_shifter_3r;
+
+        let (_, _, _, _) = main_gate.combine(
+            region,
+            Term::Assigned(limb_0, one),
+            Term::Assigned(limb_1, r),
+            Term::Assigned(limb_2, rr),
+            Term::Assigned(limb_3, rrr),
+            zero,
+            offset,
+            CombinationOption::CombineToNextAdd(-one),
+        )?;
+
+        let native_value = integer.native();
+        let (_, _, _, native_value_cell) = main_gate.combine(
+            region,
+            Term::Zero,
+            Term::Zero,
+            Term::Zero,
+            Term::Unassigned(native_value.value, zero),
+            zero,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        let native_value = native_value.assign(native_value_cell);
+
+        Ok(AssignedInteger {
+            limbs: vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()],
+            native_value,
+        })
     }
 
     fn assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        let main_gate = self.main_gate_config();
+        let main_gate = self.main_gate();
 
-        let u_0 = integer.as_ref().map(|e| e.limb_value(0));
-        let u_1 = integer.as_ref().map(|e| e.limb_value(1));
-        let u_2 = integer.as_ref().map(|e| e.limb_value(2));
-        let u_3 = integer.as_ref().map(|e| e.limb_value(3));
+        let (zero, one) = (N::zero(), N::one());
+        let r = self.rns.left_shifter_r;
+        let rr = self.rns.left_shifter_2r;
+        let rrr = self.rns.left_shifter_3r;
 
-        let cell_0 = region.assign_advice(|| "a", main_gate.a, *offset, || Ok(u_0.ok_or(Error::SynthesisError)?))?;
-        let cell_1 = region.assign_advice(|| "b", main_gate.b, *offset, || Ok(u_1.ok_or(Error::SynthesisError)?))?;
-        let cell_2 = region.assign_advice(|| "c", main_gate.c, *offset, || Ok(u_2.ok_or(Error::SynthesisError)?))?;
-        let cell_3 = region.assign_advice(|| "d", main_gate.d, *offset, || Ok(u_3.ok_or(Error::SynthesisError)?))?;
-
-        region.assign_fixed(|| "sa", main_gate.sa, *offset, || Ok(N::one()))?;
-        region.assign_fixed(|| "sb", main_gate.sb, *offset, || Ok(self.rns.left_shifter_r))?;
-        region.assign_fixed(|| "sc", main_gate.sc, *offset, || Ok(self.rns.left_shifter_2r))?;
-        region.assign_fixed(|| "sd", main_gate.sd, *offset, || Ok(self.rns.left_shifter_3r))?;
-        region.assign_fixed(|| "sd_next", main_gate.sd_next, *offset, || Ok(-N::one()))?;
-
-        region.assign_fixed(|| "s_mul", main_gate.s_mul, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, *offset, || Ok(N::zero()))?;
-
-        *offset = *offset + 1;
+        let (cell_0, cell_1, cell_2, cell_3) = main_gate.combine(
+            region,
+            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(0)), one),
+            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(1)), r),
+            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(2)), rr),
+            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(3)), rrr),
+            zero,
+            offset,
+            CombinationOption::CombineToNextAdd(-one),
+        )?;
 
         let native_value = integer.as_ref().map(|integer| integer.native());
 
-        let _ = region.assign_advice(|| "a", main_gate.a, *offset, || Ok(N::zero()))?;
-        let _ = region.assign_advice(|| "b", main_gate.b, *offset, || Ok(N::zero()))?;
-        let _ = region.assign_advice(|| "c", main_gate.c, *offset, || Ok(N::zero()))?;
-        let native_value_cell = region.assign_advice(|| "d", main_gate.d, *offset, || Ok(native_value.ok_or(Error::SynthesisError)?))?;
-
-        region.assign_fixed(|| "sa", main_gate.sa, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sb", main_gate.sb, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sc", main_gate.sc, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sd", main_gate.sd, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "sd_next", main_gate.sd_next, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_mul", main_gate.s_mul, *offset, || Ok(N::zero()))?;
-        region.assign_fixed(|| "s_constant", main_gate.s_constant, *offset, || Ok(N::zero()))?;
+        let (_, _, _, native_value_cell) = main_gate.combine(
+            region,
+            Term::Zero,
+            Term::Zero,
+            Term::Zero,
+            Term::Unassigned(native_value, zero),
+            zero,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
 
         let cells = vec![cell_0, cell_1, cell_2, cell_3];
-        let assigned_integer = AssignedInteger::<_>::new(cells, integer, native_value_cell);
 
-        *offset = *offset + 1;
+        let limbs = cells
+            .iter()
+            .enumerate()
+            .map(|(i, cell)| AssignedLimb {
+                value: integer.as_ref().map(|integer| integer.limb(i)),
+                cell: *cell,
+                max_val: self.rns.limb_max_val.clone(),
+            })
+            .collect();
+
+        let native_value = AssignedValue {
+            value: native_value,
+            cell: native_value_cell,
+        };
+        let assigned_integer = AssignedInteger { limbs, native_value };
 
         Ok(assigned_integer)
     }
 
-    fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<(), Error> {
-        // TODO: strict equality can be constained only using permutation?
-        let main_gate = self.main_gate_config();
+    fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        let (zero, one) = (N::zero(), N::one());
 
-        let a_integer: Option<Vec<N>> = a.value.as_ref().map(|e| e.limbs());
-        let b_integer: Option<Vec<N>> = b.value.as_ref().map(|e| e.limbs());
-
-        let mut offset = 0;
-
-        for idx in 0..NUMBER_OF_LOOKUP_LIMBS {
-            let a_new_cell = region.assign_advice(|| "a", main_gate.a, offset, || Ok(a_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
-            let b_new_cell = region.assign_advice(|| "b", main_gate.b, offset, || Ok(b_integer.as_ref().ok_or(Error::SynthesisError)?[idx]))?;
-
-            region.assign_fixed(|| "a", main_gate.sa, offset, || Ok(N::one()))?;
-            region.assign_fixed(|| "b", main_gate.sb, offset, || Ok(-N::one()))?;
-
-            region.assign_fixed(|| "c", main_gate.sc, offset, || Ok(N::zero()))?;
-            region.assign_fixed(|| "d", main_gate.sd, offset, || Ok(N::zero()))?;
-            region.assign_fixed(|| "d_next", main_gate.sd_next, offset, || Ok(N::zero()))?;
-            region.assign_fixed(|| "a * b", main_gate.s_mul, offset, || Ok(N::zero()))?;
-            region.assign_fixed(|| "constant", main_gate.s_constant, offset, || Ok(N::zero()))?;
-
-            a.cycle_cell(region, idx, a_new_cell)?;
-            b.cycle_cell(region, idx, b_new_cell)?;
-            offset += 1;
+        for idx in 0..NUMBER_OF_LIMBS {
+            let (_, _, _, _) = main_gate.combine(
+                region,
+                Term::Assigned(a.limb(idx), one),
+                Term::Assigned(b.limb(idx), -one),
+                Term::Zero,
+                Term::Zero,
+                zero,
+                offset,
+                CombinationOption::SingleLinerAdd,
+            )?;
         }
-
-        a.update_cells(None, Some(a.native_value_cell));
-        b.update_cells(None, Some(b.native_value_cell));
-
         Ok(())
     }
 
-    fn assert_equal(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>) -> Result<(), Error> {
-        let c = &mut self._sub(region, a, b)?;
-        self._assert_zero(region, c)?;
+    fn assert_equal(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, b: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let c = &mut self._sub(region, a, b, offset)?;
+        self._assert_zero(region, c, offset)?;
         Ok(())
     }
 
-    fn cond_swap(
+    fn cond_select(
         &self,
         region: &mut Region<'_, N>,
         a: &mut AssignedInteger<N>,
         b: &mut AssignedInteger<N>,
         cond: &mut AssignedCondition<N>,
+        offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
 
-        let a_values: &mut Vec<AssignedValue<N>> = &mut a.limbs();
-        let b_values: &mut Vec<AssignedValue<N>> = &mut b.limbs();
-        let native_value_a = &mut a.native();
-        let native_value_b = &mut b.native();
+        let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
+        for i in 0..NUMBER_OF_LIMBS {
+            let res = main_gate.cond_select(region, a.limb(i), b.limb(i), cond, offset)?;
 
-        let res_0 = main_gate.cond_swap(region, &mut a_values[0], &mut b_values[0], cond)?;
-        let res_1 = main_gate.cond_swap(region, &mut a_values[1], &mut b_values[1], cond)?;
-        let res_2 = main_gate.cond_swap(region, &mut a_values[2], &mut b_values[2], cond)?;
-        let res_3 = main_gate.cond_swap(region, &mut a_values[3], &mut b_values[3], cond)?;
-        let res_native_value = main_gate.cond_swap(region, native_value_a, native_value_b, cond)?;
+            let max_val = if a.limbs[i].max_val > b.limbs[i].max_val {
+                a.limbs[i].max_val.clone()
+            } else {
+                b.limbs[i].max_val.clone()
+            };
 
-        let res = vec![res_0, res_1, res_2, res_3];
-        let res_cells: Vec<Cell> = res.iter().map(|res| res.cell).collect();
-        let res: Option<Vec<Limb<N>>> = res[0].value.map(|_| res.iter().map(|res_i| Limb::from_fe(res_i.value.unwrap())).collect());
-        let res = res.map(|res| self.rns.new_from_limbs(res));
+            limbs.push(res.to_limb(max_val));
+        }
 
-        let a_new_cells: Vec<Cell> = a_values.iter().map(|a_new_i| a_new_i.cell).collect();
-        let b_new_cells: Vec<Cell> = b_values.iter().map(|b_new_i| b_new_i.cell).collect();
-        a.update_cells(Some(a_new_cells), Some(a.native_value_cell));
-        b.update_cells(Some(b_new_cells), Some(b.native_value_cell));
+        let native_value = main_gate.cond_select(region, a.native(), b.native(), cond, offset)?;
 
-        let r = AssignedInteger::new(res_cells, res, res_native_value.cell);
-
-        Ok(r)
+        Ok(AssignedInteger::new(limbs, native_value))
     }
 
-    fn assert_in_field(&self, region: &mut Region<'_, N>, input: &mut AssignedInteger<N>) -> Result<(), Error> {
-        self._assert_in_field(region, input)
+    fn assert_in_field(&self, region: &mut Region<'_, N>, input: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        self._assert_in_field(region, input, offset)
     }
 }
 
@@ -207,12 +270,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
     }
 
-    fn main_gate_config(&self) -> MainGateConfig {
-        self.config.main_gate_config.clone()
-    }
-
     fn main_gate(&self) -> MainGate<N> {
-        MainGate::<N>::new(self.main_gate_config())
+        let main_gate_config = self.config.main_gate_config.clone();
+        MainGate::<N>::new(main_gate_config)
     }
 }
 
@@ -222,8 +282,7 @@ mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeInstructions};
-    use crate::rns::{Integer, Rns};
-    use crate::BIT_LEN_LIMB;
+    use crate::rns::{Integer, Limb, Rns};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -270,22 +329,21 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_0 = &mut layouter.assign_region(
+            layouter.assign_region(
                 || "region 0",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_0.clone(), &mut 0),
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer_0 = &mut integer_chip.assign_integer(&mut region, self.integer_0.clone(), offset)?;
+                    let integer_1 = &mut integer_chip.assign_integer(&mut region, self.integer_1.clone(), offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_0, integer_1, offset)?;
+                    let integer_0 = &mut integer_chip.assign_integer(&mut region, self.integer_0.clone(), offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_0, integer_1, offset)?;
+                    let integer_1 = &mut integer_chip.assign_integer(&mut region, self.integer_0.clone(), offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_0, integer_1, offset)?;
+                    integer_chip.assert_equal(&mut region, integer_0, integer_1, offset)?;
+                    Ok(())
+                },
             )?;
-            let integer_1 = &mut layouter.assign_region(
-                || "region 1",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_1.clone(), &mut 0),
-            )?;
-            layouter.assign_region(|| "region 2", |mut region| integer_chip.assert_strict_equal(&mut region, integer_0, integer_1))?;
-            let integer_2 = &mut integer_0.clone();
-            let integer_3 = &mut integer_1.clone();
-            layouter.assign_region(|| "region 3", |mut region| integer_chip.assert_strict_equal(&mut region, integer_0, integer_1))?;
-            layouter.assign_region(|| "region 4", |mut region| integer_chip.assert_strict_equal(&mut region, integer_0, integer_2))?;
-            layouter.assign_region(|| "region 2", |mut region| integer_chip.assert_strict_equal(&mut region, integer_1, integer_3))?;
-
-            // TODO: think we should move table loading somewhere else?
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
@@ -324,9 +382,6 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));
 
@@ -375,26 +430,19 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_overflows_0 = &mut layouter.assign_region(
+            layouter.assign_region(
                 || "region 0",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_overflows.clone(), &mut 0),
-            )?;
-            let integer_reduced_0 = &mut layouter.assign_region(
-                || "region 1",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_reduced.clone(), &mut 0),
-            )?;
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer_overflows_0 = &mut integer_chip.assign_integer(&mut region, self.integer_overflows.clone(), offset)?;
+                    let integer_overflows_1 = &mut integer_overflows_0.clone();
+                    let integer_reduced_0 = &mut integer_chip.assign_integer(&mut region, self.integer_reduced.clone(), offset)?;
+                    let integer_reduced_1 = &mut integer_chip.reduce(&mut region, integer_overflows_0, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_reduced_0, integer_reduced_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_overflows_0, integer_overflows_1, offset)?;
 
-            let integer_overflows_1 = &mut integer_overflows_0.clone();
-            let integer_reduced_1 = &mut layouter.assign_region(|| "region 2", |mut region| integer_chip.reduce(&mut region, integer_overflows_1))?;
-
-            layouter.assign_region(
-                || "region 3",
-                |mut region| integer_chip.assert_strict_equal(&mut region, integer_reduced_0, integer_reduced_1),
-            )?;
-
-            layouter.assign_region(
-                || "region 4",
-                |mut region| integer_chip.assert_strict_equal(&mut region, integer_overflows_0, integer_overflows_1),
+                    Ok(())
+                },
             )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
@@ -429,7 +477,7 @@ mod tests {
         // ];
         // let integer_overflows = rns.new_from_str_limbs(input);
 
-        let integer_overflows = rns.rand_with_limb_bit_size(BIT_LEN_LIMB + 5);
+        let integer_overflows = rns.rand_with_limb_bit_size(rns.bit_len_limb + 5);
 
         let integer_reduced = rns.reduce(&integer_overflows).result;
 
@@ -443,9 +491,6 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
 
         assert_eq!(prover.verify(), Ok(()));
     }
@@ -480,34 +525,22 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_a_0 = &mut layouter.assign_region(
+            layouter.assign_region(
                 || "region 0",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_a.clone(), &mut 0),
-            )?;
-            let integer_b_0 = &mut layouter.assign_region(
-                || "region 1",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_b.clone(), &mut 0),
-            )?;
-            let integer_c_0 = &mut layouter.assign_region(
-                || "region 2",
-                |mut region| integer_chip.assign_integer(&mut region, self.integer_c.clone(), &mut 0),
-            )?;
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer_a_0 = &mut integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
+                    let integer_b_0 = &mut integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
+                    let integer_c_0 = &mut integer_chip.assign_integer(&mut region, self.integer_c.clone(), offset)?.clone();
+                    let integer_a_1 = &mut integer_a_0.clone();
+                    let integer_b_1 = &mut integer_b_0.clone();
+                    let integer_c_1 = &mut integer_chip.mul(&mut region, integer_a_0, integer_b_0, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_c_0, integer_c_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
 
-            let integer_c_1 = &mut layouter.assign_region(|| "region 3", |mut region| integer_chip.mul(&mut region, integer_a_0, integer_b_0))?;
-            let integer_a_1 = &mut integer_a_0.clone();
-            let integer_b_1 = &mut integer_b_0.clone();
-
-            layouter.assign_region(
-                || "region 4",
-                |mut region| integer_chip.assert_strict_equal(&mut region, integer_c_0, integer_c_1),
-            )?;
-            layouter.assign_region(
-                || "region 4",
-                |mut region| integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1),
-            )?;
-            layouter.assign_region(
-                || "region 5",
-                |mut region| integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1),
+                    Ok(())
+                },
             )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
@@ -550,9 +583,6 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
-
         assert_eq!(prover.verify(), Ok(()));
     }
 
@@ -584,8 +614,16 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
 
-            let integer_a_0 = &mut layouter.assign_region(|| "region 0", |mut region| integer_chip.assign_integer(&mut region, self.input.clone(), &mut 0))?;
-            layouter.assign_region(|| "region 1", |mut region| integer_chip.assert_in_field(&mut region, integer_a_0))?;
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer = &mut integer_chip.assign_integer(&mut region, self.input.clone(), offset)?;
+                    integer_chip.assert_in_field(&mut region, integer, offset)?;
+
+                    Ok(())
+                },
+            )?;
 
             let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
@@ -611,7 +649,7 @@ mod tests {
         #[cfg(feature = "no_lookup")]
         let k: u32 = 8;
 
-        for i in 0..10 {
+        for i in 0..1 {
             let integer_in_field = if i == 0 {
                 rns.wrong_modulus_minus_one.clone().into()
             } else {
@@ -628,13 +666,10 @@ mod tests {
                 Err(e) => panic!("{:#?}", e),
             };
 
-            #[cfg(feature = "print_prover")]
-            println!("{:#?}", prover);
-
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        let integer_not_in_field = rns.wrong_modulus_decomposed.clone().into();
+        let integer_not_in_field = Integer::new(rns.wrong_modulus_decomposed.iter().map(|limb| Limb::<Native>::new(*limb)).collect());
 
         let circuit = TestCircuitInField::<Wrong, Native> {
             input: Some(integer_not_in_field),

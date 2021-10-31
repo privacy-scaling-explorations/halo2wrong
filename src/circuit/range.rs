@@ -1,6 +1,7 @@
-use crate::circuit::main_gate::{CombinationOption, Term, MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
-use crate::circuit::{AssignedInteger, AssignedValue};
-use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use super::UnassignedValue;
+use crate::circuit::main_gate::{CombinationOption, MainGate, MainGateColumn, MainGateConfig, MainGateInstructions, Term};
+use crate::circuit::AssignedValue;
+use crate::NUMBER_OF_LOOKUP_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Chip, Layouter, Region};
 use halo2::plonk::{ConstraintSystem, Error, Selector, TableColumn};
@@ -61,7 +62,7 @@ impl<F: FieldExt> RangeChip<F> {
         MainGate::<F>::new(self.main_gate_config())
     }
 
-    fn range_value_fits(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, offset: &mut usize) -> Result<(), Error> {
+    fn range_value_fits(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
         let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS;
         let one = F::one();
@@ -70,20 +71,23 @@ impl<F: FieldExt> RangeChip<F> {
         let rr = self.left_shifter[1];
         let rrr = self.left_shifter[2];
 
-        // Witness layout of RangeTune::Fits
+        // Witness layout of RangeTune::Fits w/o running sum
         // | A   | B   | C   | D   |
         // | --- | --- | --- | --- |
         // | a_0 | a_1 | a_2 | a_3 |
         // | -   | -   | -   | in  |
+
+        // Witness layout of RangeTune::Fits with running sum
+        // | A   | B   | C   | D   |
+        // | --- | --- | --- | --- |
+        // | a_0 | a_1 | a_2 | a_3 |
+        // | -   | new | cur | in  |
 
         // enable dense decomposion range check
         self.config.s_dense_limb_range.enable(region, *offset)?;
 
         // input is decomposed insto smaller limbs
         let limbs = input.decompose(number_of_limbs, self.base_bit_len);
-
-        // enable further wire for intermediate sum
-        let combination_option = CombinationOption::CombineToNextAdd(-F::one());
 
         // combine limbs into the next row
         // returned cells are subjected to small range lookup
@@ -92,6 +96,7 @@ impl<F: FieldExt> RangeChip<F> {
         // | a_0 | a_1 | a_2 | a_3 |
         // this row must constain
         // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - in = 0
+
         let _ = main_gate.combine(
             region,
             Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
@@ -100,7 +105,8 @@ impl<F: FieldExt> RangeChip<F> {
             Term::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
             zero,
             offset,
-            combination_option,
+            // enable further wire for intermediate sum
+            CombinationOption::CombineToNextAdd(-one),
         )?;
 
         // proceeed to next row
@@ -110,21 +116,22 @@ impl<F: FieldExt> RangeChip<F> {
         // | -   | -   | -   | in  |
         // only cycle input value to the futher cell
 
-        // cycle the input before proceeding the next row
-        main_gate.cycle_to(region, input, MainGateColumn::D, *offset)?;
+        // assign the input and proceed the next row
+        let assigned = main_gate.assign_value(region, input, MainGateColumn::D, offset)?;
 
-        // proceed to the next row
-        main_gate.no_operation(region, offset)?;
-
-        Ok(())
+        Ok(assigned)
     }
 
-    fn range_value_overflow(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, offset: &mut usize, bit_len: usize) -> Result<(), Error> {
+    fn range_value_overflow(
+        &self,
+        region: &mut Region<'_, F>,
+        input: &UnassignedValue<F>,
+        offset: &mut usize,
+        bit_len: usize,
+    ) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
         let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS + 1;
-        let one = F::one();
-        let minus_one = -F::one();
-        let zero = F::zero();
+        let (one, zero) = (F::one(), F::zero());
         let r = self.left_shifter[0];
         let rr = self.left_shifter[1];
         let rrr = self.left_shifter[2];
@@ -181,29 +188,26 @@ impl<F: FieldExt> RangeChip<F> {
             (overflow_value, input_value, intermediate_combination)
         });
 
-        // cycle the input to the composition before proceeding the next row
-        main_gate.cycle_to(region, input, MainGateColumn::C, *offset)?;
-
         // | A   | B   | C   | D   |
         // | --- | --- | --- | --- |
         // | -   | a_4 | in  | t   |
         // second row must constain
         // a_4 * R^4 - input + t  = 0
-        let _ = main_gate.combine(
+        let (_, _, cell, _) = main_gate.combine(
             region,
             Term::Zero,
             Term::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
+            Term::Unassigned(coeffs.map(|coeffs| coeffs.1), -one),
             Term::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
 
-        Ok(())
+        Ok(input.assign(cell))
     }
 
-    fn range_value_fine(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, offset: &mut usize, bit_len: usize) -> Result<(), Error> {
+    fn range_value_fine(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, offset: &mut usize, bit_len: usize) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
         let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS;
         let one = F::one();
@@ -267,15 +271,12 @@ impl<F: FieldExt> RangeChip<F> {
         // make fixed bases of final combination
         // let bases = vec![F::zero(), msb_shifter, -F::one(), F::one()];
 
-        // cycle the input before proceeding the next row
-        main_gate.cycle_to(region, input, MainGateColumn::C, *offset)?;
-
         // | A   | B   | C   | D   |
         // | --- | --- | --- | --- |
         // | -   | a_3 | in  | t   |
         // second row must constain
         // a_3 * R^3 - input + t  = 0
-        let _ = main_gate.combine(
+        let (_, _, cell, _) = main_gate.combine(
             region,
             Term::Zero,
             Term::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
@@ -286,7 +287,7 @@ impl<F: FieldExt> RangeChip<F> {
             CombinationOption::SingleLinerAdd,
         )?;
 
-        Ok(())
+        Ok(input.assign(cell))
     }
 }
 
@@ -302,8 +303,14 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_integer(&self, region: &mut Region<'_, F>, integer: &mut AssignedInteger<F>, tune: RangeTune, offset: &mut usize) -> Result<(), Error>;
-    fn range_value(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, tune: RangeTune, offset: &mut usize) -> Result<(), Error>;
+    // fn range_integer(
+    //     &self,
+    //     region: &mut Region<'_, F>,
+    //     integer: UnassignedInteger<F>,
+    //     tune: RangeTune,
+    //     offset: &mut usize,
+    // ) -> Result<Vec<AssignedLimb<F>>, Error>;
+    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, tune: RangeTune, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
     #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
     #[cfg(not(feature = "no_lookup"))]
@@ -311,24 +318,43 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_integer(&self, region: &mut Region<'_, F>, integer: &mut AssignedInteger<F>, tune: RangeTune, offset: &mut usize) -> Result<(), Error> {
-        for i in 0..NUMBER_OF_LIMBS {
-            let tune = if i == NUMBER_OF_LIMBS - 1 { RangeTune::Fits } else { tune.clone() };
-            let limb_value = integer.value.as_ref().map(|e| e.limb_value(i));
-            let limb = &mut AssignedValue::new(integer.cells[i], limb_value);
-            self.range_value(region, limb, tune, offset)?;
-            integer.cycle_cell(region, i, limb.cell)?;
-        }
-        Ok(())
-    }
+    // fn range_integer(
+    //     &self,
+    //     region: &mut Region<'_, F>,
+    //     integer: UnassignedInteger<F>,
+    //     tune: RangeTune,
+    //     offset: &mut usize,
+    // ) -> Result<Vec<AssignedLimb<F>>, Error> {
+    //     let limbs = Vec::with_capacity(NUMBER_OF_LIMBS);
+    //     for i in 0..NUMBER_OF_LIMBS {
+    //         let tune = if i == NUMBER_OF_LIMBS - 1 { RangeTune::Fits } else { tune.clone() };
+    //         let limb = integer.limb(i);
+    //         let assigned = self.range_value(region, limb, tune, offset)?;
+    //         let max_val = big_uint::zero();
+    //         let one = big_uint::one();
+    //         if i == NUMBER_OF_LIMBS - 1 {
+    //             let bit_len = match tune {
+    //                 RangeTune::Fits => BIT_LEN_LIMB,
+    //                 RangeTune::Fine(bit_len) => BIT_LEN_LIMB - bit_len,
+    //                 RangeTune::Overflow(bit_len) => {
+    //                     panic!("overflown integer not expected for ranging")
+    //                 }
+    //             };
+    //             (one << bit_len) - 1usize;
+    //         } else {
+    //             (one << BIT_LEN_LIMB) - 1usize;
+    //         }
+    //         limbs.push(AssignedLimb::new(assigned.cell, assigned.value, max_val));
+    //     }
+    //     Ok(limbs)
+    // }
 
-    fn range_value(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, tune: RangeTune, offset: &mut usize) -> Result<(), Error> {
+    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, tune: RangeTune, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
         match tune {
             RangeTune::Overflow(bit_len) => self.range_value_overflow(region, input, offset, bit_len),
             RangeTune::Fine(bit_len) => self.range_value_fine(region, input, offset, bit_len),
             RangeTune::Fits => self.range_value_fits(region, input, offset),
-        }?;
-        Ok(())
+        }
     }
 
     #[cfg(not(feature = "no_lookup"))]
@@ -459,7 +485,8 @@ impl<F: FieldExt> RangeChip<F> {
 mod tests {
 
     use super::{RangeChip, RangeConfig, RangeInstructions, RangeTune};
-    use crate::circuit::main_gate::{MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
+    use crate::circuit::main_gate::{MainGate, MainGateConfig};
+    use crate::circuit::UnassignedValue;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
@@ -510,53 +537,36 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
             let range_chip = RangeChip::<F>::new(config.range_config.clone(), Self::base_bit_len());
-            let main_gate = MainGate::<F>::new(config.main_gate_config.clone());
 
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let mut offset = 0;
                     let tune_len = Self::fine_tune_bit_lengths()[0];
-                    let zero = F::zero();
+                    let zero = &UnassignedValue::new(Some(F::zero()));
                     let base = Self::base_bit_len() as u64;
                     let base = 1 << base;
                     let max_limb = base - 1;
-                    let three_limb = F::from_u64(max_limb + max_limb * base + max_limb * base * base);
-
-                    // zero must pass all ranges
-                    let zero = &mut main_gate.assign_value(&mut region, Some(zero), MainGateColumn::D, offset)?;
-                    // proceed to next row
-                    main_gate.no_operation(&mut region, &mut offset)?;
+                    let three_limb = &UnassignedValue::new(Some(F::from_u64(max_limb + max_limb * base + max_limb * base * base)));
 
                     range_chip.range_value(&mut region, zero, RangeTune::Fits, &mut offset)?;
                     range_chip.range_value(&mut region, zero, RangeTune::Overflow(tune_len), &mut offset)?;
                     range_chip.range_value(&mut region, zero, RangeTune::Fine(tune_len), &mut offset)?;
 
                     // three limbed value must pass all ranges
-                    let three_limb = &mut main_gate.assign_value(&mut region, Some(three_limb), MainGateColumn::D, offset)?;
-                    // proceed to next row
-                    main_gate.no_operation(&mut region, &mut offset)?;
-
                     range_chip.range_value(&mut region, three_limb, RangeTune::Fits, &mut offset)?;
                     range_chip.range_value(&mut region, three_limb, RangeTune::Overflow(tune_len), &mut offset)?;
                     range_chip.range_value(&mut region, three_limb, RangeTune::Fine(tune_len), &mut offset)?;
 
                     // tests against inputs
-
-                    let value_fits = &mut main_gate.assign_value(&mut region, self.value_fits, MainGateColumn::A, offset)?;
-                    // proceed to next row
-                    main_gate.no_operation(&mut region, &mut offset)?;
-                    range_chip.range_value(&mut region, value_fits, RangeTune::Fits, &mut offset)?;
-
-                    let value_fine = &mut main_gate.assign_value(&mut region, self.value_fine, MainGateColumn::A, offset)?;
-                    // proceed to next row
-                    main_gate.no_operation(&mut region, &mut offset)?;
-                    range_chip.range_value(&mut region, value_fine, RangeTune::Fine(tune_len), &mut offset)?;
-
-                    let value_overflow = &mut main_gate.assign_value(&mut region, self.value_overflow, MainGateColumn::A, offset)?;
-                    // proceed to next row
-                    main_gate.no_operation(&mut region, &mut offset)?;
-                    range_chip.range_value(&mut region, value_overflow, RangeTune::Overflow(tune_len), &mut offset)?;
+                    range_chip.range_value(&mut region, &UnassignedValue::new(self.value_fits), RangeTune::Fits, &mut offset)?;
+                    range_chip.range_value(&mut region, &UnassignedValue::new(self.value_fine), RangeTune::Fine(tune_len), &mut offset)?;
+                    range_chip.range_value(
+                        &mut region,
+                        &UnassignedValue::new(self.value_overflow),
+                        RangeTune::Overflow(tune_len),
+                        &mut offset,
+                    )?;
 
                     Ok(())
                 },

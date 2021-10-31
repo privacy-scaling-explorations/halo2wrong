@@ -1,4 +1,4 @@
-use super::{AssignedBit, AssignedCondition, AssignedValue};
+use super::{Assigned, AssignedBit, AssignedCondition, AssignedValue, UnassignedValue};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
@@ -33,20 +33,6 @@ pub struct MainGate<F: FieldExt> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> MainGate<F> {
-    pub fn width(&self) -> usize {
-        4
-    }
-
-    fn advice_columns(&self) -> Vec<Column<Advice>> {
-        vec![self.config.a, self.config.b, self.config.c, self.config.d]
-    }
-
-    fn fixed_columns(&self) -> Vec<Column<Fixed>> {
-        vec![self.config.sa, self.config.sb, self.config.sc, self.config.sd]
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum CombinationOption<F: FieldExt> {
     SingleLinerMul,
@@ -56,7 +42,7 @@ pub enum CombinationOption<F: FieldExt> {
 }
 
 pub enum Term<'a, F: FieldExt> {
-    Assigned(&'a mut AssignedValue<F>, F),
+    Assigned(&'a mut dyn Assigned<F>, F),
     Unassigned(Option<F>, F),
     Zero,
 }
@@ -64,7 +50,7 @@ pub enum Term<'a, F: FieldExt> {
 impl<'a, F: FieldExt> Term<'a, F> {
     fn coeff(&self) -> Option<F> {
         match self {
-            Self::Assigned(assigned, _) => assigned.value,
+            Self::Assigned(assigned, _) => assigned.value(),
             Self::Unassigned(unassigned, _) => *unassigned,
             Self::Zero => Some(F::zero()),
         }
@@ -87,38 +73,44 @@ impl<'a, F: FieldExt> Term<'a, F> {
 }
 
 pub trait MainGateInstructions<F: FieldExt> {
-    fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error>;
+    fn assign_value(
+        &self,
+        region: &mut Region<'_, F>,
+        value: &UnassignedValue<F>,
+        column: MainGateColumn,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error>;
 
-    fn cond_swap(
+    fn cond_select(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut AssignedValue<F>,
-        b: &mut AssignedValue<F>,
+        a: &mut impl Assigned<F>,
+        b: &mut impl Assigned<F>,
         cond: &mut AssignedCondition<F>,
+        offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
 
-    fn assert_add(
+    fn add(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn add_with_aux(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut AssignedValue<F>,
-        b: &mut AssignedValue<F>,
-        c: &mut AssignedValue<F>,
-        offset: &mut usize,
-    ) -> Result<(), Error>;
-
-    fn assert_add_with_aux(
-        &self,
-        region: &mut Region<'_, F>,
-        a: &mut AssignedValue<F>,
-        b: &mut AssignedValue<F>,
-        c: &mut AssignedValue<F>,
+        a: &mut impl Assigned<F>,
+        b: &mut impl Assigned<F>,
         aux: F,
         offset: &mut usize,
-    ) -> Result<(), Error>;
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn cycle_to(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, column: MainGateColumn, offset: usize) -> Result<(), Error>;
+    fn sub(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn sub_with_aux(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &mut impl Assigned<F>,
+        b: &mut impl Assigned<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 
@@ -136,51 +128,83 @@ pub trait MainGateInstructions<F: FieldExt> {
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
-    fn assert_add_with_aux(
+    fn add(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        self.add_with_aux(region, a, b, F::zero(), offset)
+    }
+
+    fn sub(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        self.sub_with_aux(region, a, b, F::zero(), offset)
+    }
+
+    fn add_with_aux(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut AssignedValue<F>,
-        b: &mut AssignedValue<F>,
-        c: &mut AssignedValue<F>,
+        a: &mut impl Assigned<F>,
+        b: &mut impl Assigned<F>,
         aux: F,
         offset: &mut usize,
-    ) -> Result<(), Error> {
-        let (one, minus_one) = (F::one(), -F::one());
+    ) -> Result<AssignedValue<F>, Error> {
+        let c = a.value().map(|a_val| {
+            let b_val = b.value().unwrap();
+            a_val + b_val
+        });
 
-        self.combine(
+        let one = F::one();
+
+        let (_, _, cell, _) = self.combine(
             region,
             Term::Assigned(a, one),
             Term::Assigned(b, one),
-            Term::Assigned(c, minus_one),
+            Term::Unassigned(c, -one),
             Term::Zero,
             aux,
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
 
-        Ok(())
-    }
-    fn assert_add(
-        &self,
-        region: &mut Region<'_, F>,
-        a: &mut AssignedValue<F>,
-        b: &mut AssignedValue<F>,
-        c: &mut AssignedValue<F>,
-        offset: &mut usize,
-    ) -> Result<(), Error> {
-        self.assert_add_with_aux(region, a, b, c, F::zero(), offset)
+        Ok(AssignedValue::new(cell, c))
     }
 
-    fn cond_swap(
+    fn sub_with_aux(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut AssignedValue<F>,
-        b: &mut AssignedValue<F>,
-        cond: &mut AssignedCondition<F>,
+        a: &mut impl Assigned<F>,
+        b: &mut impl Assigned<F>,
+        aux: F,
+        offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
-        let diff = a.value.map(|a| a - b.value.unwrap());
-        let res = a.value.map(|a| {
-            let b = b.value.unwrap();
+        let c = a.value().map(|a_val| {
+            let b_val = b.value().unwrap();
+            a_val - b_val + aux
+        });
+
+        let one = F::one();
+
+        let (_, _, cell, _) = self.combine(
+            region,
+            Term::Assigned(a, one),
+            Term::Assigned(b, -one),
+            Term::Unassigned(c, -one),
+            Term::Zero,
+            aux,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn cond_select(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &mut impl Assigned<F>,
+        b: &mut impl Assigned<F>,
+        cond: &mut AssignedCondition<F>,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error> {
+        let dif = a.value().map(|a| a - b.value().unwrap());
+        let res = a.value().map(|a| {
+            let b = b.value().unwrap();
             let cond = cond.bool_value.unwrap();
             if cond {
                 a
@@ -189,48 +213,31 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             }
         });
 
-        let mut offset = 0;
+        let (one, zero) = (F::one(), F::zero());
 
-        let a_new_cell = region.assign_advice(|| "a", self.config.a, offset, || Ok(a.value.ok_or(Error::SynthesisError)?))?;
-        let b_new_cell_0 = region.assign_advice(|| "b", self.config.b, offset, || Ok(b.value.ok_or(Error::SynthesisError)?))?;
-        let _ = region.assign_advice(|| "c", self.config.c, offset, || Ok(F::zero()))?;
-        let diff_cell = region.assign_advice(|| "d", self.config.d, offset, || Ok(diff.ok_or(Error::SynthesisError)?))?;
+        let (_, _, _, dif_cell) = self.combine(
+            region,
+            Term::Assigned(a, one),
+            Term::Assigned(b, -one),
+            Term::Zero,
+            Term::Unassigned(dif, one),
+            zero,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
 
-        region.assign_fixed(|| "sa", self.config.sa, offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "sb", self.config.sb, offset, || Ok(-F::one()))?;
-        region.assign_fixed(|| "sd", self.config.sd, offset, || Ok(F::one()))?;
+        let dif = &mut AssignedValue::new(dif_cell, dif);
 
-        region.assign_fixed(|| "sc", self.config.sc, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "s_mul", self.config.s_mul, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
-
-        a.cycle_cell(region, a_new_cell)?;
-        b.cycle_cell(region, b_new_cell_0)?;
-
-        offset += 1;
-
-        let diff_new_cell = region.assign_advice(|| "a", self.config.a, offset, || Ok(diff.ok_or(Error::SynthesisError)?))?;
-        let cond_new_cell = region.assign_advice(|| "b", self.config.b, offset, || Ok(cond.value().ok_or(Error::SynthesisError)?))?;
-        let b_new_cell_1 = region.assign_advice(|| "c", self.config.c, offset, || Ok(b.value.ok_or(Error::SynthesisError)?))?;
-        let res_cell = region.assign_advice(|| "d", self.config.d, offset, || Ok(res.ok_or(Error::SynthesisError)?))?;
-
-        region.assign_fixed(|| "s_mul", self.config.s_mul, offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "sc", self.config.sd, offset, || Ok(F::one()))?;
-        region.assign_fixed(|| "sd", self.config.sd, offset, || Ok(-F::one()))?;
-
-        region.assign_fixed(|| "sa", self.config.sa, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sb", self.config.sb, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd_next", self.config.sd_next, offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, offset, || Ok(F::zero()))?;
-
-        region.constrain_equal(diff_cell, diff_new_cell)?;
-        region.constrain_equal(b_new_cell_0, b_new_cell_1)?;
-        region.constrain_equal(cond.cell, cond_new_cell)?;
-
-        cond.cycle_cell(region, cond_new_cell)?;
-        a.cycle_cell(region, a_new_cell)?;
-        b.cycle_cell(region, b_new_cell_1)?;
+        let (_, _, _, res_cell) = self.combine(
+            region,
+            Term::Assigned(dif, zero),
+            Term::Assigned(cond, zero),
+            Term::Assigned(b, one),
+            Term::Unassigned(res, -one),
+            zero,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
 
         let res = AssignedValue::new(res_cell, res);
 
@@ -322,29 +329,24 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok((cell_0, cell_1, cell_2, cell_3))
     }
 
-    fn assign_value(&self, region: &mut Region<'_, F>, value: Option<F>, column: MainGateColumn, offset: usize) -> Result<AssignedValue<F>, Error> {
+    fn assign_value(
+        &self,
+        region: &mut Region<'_, F>,
+        unassigned: &UnassignedValue<F>,
+        column: MainGateColumn,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error> {
         let column = match column {
             MainGateColumn::A => self.config.a,
             MainGateColumn::B => self.config.b,
             MainGateColumn::C => self.config.c,
             MainGateColumn::D => self.config.d,
         };
-        let cell = region.assign_advice(|| "assign value", column, offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
+        let cell = region.assign_advice(|| "assign value", column, *offset, || unassigned.value())?;
+        // proceed to the next row
+        self.no_operation(region, offset)?;
 
-        Ok(AssignedValue::new(cell, value))
-    }
-
-    fn cycle_to(&self, region: &mut Region<'_, F>, input: &mut AssignedValue<F>, column: MainGateColumn, offset: usize) -> Result<(), Error> {
-        let column = match column {
-            MainGateColumn::A => self.config.a,
-            MainGateColumn::B => self.config.b,
-            MainGateColumn::C => self.config.c,
-            MainGateColumn::D => self.config.d,
-        };
-        let value = input.value;
-        let new_cell = region.assign_advice(|| "assign value", column, offset, || Ok(value.ok_or(Error::SynthesisError)?))?;
-        input.cycle_cell(region, new_cell)?;
-        Ok(())
+        Ok(unassigned.assign(cell))
     }
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error> {
@@ -423,7 +425,7 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    use super::{CombinationOption, Term, MainGate, MainGateConfig, MainGateInstructions};
+    use super::{CombinationOption, MainGate, MainGateConfig, MainGateInstructions, Term};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -547,8 +549,7 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-        #[cfg(feature = "print_prover")]
-        println!("{:?}", prover);
+
         assert_eq!(prover.verify(), Ok(()));
     }
 
@@ -706,8 +707,6 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
         assert_eq!(prover.verify(), Ok(()));
 
         let single_liner_coeffs = Some(vec![a_0, a_1, a_2, a_3 + Fp::one()]);
@@ -782,8 +781,6 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
         assert_eq!(prover.verify(), Ok(()));
 
         let value = Fp::zero();
@@ -795,8 +792,6 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
         assert_eq!(prover.verify(), Ok(()));
 
         let value = Fp::rand();
@@ -808,8 +803,6 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
 
-        #[cfg(feature = "print_prover")]
-        println!("{:#?}", prover);
         assert_ne!(prover.verify(), Ok(()));
     }
 }

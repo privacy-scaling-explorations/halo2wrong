@@ -1,14 +1,29 @@
-use crate::rns::{Common, Decomposed, Integer};
+use crate::rns::{decompose_fe as decompose, fe_to_big, Common, Integer, Limb};
 use halo2::plonk::Error;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Region},
 };
+use num_bigint::BigUint as big_uint;
 use std::marker::PhantomData;
 
 mod integer;
 mod main_gate;
 mod range;
+
+pub trait Assigned<F: FieldExt> {
+    fn value(&self) -> Option<F>;
+    fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+        region.constrain_equal(self.cell(), new_cell)?;
+        self.update_cell(new_cell);
+        Ok(())
+    }
+    fn cell(&self) -> Cell;
+    fn update_cell(&mut self, new_cell: Cell);
+    fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
+        self.value().map(|e| decompose(e, number_of_limbs, bit_len))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AssignedCondition<F: FieldExt> {
@@ -19,8 +34,6 @@ pub struct AssignedCondition<F: FieldExt> {
 
 impl<F: FieldExt> AssignedCondition<F> {
     fn new(cell: Cell, value: Option<F>) -> Self {
-        // bool_value is true when value is non zero
-        // we want to keep it not too strict with no assertation to be able to test bad paths of bitness check
         let bool_value = value.map(|value| if value == F::zero() { false } else { true });
         AssignedCondition {
             bool_value,
@@ -28,103 +41,109 @@ impl<F: FieldExt> AssignedCondition<F> {
             _marker: PhantomData,
         }
     }
+}
 
-    pub fn value(&self) -> Option<F> {
+impl<F: FieldExt> Assigned<F> for AssignedCondition<F> {
+    fn value(&self) -> Option<F> {
         self.bool_value.map(|value| if value { F::one() } else { F::zero() })
     }
-
-    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
-        region.constrain_equal(self.cell, new_cell)?;
+    fn cell(&self) -> Cell {
+        self.cell
+    }
+    fn update_cell(&mut self, new_cell: Cell) {
         self.cell = new_cell;
-        Ok(())
     }
 }
 
 type AssignedBit<F> = AssignedCondition<F>;
 
 #[derive(Debug, Clone)]
+pub struct AssignedLimb<F: FieldExt> {
+    value: Option<Limb<F>>,
+    cell: Cell,
+    pub max_val: big_uint,
+}
+
+impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {
+    fn value(&self) -> Option<F> {
+        self.value.as_ref().map(|value| value.fe())
+    }
+    fn cell(&self) -> Cell {
+        self.cell
+    }
+    fn update_cell(&mut self, new_cell: Cell) {
+        self.cell = new_cell;
+    }
+}
+
+impl<F: FieldExt> AssignedLimb<F> {
+    fn new(cell: Cell, value: Option<F>, max_val: big_uint) -> Self {
+        let value = value.map(|value| Limb::<F>::new(value));
+        AssignedLimb { value, cell, max_val }
+    }
+
+    fn add(&self, other: &Self) -> big_uint {
+        self.max_val.clone() + other.max_val.clone()
+    }
+
+    fn add_big(&self, other: big_uint) -> big_uint {
+        self.max_val.clone() + other
+    }
+
+    fn add_fe(&self, other: F) -> big_uint {
+        self.add_big(fe_to_big(other))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UnassignedInteger<F: FieldExt> {
+    pub integer: Option<Integer<F>>,
+}
+
+impl<F: FieldExt> From<Option<Integer<F>>> for UnassignedInteger<F> {
+    fn from(integer: Option<Integer<F>>) -> Self {
+        UnassignedInteger { integer }
+    }
+}
+
+impl<F: FieldExt> UnassignedInteger<F> {
+    fn limb(&self, idx: usize) -> UnassignedValue<F> {
+        UnassignedValue::new(self.integer.as_ref().map(|e| e.limb_value(idx)))
+    }
+
+    fn native(&self) -> UnassignedValue<F> {
+        UnassignedValue::new(self.integer.as_ref().map(|integer| integer.native()))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct AssignedInteger<F: FieldExt> {
-    value: Option<Integer<F>>,
-    cells: Vec<Cell>,
-    native_value_cell: Cell,
+    limbs: Vec<AssignedLimb<F>>,
+    native_value: AssignedValue<F>,
 }
 
 impl<F: FieldExt> AssignedInteger<F> {
-    fn new(cells: Vec<Cell>, value: Option<Integer<F>>, native_value_cell: Cell) -> Self {
-        Self {
-            value,
-            cells,
-            native_value_cell,
-        }
-    }
-    pub fn value(&self) -> Result<Integer<F>, Error> {
-        Ok(self.value.clone().ok_or(Error::SynthesisError)?)
+    pub fn new(limbs: Vec<AssignedLimb<F>>, native_value: AssignedValue<F>) -> Self {
+        AssignedInteger { limbs, native_value }
     }
 
     pub fn integer(&self) -> Option<Integer<F>> {
-        self.value.clone()
+        self.limbs[0].value.as_ref().map(|_| {
+            let limbs = self.limbs.iter().map(|limb| limb.value.clone().unwrap()).collect();
+            Integer::new(limbs)
+        })
     }
 
     pub fn limb_value(&self, idx: usize) -> Result<F, Error> {
-        let limbs = self.value.as_ref().map(|e| e.limbs());
-        Ok(limbs.ok_or(Error::SynthesisError)?[idx])
+        Ok(self.limbs[idx].value.as_ref().ok_or(Error::SynthesisError)?.fe())
     }
 
-    pub fn limbs(&self) -> Vec<AssignedValue<F>> {
-        self.cells
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| {
-                let limb = self.value.as_ref().map(|e| e.limb_value(i));
-                AssignedValue::new(*cell, limb)
-            })
-            .collect()
+    pub fn limb(&mut self, idx: usize) -> &mut AssignedLimb<F> {
+        &mut self.limbs[idx]
     }
 
-    pub fn limb(&self, idx: usize) -> AssignedValue<F> {
-        let limb = self.value.as_ref().map(|e| e.limb_value(idx));
-        AssignedValue::new(self.cells[idx], limb)
-    }
-
-    pub fn native_value(&self) -> Result<F, Error> {
-        let native_value = self.value.as_ref().map(|e| e.native());
-        Ok(native_value.ok_or(Error::SynthesisError)?)
-    }
-
-    pub fn native(&self) -> AssignedValue<F> {
-        AssignedValue::new(self.native_value_cell, self.value.as_ref().map(|e| e.native()))
-    }
-
-    pub fn update_cells(&mut self, cells: Option<Vec<Cell>>, native_value_cell: Option<Cell>) {
-        match cells {
-            Some(cells) => self.cells = cells,
-            _ => {}
-        }
-
-        match native_value_cell {
-            Some(native_value_cell) => self.native_value_cell = native_value_cell,
-            _ => {}
-        }
-    }
-
-    pub fn update_limb_cell(&mut self, idx: usize, new_cell: Cell) {
-        self.cells[idx] = new_cell;
-    }
-
-    pub fn update_native_cell(&mut self, new_cell: Cell) {
-        self.native_value_cell = new_cell;
-    }
-
-    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, idx: usize, new_cell: Cell) -> Result<(), Error> {
-        region.constrain_equal(self.cells[idx], new_cell)?;
-        self.cells[idx] = new_cell;
-        Ok(())
-    }
-
-    pub fn cycle_native_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
-        region.constrain_equal(self.native_value_cell, new_cell)?;
-        self.native_value_cell = new_cell;
-        Ok(())
+    pub fn native(&mut self) -> &mut AssignedValue<F> {
+        &mut self.native_value
     }
 }
 
@@ -143,31 +162,55 @@ impl<F: FieldExt> From<AssignedCondition<F>> for AssignedValue<F> {
     }
 }
 
+impl<F: FieldExt> Assigned<F> for AssignedValue<F> {
+    fn value(&self) -> Option<F> {
+        self.value
+    }
+    fn cell(&self) -> Cell {
+        self.cell
+    }
+    fn update_cell(&mut self, new_cell: Cell) {
+        self.cell = new_cell;
+    }
+}
+
 impl<F: FieldExt> AssignedValue<F> {
     fn new(cell: Cell, value: Option<F>) -> Self {
         AssignedValue { value, cell }
     }
 
-    pub fn value(&self) -> Result<F, Error> {
-        Ok(self.value.clone().ok_or(Error::SynthesisError)?)
-    }
-
-    pub fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
-        region.constrain_equal(self.cell, new_cell)?;
-        self.cell = new_cell;
-        Ok(())
-    }
-
-    pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
-        self.value.map(|e| Decomposed::<F>::from_fe(e, number_of_limbs, bit_len).limbs())
-    }
-
-    pub fn negate(&mut self) {
-        self.value = self.value.map(|value| -value);
+    fn to_limb(&self, max_val: big_uint) -> AssignedLimb<F> {
+        let value = self.value.map(|value| Limb::<F>::new(value));
+        let cell = self.cell;
+        AssignedLimb { value, cell, max_val }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct UnassignedValue<F: FieldExt> {
     pub value: Option<F>,
+}
+
+impl<F: FieldExt> From<Option<F>> for UnassignedValue<F> {
+    fn from(value: Option<F>) -> Self {
+        UnassignedValue { value }
+    }
+}
+
+impl<F: FieldExt> UnassignedValue<F> {
+    fn new(value: Option<F>) -> Self {
+        UnassignedValue { value }
+    }
+
+    pub fn value(&self) -> Result<F, Error> {
+        Ok(self.value.clone().ok_or(Error::SynthesisError)?)
+    }
+
+    pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
+        self.value.map(|e| decompose(e, number_of_limbs, bit_len))
+    }
+
+    pub fn assign(&self, cell: Cell) -> AssignedValue<F> {
+        AssignedValue::new(cell, self.value)
+    }
 }

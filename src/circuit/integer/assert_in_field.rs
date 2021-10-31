@@ -1,6 +1,6 @@
 use super::{IntegerChip, IntegerInstructions};
-use crate::circuit::main_gate::{CombinationOption, Term, MainGateInstructions};
-use crate::circuit::range::{RangeInstructions, RangeTune};
+use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
+use crate::circuit::range::RangeTune;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
@@ -12,15 +12,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         RangeTune::Fits
     }
 
-    pub(crate) fn _assert_in_field(&self, region: &mut Region<'_, N>, input: &mut AssignedInteger<N>) -> Result<(), Error> {
+    pub(crate) fn _assert_in_field(&self, region: &mut Region<'_, N>, input: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         // Constraints:
-
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
         // 0 = -c_2 + p_2 - a_2 + b_2 * R - b_1
         // 0 = -c_3 + p_3 - a_3           - b_2
 
-        // Witness Layout:
+        // Witness layout:
         // | A   | B   | C   | D     |
         // | --- | --- | --- | ----- |
         // | c_0 | a_0 | b_0 | -     |
@@ -29,42 +28,30 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | c_3 | a_3 | -   | b_2   |
 
         let main_gate = self.main_gate();
-        let mut offset = 0;
 
-        // to make a=p case is not passing compare with p-1
+        // to make a=p case not passing compare with p-1
         let modulus_minus_one = &self.rns.wrong_modulus_minus_one.clone();
 
-        // result comtains borrows must be bits and subtraaction result must be in range
+        // result containts borrows must be bits and subtraaction result must be in range
         let comparision_result = input.integer().map(|input| {
             let comparision_result = self.rns.compare_to_modulus(&input);
             comparision_result
         });
 
         let result = comparision_result.as_ref().map(|r| r.result.clone());
-        let result = &mut self.assign_integer(region, result, &mut offset)?;
+        let result = &mut self.range_assign_integer(region, result.into(), self.range_tune_assert_in_field_result(), offset)?;
 
         // assert borrow values are bits
         let borrow = comparision_result.as_ref().map(|r| r.borrow.clone());
         let b_0 = borrow.map(|borrow| if borrow[0] { N::one() } else { N::zero() });
         let b_1 = borrow.map(|borrow| if borrow[1] { N::one() } else { N::zero() });
         let b_2 = borrow.map(|borrow| if borrow[2] { N::one() } else { N::zero() });
-        let b_0: &mut AssignedValue<N> = &mut main_gate.assign_bit(region, b_0, &mut offset)?.into();
-        let b_1: &mut AssignedValue<N> = &mut main_gate.assign_bit(region, b_1, &mut offset)?.into();
-        let b_2: &mut AssignedValue<N> = &mut main_gate.assign_bit(region, b_2, &mut offset)?.into();
+        let b_0: &mut AssignedValue<N> = &mut main_gate.assign_bit(region, b_0, offset)?.into();
+        let b_1: &mut AssignedValue<N> = &mut main_gate.assign_bit(region, b_1, offset)?.into();
+        let b_2: &mut AssignedValue<N> = &mut main_gate.assign_bit(region, b_2, offset)?.into();
 
         let left_shifter = self.rns.left_shifter_r;
         let one = N::one();
-        let minus_one = -one;
-
-        let result_0 = &mut result.limb(0);
-        let result_1 = &mut result.limb(1);
-        let result_2 = &mut result.limb(2);
-        let result_3 = &mut result.limb(3);
-
-        let input_0 = &mut input.limb(0);
-        let input_1 = &mut input.limb(1);
-        let input_2 = &mut input.limb(2);
-        let input_3 = &mut input.limb(3);
 
         // | A   | B   | C   | D     |
         // | c_0 | a_0 | b_0 | -     |
@@ -72,12 +59,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         main_gate.combine(
             region,
-            Term::Assigned(result_0, minus_one),
-            Term::Assigned(input_0, minus_one),
+            Term::Assigned(result.limb(0), -one),
+            Term::Assigned(input.limb(0), -one),
             Term::Assigned(b_0, left_shifter),
             Term::Zero,
             modulus_minus_one.limb_value(0),
-            &mut offset,
+            offset,
             CombinationOption::SingleLinerAdd,
         )?;
 
@@ -88,12 +75,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
         main_gate.combine(
             region,
-            Term::Assigned(result_1, minus_one),
-            Term::Assigned(input_1, minus_one),
+            Term::Assigned(result.limb(1), -one),
+            Term::Assigned(input.limb(1), -one),
             Term::Assigned(b_1, left_shifter),
-            Term::Assigned(b_0, minus_one),
+            Term::Assigned(b_0, -one),
             modulus_minus_one.limb_value(1),
-            &mut offset,
+            offset,
             CombinationOption::SingleLinerAdd,
         )?;
 
@@ -104,12 +91,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 0 = -c_2 + p_2 - a_2 + b_2 * R - b_1
         main_gate.combine(
             region,
-            Term::Assigned(result_2, minus_one),
-            Term::Assigned(input_2, minus_one),
+            Term::Assigned(result.limb(2), -one),
+            Term::Assigned(input.limb(2), -one),
             Term::Assigned(b_2, left_shifter),
-            Term::Assigned(b_1, minus_one),
+            Term::Assigned(b_1, -one),
             modulus_minus_one.limb_value(2),
-            &mut offset,
+            offset,
             CombinationOption::SingleLinerAdd,
         )?;
 
@@ -121,30 +108,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(result_3, minus_one),
-            Term::Assigned(input_3, minus_one),
+            Term::Assigned(result.limb(3), -one),
+            Term::Assigned(input.limb(3), -one),
             Term::Zero,
-            Term::Assigned(b_2, minus_one),
+            Term::Assigned(b_2, -one),
             modulus_minus_one.limb_value(3),
-            &mut offset,
+            offset,
             CombinationOption::SingleLinerAdd,
         )?;
-
-        // update cells
-        result.update_limb_cell(0, result_0.cell);
-        result.update_limb_cell(1, result_1.cell);
-        result.update_limb_cell(2, result_2.cell);
-        result.update_limb_cell(3, result_3.cell);
-
-        input.update_limb_cell(0, input_0.cell);
-        input.update_limb_cell(1, input_1.cell);
-        input.update_limb_cell(2, input_2.cell);
-        input.update_limb_cell(3, input_3.cell);
-
-        // ranges
-
-        let range_chip = self.range_chip();
-        range_chip.range_integer(region, result, self.range_tune_assert_in_field_result(), &mut offset)?;
 
         Ok(())
     }

@@ -1,13 +1,45 @@
-use crate::{BIT_LEN_CRT_MODULUS, BIT_LEN_PRENORMALIZED, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{BIT_LEN_LIMB, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
-use rand::thread_rng;
-use std::convert::TryInto;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Div, Shl};
+
+pub fn decompose_fe<F: FieldExt>(e: F, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
+    decompose(fe_to_big(e), number_of_limbs, bit_len)
+}
+
+pub fn decompose<F: FieldExt>(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
+    let mut e = e;
+    let mask = big_uint::from(1usize).shl(bit_len) - 1usize;
+    let limbs: Vec<F> = (0..number_of_limbs)
+        .map(|_| {
+            let limb = mask.clone() & e.clone();
+            e = e.clone() >> bit_len;
+            big_to_fe(limb)
+        })
+        .collect();
+
+    limbs
+}
+
+fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
+    let mut e = big_uint::zero();
+    for (i, limb) in input.iter().enumerate() {
+        e += limb << (bit_len * i)
+    }
+    e
+}
+
+fn compose_fe<F: FieldExt>(input: Vec<F>, bit_len: usize) -> big_uint {
+    let mut e = big_uint::zero();
+    for (i, limb) in input.iter().enumerate() {
+        e += fe_to_big(*limb) << (bit_len * i)
+    }
+    e
+}
 
 pub trait Common<F: FieldExt> {
     fn value(&self) -> big_uint;
@@ -22,7 +54,7 @@ pub trait Common<F: FieldExt> {
     }
 }
 
-fn fe_to_big<F: FieldExt>(fe: F) -> big_uint {
+pub fn fe_to_big<F: FieldExt>(fe: F) -> big_uint {
     big_uint::from_bytes_le(&fe.to_bytes()[..])
 }
 
@@ -30,19 +62,13 @@ fn modulus<F: FieldExt>() -> big_uint {
     big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
 }
 
-fn big_to_fe<F: FieldExt>(e: big_uint) -> F {
+pub fn big_to_fe<F: FieldExt>(e: big_uint) -> F {
     F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
 }
 
 impl<N: FieldExt> From<Integer<N>> for big_uint {
     fn from(el: Integer<N>) -> Self {
         el.value()
-    }
-}
-
-impl<F: FieldExt> From<Decomposed<F>> for big_uint {
-    fn from(decomposed: Decomposed<F>) -> Self {
-        decomposed.value()
     }
 }
 
@@ -61,24 +87,24 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
 }
 
 #[derive(Debug, Clone)]
-pub enum Quotient<F: FieldExt> {
-    Short(Limb<F>),
+pub(crate) enum Quotient<F: FieldExt> {
+    Short(F),
     Long(Integer<F>),
 }
 
 #[derive(Debug, Clone)]
-pub struct ReductionContext<N: FieldExt> {
+pub(crate) struct ReductionContext<N: FieldExt> {
     pub result: Integer<N>,
     pub quotient: Quotient<N>,
-    pub t: Vec<Limb<N>>,
-    pub negative_modulus: Vec<Limb<N>>,
+    pub t: Vec<N>,
+    pub negative_modulus: Vec<N>,
     pub u_0: N,
     pub u_1: N,
     pub v_0: N,
     pub v_1: N,
 }
 
-pub struct ComparisionResult<N: FieldExt> {
+pub(crate) struct ComparisionResult<N: FieldExt> {
     pub result: Integer<N>,
     pub borrow: [bool; NUMBER_OF_LIMBS],
 }
@@ -90,29 +116,36 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub left_shifter_r: Native,
     pub left_shifter_2r: Native,
     pub left_shifter_3r: Native,
-    pub aux: Decomposed<Native>,
-    pub negative_wrong_modulus: Decomposed<Native>,
-    pub wrong_modulus_decomposed: Decomposed<Native>,
-    pub wrong_modulus_minus_one: Decomposed<Native>,
+    pub aux: Integer<Native>,
+    pub negative_wrong_modulus: Vec<Native>,
+    pub wrong_modulus_decomposed: Vec<Native>,
+    pub wrong_modulus_minus_one: Integer<Native>,
     pub wrong_modulus_in_native_modulus: Native,
+    pub bit_len_prenormalized: usize,
     pub bit_len_limb: usize,
     pub bit_len_lookup: usize,
     pub wrong_modulus: big_uint,
+    pub limb_max_val: big_uint,
+    pub most_significant_limb_max_val: big_uint,
     native_modulus: big_uint,
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
 }
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
-    fn aux(bit_len_limb: usize) -> Decomposed<N> {
+    fn aux(bit_len_limb: usize) -> Integer<N> {
         let two = N::from_u64(2);
         let r = &fe_to_big(two.pow(&[bit_len_limb as u64, 0, 0, 0]));
         let wrong_modulus = modulus::<W>();
-        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
-        let wrong_modulus_decomposed: Vec<big_uint> = wrong_modulus_decomposed.limbs.iter().map(|limb| limb.value()).collect();
-        let wrong_modulus_top = wrong_modulus_decomposed[NUMBER_OF_LIMBS - 1].clone();
-        let range_correct_factor = r.div(wrong_modulus_top) + 1usize;
-        let mut aux: Vec<big_uint> = wrong_modulus_decomposed.iter().map(|limb| limb * range_correct_factor.clone()).collect();
+        let wrong_modulus_decomposed = Integer::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let wrong_modulus_top = wrong_modulus_decomposed.limb(NUMBER_OF_LIMBS - 1).value();
+        let range_correct_factor: big_uint = r.div(wrong_modulus_top) + 1usize;
+
+        let mut aux: Vec<big_uint> = wrong_modulus_decomposed
+            .limbs()
+            .iter()
+            .map(|limb| fe_to_big(*limb) * range_correct_factor.clone())
+            .collect();
 
         if aux[1] < r.clone() - 1usize {
             if aux[2] == big_uint::zero() {
@@ -130,9 +163,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             aux[3] -= 1usize;
         }
 
-        let aux = Decomposed {
-            limbs: aux.iter().map(|aux| aux.clone().into()).collect(),
-            bit_len: bit_len_limb,
+        let aux = Integer {
+            limbs: aux.iter().map(|aux_limb| Limb::from_big(aux_limb.clone())).collect(),
         };
 
         aux
@@ -152,11 +184,18 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let native_modulus = modulus::<N>();
         let wrong_modulus_in_native_modulus: N = big_to_fe(wrong_modulus.clone() % native_modulus.clone());
         let t = big_uint::one() << bit_len_crt_modulus;
-        let negative_wrong_modulus = Decomposed::<N>::from_big(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
-        let wrong_modulus_decomposed = Decomposed::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
-        let wrong_modulus_minus_one = Decomposed::<N>::from_big(wrong_modulus.clone() - 1usize, NUMBER_OF_LIMBS, bit_len_limb);
+        let negative_wrong_modulus = decompose(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let wrong_modulus_decomposed = decompose(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+
+        let wrong_modulus_minus_one = Integer::<N>::from_big(wrong_modulus.clone() - 1usize, NUMBER_OF_LIMBS, bit_len_limb);
+
         let two_limb_mask = (big_uint::one() << (bit_len_limb * 2)) - 1usize;
         let aux = Self::aux(bit_len_limb);
+
+        let limb_max_val = (big_uint::one() << bit_len_limb) - 1usize;
+        let bit_len_prenormalized = wrong_modulus.bits() as usize;
+        let most_significant_limb_bit_len = bit_len_prenormalized - (bit_len_limb * (NUMBER_OF_LIMBS - 1));
+        let most_significant_limb_max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
 
         Rns {
             right_shifter_r,
@@ -174,54 +213,45 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             two_limb_mask,
             bit_len_limb,
             bit_len_lookup,
+            bit_len_prenormalized,
+            limb_max_val,
+            most_significant_limb_max_val,
             _marker_wrong: PhantomData,
         }
     }
 
-    pub(crate) fn new(&self, fe: W) -> Integer<N> {
-        self.new_from_big(fe_to_big(fe))
+    pub(crate) fn new_in_crt(&self, fe: W) -> Integer<N> {
+        Integer::from_big(fe_to_big(fe), NUMBER_OF_LIMBS, self.bit_len_limb)
+    }
+
+    pub(crate) fn new_from_limbs(&self, limbs: Vec<N>) -> Integer<N> {
+        let limbs = limbs.iter().map(|limb| Limb::<N>::new(*limb)).collect();
+        Integer { limbs }
     }
 
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
-        Integer {
-            decomposed: Decomposed::from_big(e, NUMBER_OF_LIMBS, self.bit_len_limb),
-        }
-    }
-
-    pub(crate) fn new_from_limbs(&self, limbs: Vec<Limb<N>>) -> Integer<N> {
-        assert_eq!(NUMBER_OF_LIMBS, limbs.len());
-        let decomposed = Decomposed {
-            limbs,
-            bit_len: self.bit_len_limb,
-        };
-        Integer { decomposed }
-    }
-
-    pub(crate) fn new_from_str_limbs(&self, e: Vec<&str>) -> Integer<N> {
-        let limbs = e.iter().map(|e| Limb::from(*e)).collect();
+        let limbs = decompose::<N>(e, NUMBER_OF_LIMBS, self.bit_len_limb);
         self.new_from_limbs(limbs)
     }
 
+    #[cfg(test)]
     pub(crate) fn rand_normalized(&self) -> Integer<N> {
-        self.new(W::rand())
+        self.new_from_big(fe_to_big(W::rand()))
     }
 
+    #[cfg(test)]
     pub(crate) fn rand_prenormalized(&self) -> Integer<N> {
         use num_bigint::RandBigInt;
+        use rand::thread_rng;
         let mut rng = thread_rng();
-        let el = rng.gen_biguint(BIT_LEN_PRENORMALIZED as u64);
+        let el = rng.gen_biguint(self.bit_len_prenormalized as u64);
         self.new_from_big(el)
     }
 
-    pub(crate) fn rand_in_crt(&self) -> Integer<N> {
-        use num_bigint::RandBigInt;
-        let mut rng = thread_rng();
-        let el = rng.gen_biguint(BIT_LEN_CRT_MODULUS as u64);
-        self.new_from_big(el)
-    }
-
+    #[cfg(test)]
     pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<N> {
         use num_bigint::RandBigInt;
+        use rand::thread_rng;
         let limbs: Vec<Limb<N>> = (0..NUMBER_OF_LIMBS)
             .map(|_| {
                 let mut rng = thread_rng();
@@ -231,65 +261,11 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             })
             .collect();
 
-        self.new_from_limbs(limbs)
+        Integer { limbs }
     }
 
-    fn max(&self, bit_len: Option<usize>) -> Integer<N> {
-        let limbs = (0..NUMBER_OF_LIMBS).map(|_| self.max_limb(bit_len)).collect();
-        self.new_from_limbs(limbs)
-    }
-
-    fn max_limb(&self, bit_len: Option<usize>) -> Limb<N> {
-        let bit_len = match bit_len {
-            Some(bit_len) => bit_len,
-            _ => self.bit_len_limb,
-        };
-
-        let el = (big_uint::one() << bit_len) - 1usize;
-        el.into()
-    }
-
-    pub(crate) fn modulus(&self) -> Integer<N> {
-        self.new_from_big(modulus::<W>())
-    }
-
-    pub(crate) fn add(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> Integer<N> {
-        let limbs: Vec<Limb<N>> = integer_0
-            .decomposed
-            .limbs
-            .iter()
-            .zip(integer_1.decomposed.limbs.iter())
-            .map(|(self_limb, other_limb)| (self_limb.value() + other_limb.value()).into())
-            .collect();
-
-        let decomposed = Decomposed {
-            limbs,
-            bit_len: self.bit_len_limb,
-        };
-
-        assert_eq!(decomposed.value(), integer_1.value() + integer_0.value());
-
-        Integer { decomposed }
-    }
-
-    pub(crate) fn sub(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> Integer<N> {
-        let aux = self.aux.clone();
-
-        let limbs: Vec<Limb<N>> = integer_0
-            .decomposed
-            .limbs
-            .iter()
-            .zip(integer_1.decomposed.limbs.iter())
-            .zip(aux.limbs.iter())
-            .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
-            .collect();
-
-        let decomposed = Decomposed {
-            limbs,
-            bit_len: self.bit_len_limb,
-        };
-
-        Integer { decomposed }
+    pub(crate) fn value(&self, a: &Integer<N>) -> big_uint {
+        compose_fe(a.limbs(), self.bit_len_limb)
     }
 
     pub(crate) fn compare_to_modulus(&self, integer: &Integer<N>) -> ComparisionResult<N> {
@@ -297,8 +273,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let modulus_minus_one = self.wrong_modulus_minus_one.clone();
 
         let mut prev_borrow = big_uint::zero();
-        let limbs: Vec<Limb<N>> = integer
-            .decomposed
+        let limbs: Vec<N> = integer
             .limbs
             .iter()
             .zip(modulus_minus_one.limbs.iter())
@@ -309,50 +284,23 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
                 let cur_borrow = *modulus_limb < limb + prev_borrow.clone();
                 *borrow = cur_borrow;
                 let cur_borrow = bool_to_big(cur_borrow) << self.bit_len_limb;
-                let res_limb = (((modulus_limb + cur_borrow) - prev_borrow.clone()) - limb).into();
+                let res_limb = ((modulus_limb + cur_borrow) - prev_borrow.clone()) - limb;
                 prev_borrow = bool_to_big(*borrow);
 
-                res_limb
+                big_to_fe(res_limb)
             })
             .collect();
 
-        let result: Integer<N> = Decomposed {
-            limbs,
-            bit_len: self.bit_len_limb,
-        }
-        .into();
-
-        // assert!(result.value() + integer.value() == modulus_minus_one.value());
+        let result = self.new_from_limbs(limbs);
 
         ComparisionResult { result, borrow }
-    }
-
-    pub(crate) fn neg(&self, integer_0: &Integer<N>) -> Integer<N> {
-        let aux = self.aux.clone();
-
-        let limbs: Vec<Limb<N>> = integer_0
-            .decomposed
-            .limbs
-            .iter()
-            .zip(self.wrong_modulus_decomposed.limbs.iter())
-            .zip(aux.limbs.iter())
-            .map(|((integer_0_limb, integer_1_limb), aux)| ((integer_0_limb.value() + aux.value()) - integer_1_limb.value()).into())
-            .collect();
-
-        let decomposed = Decomposed {
-            limbs,
-            bit_len: self.bit_len_limb,
-        };
-
-        Integer { decomposed }
     }
 
     pub(crate) fn mul(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> ReductionContext<N> {
         let modulus = self.wrong_modulus.clone();
         let negative_modulus = self.negative_wrong_modulus.clone();
 
-        // compute quotient and the result
-        let (quotient, result) = (integer_0.value() * integer_1.value()).div_rem(&modulus);
+        let (quotient, result) = (self.value(integer_0) * self.value(integer_1)).div_rem(&modulus);
 
         let quotient = self.new_from_big(quotient);
         let result = self.new_from_big(result);
@@ -362,15 +310,13 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         for k in 0..l {
             for i in 0..=k {
                 let j = k - i;
-                t[i + j] = t[i + j] + integer_0.limb_value(i) * integer_1.limb_value(j) + negative_modulus.limb_value(i) * quotient.limb_value(j);
+                t[i + j] = t[i + j] + integer_0.limb_value(i) * integer_1.limb_value(j) + negative_modulus[i] * quotient.limb_value(j);
             }
         }
 
-        let t: Vec<Limb<N>> = t.iter().map(|e| Limb::from_fe(*e)).collect();
-
         let (u_0, u_1, v_0, v_1) = self.residues(t.clone(), result.clone());
-        let negative_modulus = negative_modulus.limbs;
         let quotient = Quotient::Long(quotient);
+
         ReductionContext {
             result,
             quotient,
@@ -387,32 +333,25 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let modulus = self.wrong_modulus.clone();
         let negative_modulus = self.negative_wrong_modulus.clone();
 
-        // compute quotient and the result
-        let (quotient, result) = integer.value().div_rem(&modulus);
-
-        // FIX: q must stay in single limb
-        // apply modulus shifted values
-
-        // keep quotient value under the size of a dense limb
+        let (quotient, result) = self.value(integer).div_rem(&modulus);
         assert!(quotient < big_uint::one() << self.bit_len_limb);
 
-        let quotient: Limb<N> = quotient.into();
+        let quotient: N = big_to_fe(quotient);
 
-        // compute temp values
-        let t: Vec<Limb<N>> = integer
+        // compute intermediate values
+        let t: Vec<N> = integer
             .limbs()
             .iter()
-            .zip(negative_modulus.limbs())
+            .zip(negative_modulus.iter())
             .map(|(a, p)| {
-                let t = *a + p * quotient.fe();
-                Limb::from_fe(t)
+                let t = *a + *p * quotient;
+                t
             })
             .collect();
 
         let result = self.new_from_big(result);
 
         let (u_0, u_1, v_0, v_1) = self.residues(t.clone(), result.clone());
-        let negative_modulus = negative_modulus.limbs;
         let quotient = Quotient::Short(quotient);
 
         ReductionContext {
@@ -427,11 +366,11 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         }
     }
 
-    fn residues(&self, t: Vec<Limb<N>>, r: Integer<N>) -> (N, N, N, N) {
+    fn residues(&self, t: Vec<N>, r: Integer<N>) -> (N, N, N, N) {
         let s = self.left_shifter_r;
 
-        let u_0 = t[0].fe() + s * t[1].fe() - r.decomposed.limb_value(0) - s * r.decomposed.limb_value(1);
-        let u_1 = t[2].fe() + s * t[3].fe() - r.decomposed.limb_value(2) - s * r.decomposed.limb_value(3);
+        let u_0 = t[0] + s * t[1] - r.limb_value(0) - s * r.limb_value(1);
+        let u_1 = t[2] + s * t[3] - r.limb_value(2) - s * r.limb_value(3);
 
         // sanity check
         {
@@ -447,63 +386,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let v_1 = (u_1 + v_0) * self.right_shifter_2r;
 
         (u_0, u_1, v_0, v_1)
-    }
-}
-
-#[derive(Clone)]
-pub struct Integer<F: FieldExt> {
-    pub decomposed: Decomposed<F>,
-}
-
-impl<N: FieldExt> Common<N> for Integer<N> {
-    fn value(&self) -> big_uint {
-        self.decomposed.value()
-    }
-}
-
-impl<F: FieldExt> fmt::Debug for Integer<F> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = self.value();
-        let value = value.to_str_radix(16);
-        write!(f, "value: {}\n", value)?;
-        for limb in self.limbs().iter() {
-            let value = fe_to_big(*limb);
-            let value = value.to_str_radix(16);
-            write!(f, "limb: {}\n", value)?;
-        }
-        Ok(())
-    }
-}
-
-impl<F: FieldExt> From<Decomposed<F>> for Integer<F> {
-    fn from(decomposed: Decomposed<F>) -> Self {
-        Integer { decomposed }
-    }
-}
-
-impl<F: FieldExt> From<&Decomposed<F>> for Integer<F> {
-    fn from(decomposed: &Decomposed<F>) -> Self {
-        Integer {
-            decomposed: decomposed.clone(),
-        }
-    }
-}
-
-impl<N: FieldExt> Integer<N> {
-    pub(crate) fn fe<W: FieldExt>(&self) -> W {
-        big_to_fe(self.value())
-    }
-
-    pub fn limbs(&self) -> Vec<N> {
-        self.decomposed.limbs()
-    }
-
-    pub fn limb_value(&self, idx: usize) -> N {
-        self.decomposed.limb_value(idx)
-    }
-
-    pub fn limb(&self, idx: usize) -> Limb<N> {
-        self.decomposed.limb(idx)
     }
 }
 
@@ -538,63 +420,56 @@ impl<F: FieldExt> From<&str> for Limb<F> {
     }
 }
 
-impl<F: FieldExt> From<Decomposed<F>> for Limb<F> {
-    fn from(decomposed: Decomposed<F>) -> Self {
-        let e: big_uint = decomposed.into();
-        Limb::from(e)
-    }
-}
-
 impl<F: FieldExt> Limb<F> {
-    pub fn from_fe(fe: F) -> Limb<F> {
-        Self { _value: fe }
+    pub(crate) fn new(value: F) -> Self {
+        Limb { _value: value }
     }
 
-    pub fn fe(&self) -> F {
+    pub(crate) fn from_big(e: big_uint) -> Self {
+        Self::new(big_to_fe(e))
+    }
+
+    pub(crate) fn fe(&self) -> F {
         self._value
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Decomposed<F: FieldExt> {
+#[derive(Clone, Default)]
+pub struct Integer<F: FieldExt> {
     limbs: Vec<Limb<F>>,
-    bit_len: usize,
 }
 
-impl<F: FieldExt> Common<F> for Decomposed<F> {
-    fn value(&self) -> big_uint {
-        let mut e = big_uint::zero();
-        for (i, limb) in self.limbs.iter().enumerate() {
-            e += limb.value() << (self.bit_len * i)
+impl<F: FieldExt> fmt::Debug for Integer<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let value = self.value();
+        let value = value.to_str_radix(16);
+        write!(f, "value: {}\n", value)?;
+        for limb in self.limbs().iter() {
+            let value = fe_to_big(*limb);
+            let value = value.to_str_radix(16);
+            write!(f, "limb: {}\n", value)?;
         }
-        e
+        Ok(())
     }
 }
 
-impl<F: FieldExt> Decomposed<F> {
-    pub fn from_limb(limb: &Limb<F>, number_of_limbs: usize, bit_len: usize) -> Self {
-        Decomposed::from_big(limb.value(), number_of_limbs, bit_len)
+impl<N: FieldExt> Common<N> for Integer<N> {
+    fn value(&self) -> big_uint {
+        let limb_values = self.limbs.iter().map(|limb| limb.value()).collect();
+        compose(limb_values, BIT_LEN_LIMB)
     }
+}
 
-    pub fn from_fe(e: F, number_of_limbs: usize, bit_len: usize) -> Self {
-        Decomposed::from_big(fe_to_big(e), number_of_limbs, bit_len)
+impl<F: FieldExt> Integer<F> {
+    pub fn new(limbs: Vec<Limb<F>>) -> Self {
+        assert!(limbs.len() == NUMBER_OF_LIMBS);
+        Self { limbs }
     }
 
     pub fn from_big(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Self {
-        let mut e = e;
-        let mask = big_uint::from(1usize).shl(bit_len) - 1usize;
-        let limbs: Vec<Limb<F>> = (0..number_of_limbs)
-            .map(|_| {
-                let limb = mask.clone() & e.clone();
-                e = e.clone() >> bit_len;
-                limb.into()
-            })
-            .collect();
-
-        Decomposed {
-            limbs: limbs.try_into().expect("must fit in"),
-            bit_len,
-        }
+        let limbs = decompose::<F>(e, number_of_limbs, bit_len);
+        let limbs = limbs.iter().map(|e| Limb::<F>::new(*e)).collect();
+        Self { limbs }
     }
 
     pub fn limbs(&self) -> Vec<F> {
@@ -619,10 +494,10 @@ impl<F: FieldExt> Decomposed<F> {
 #[cfg(test)]
 mod tests {
 
-    use super::{big_to_fe, fe_to_big, modulus, Decomposed, Rns, BIT_LEN_CRT_MODULUS};
+    use super::{big_to_fe, fe_to_big, modulus, Rns};
     use crate::rns::Common;
     use crate::rns::Integer;
-    use crate::rns::Limb;
+    use crate::NUMBER_OF_LIMBS;
     use halo2::arithmetic::FieldExt;
     use halo2::pasta::Fp;
     use halo2::pasta::Fq;
@@ -638,7 +513,7 @@ mod tests {
         let bit_len_limb = 64usize;
         let bit_len_int = 256;
         let el = &rng.gen_biguint(bit_len_int);
-        let decomposed = Decomposed::<Fp>::from_big(el.clone(), number_of_limbs, bit_len_limb);
+        let decomposed = Integer::<Fp>::from_big(el.clone(), number_of_limbs, bit_len_limb);
         assert_eq!(decomposed.value(), el.clone());
     }
 
@@ -678,12 +553,6 @@ mod tests {
         let el_1 = shifted * rns.right_shifter_2r;
         assert_eq!(el_0, el_1);
 
-        // negated modulus
-
-        let t = big_uint::one() << BIT_LEN_CRT_MODULUS;
-        let negated_wrong_modulus = t - wrong_modulus.clone();
-        assert_eq!(negated_wrong_modulus, rns.negative_wrong_modulus.value());
-
         // range correction aux
         let el_0 = Wrong::rand();
         let el = fe_to_big(el_0);
@@ -705,28 +574,10 @@ mod tests {
         let wrong_modulus = rns.wrong_modulus.clone();
 
         // conversion
-        let el_0 = rng.gen_biguint(BIT_LEN_CRT_MODULUS as u64);
+        let el_0 = rng.gen_biguint((bit_len_limb * NUMBER_OF_LIMBS) as u64);
         let el = rns.new_from_big(el_0.clone());
         let el_1 = el.value();
         assert_eq!(el_0, el_1);
-
-        // add
-        let el_0 = &rns.rand_prenormalized();
-        let el_1 = &rns.rand_prenormalized();
-
-        let r_0 = rns.add(el_0, el_1);
-        let r_0: Wrong = r_0.fe();
-        let r_1: Wrong = el_0.fe::<Wrong>() + el_1.fe::<Wrong>();
-        assert_eq!(r_0, r_1);
-
-        // sub
-        let el_0 = &rns.rand_prenormalized();
-        let el_1 = &rns.rand_prenormalized();
-
-        let r_0 = rns.sub(el_0, el_1);
-        let r_0: Wrong = r_0.fe();
-        let r_1: Wrong = el_0.fe::<Wrong>() - el_1.fe::<Wrong>();
-        assert_eq!(r_0, r_1);
 
         // reduce
         let overflow = rns.bit_len_limb + 10;
@@ -740,12 +591,6 @@ mod tests {
 
         assert_eq!(rns.aux.value() % &wrong_modulus, big_uint::zero());
 
-        let aux = Integer { decomposed: rns.aux.clone() };
-        let el_0 = &rns.rand_prenormalized();
-        let el_1 = rns.add(&aux, &el_0);
-        let reduction_context = rns.reduce(&el_1);
-        assert_eq!(el_0.value() % wrong_modulus.clone(), reduction_context.result.value());
-
         // mul
         for _ in 0..10000 {
             let el_0 = &rns.rand_prenormalized();
@@ -757,34 +602,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_comparison() {
-        use halo2::pasta::Fp as Wrong;
-        use halo2::pasta::Fq as Native;
-        let bit_len_limb = 64;
+    // #[test]
+    // fn test_comparison() {
+    //     use halo2::pasta::Fp as Wrong;
+    //     use halo2::pasta::Fq as Native;
+    //     let bit_len_limb = 64;
 
-        let rns = &Rns::<Wrong, Native>::construct(bit_len_limb);
+    //     let rns = &Rns::<Wrong, Native>::construct(bit_len_limb);
 
-        let wrong_modulus = rns.wrong_modulus_decomposed.clone();
+    //     let wrong_modulus = rns.wrong_modulus_decomposed.clone();
 
-        let a_0 = Limb::<Native> {
-            _value: wrong_modulus.limb_value(0),
-        };
-        let a_1 = Limb::<Native> {
-            _value: wrong_modulus.limb_value(1),
-        };
-        let a_2 = Limb::<Native> {
-            _value: wrong_modulus.limb_value(2),
-        };
-        let a_3 = Limb::<Native> {
-            _value: wrong_modulus.limb_value(3),
-        };
+    //     let a_0 = wrong_modulus[0];
+    //     let a_1 = wrong_modulus[1];
+    //     let a_2 = wrong_modulus[2];
+    //     let a_3 = wrong_modulus[3];
 
-        let a = &rns.new_from_limbs(vec![a_0, a_1, a_2, a_3]);
+    //     let a = &rns.new_from_limbs(vec![a_0, a_1, a_2, a_3]);
 
-        let comparison_result = rns.compare_to_modulus(a);
-
-        println!("{:?}", comparison_result.borrow);
-        println!("{:?}", comparison_result.result);
-    }
+    //     let comparison_result = rns.compare_to_modulus(a);
+    //     println!("{:?}", comparison_result.borrow);
+    //     println!("{:?}", comparison_result.result);
+    // }
 }
