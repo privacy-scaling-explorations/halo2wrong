@@ -13,13 +13,11 @@ mod range;
 
 pub trait Assigned<F: FieldExt> {
     fn value(&self) -> Option<F>;
-    fn cycle_cell(&mut self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
+    fn cycle_cell(&self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
         region.constrain_equal(self.cell(), new_cell)?;
-        self.update_cell(new_cell);
         Ok(())
     }
     fn cell(&self) -> Cell;
-    fn update_cell(&mut self, new_cell: Cell);
     fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
         self.value().map(|e| decompose(e, number_of_limbs, bit_len))
     }
@@ -50,9 +48,6 @@ impl<F: FieldExt> Assigned<F> for AssignedCondition<F> {
     fn cell(&self) -> Cell {
         self.cell
     }
-    fn update_cell(&mut self, new_cell: Cell) {
-        self.cell = new_cell;
-    }
 }
 
 type AssignedBit<F> = AssignedCondition<F>;
@@ -70,9 +65,6 @@ impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {
     }
     fn cell(&self) -> Cell {
         self.cell
-    }
-    fn update_cell(&mut self, new_cell: Cell) {
-        self.cell = new_cell;
     }
 }
 
@@ -138,19 +130,11 @@ impl<F: FieldExt> AssignedInteger<F> {
         Ok(self.limbs[idx].value.as_ref().ok_or(Error::SynthesisError)?.fe())
     }
 
-    pub fn limb_mut(&mut self, idx: usize) -> &mut AssignedLimb<F> {
-        &mut self.limbs[idx]
-    }
-
     pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
         self.limbs[idx].clone()
     }
 
-    pub fn native_mut(&mut self) -> &mut AssignedValue<F> {
-        &mut self.native_value
-    }
-
-    pub fn native(&mut self) -> AssignedValue<F> {
+    pub fn native(&self) -> AssignedValue<F> {
         self.native_value.clone()
     }
 }
@@ -164,7 +148,7 @@ pub struct AssignedValue<F: FieldExt> {
 impl<F: FieldExt> From<AssignedCondition<F>> for AssignedValue<F> {
     fn from(cond: AssignedCondition<F>) -> Self {
         AssignedValue {
-            value: cond.value(),
+            value: (&cond).value(),
             cell: cond.cell,
         }
     }
@@ -176,9 +160,6 @@ impl<F: FieldExt> Assigned<F> for AssignedValue<F> {
     }
     fn cell(&self) -> Cell {
         self.cell
-    }
-    fn update_cell(&mut self, new_cell: Cell) {
-        self.cell = new_cell;
     }
 }
 

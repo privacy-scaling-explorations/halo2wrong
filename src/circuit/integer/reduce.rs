@@ -24,7 +24,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         self.rns.bit_len_limb
     }
 
-    pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus = self.rns.negative_wrong_modulus.clone();
@@ -49,10 +49,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
 
         let range_chip = self.range_chip();
-        let result = &mut self.range_assign_integer(region, result.into(), self.red_result_range_tune(), offset)?;
-        let quotient = &mut range_chip.range_value(region, &quotient.into(), self.red_quotient_range_tune(), offset)?;
-        let v_0 = &mut range_chip.range_value(region, &v_0.into(), self.red_v0_range_tune(), offset)?;
-        let v_1 = &mut range_chip.range_value(region, &v_1.into(), self.red_v1_range_tune(), offset)?;
+        let result = &self.range_assign_integer(region, result.into(), self.red_result_range_tune(), offset)?;
+        let quotient = &range_chip.range_value(region, &quotient.into(), self.red_quotient_range_tune(), offset)?;
+        let v_0 = &range_chip.range_value(region, &v_0.into(), self.red_v0_range_tune(), offset)?;
+        let v_1 = &range_chip.range_value(region, &v_1.into(), self.red_v1_range_tune(), offset)?;
 
         // | A   | B | C   | D |
         // | --- | - | --- | - |
@@ -68,7 +68,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, t_0_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(0), one),
+            Term::Assigned(&a.limb(0), one),
             Term::Assigned(quotient, negative_wrong_modulus[0]),
             Term::Unassigned(t_0, -one),
             Term::Zero,
@@ -76,11 +76,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_0 = &mut AssignedValue::<N>::new(t_0_cell, t_0);
+        let t_0 = &AssignedValue::<N>::new(t_0_cell, t_0);
 
         let (_, _, t_1_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(1), one),
+            Term::Assigned(&a.limb(1), one),
             Term::Assigned(quotient, negative_wrong_modulus[1]),
             Term::Unassigned(t_1, -one),
             Term::Zero,
@@ -88,11 +88,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_1 = &mut AssignedValue::<N>::new(t_1_cell, t_1);
+        let t_1 = &AssignedValue::<N>::new(t_1_cell, t_1);
 
         let (_, _, t_2_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(2), one),
+            Term::Assigned(&a.limb(2), one),
             Term::Assigned(quotient, negative_wrong_modulus[2]),
             Term::Unassigned(t_2, -one),
             Term::Zero,
@@ -100,11 +100,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_2 = &mut AssignedValue::<N>::new(t_2_cell, t_2);
+        let t_2 = &AssignedValue::<N>::new(t_2_cell, t_2);
 
         let (_, _, t_3_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(3), one),
+            Term::Assigned(&a.limb(3), one),
             Term::Assigned(quotient, negative_wrong_modulus[3]),
             Term::Unassigned(t_3, -one),
             Term::Zero,
@@ -112,7 +112,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_3 = &mut AssignedValue::<N>::new(t_3_cell, t_3);
+        let t_3 = &AssignedValue::<N>::new(t_3_cell, t_3);
 
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
@@ -128,8 +128,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             region,
             Term::Assigned(t_0, one),
             Term::Assigned(t_1, left_shifter_r),
-            Term::Assigned(&mut result.limbs[0].clone(), -one),
-            Term::Assigned(&mut result.limbs[1].clone(), -left_shifter_r),
+            Term::Assigned(&result.limbs[0].clone(), -one),
+            Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
             zero,
             offset,
             CombinationOption::CombineToNextAdd(-one),
@@ -158,8 +158,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             region,
             Term::Assigned(t_2, one),
             Term::Assigned(t_3, left_shifter_r),
-            Term::Assigned(&mut result.limbs[2].clone(), -one),
-            Term::Assigned(&mut result.limbs[3].clone(), -left_shifter_r),
+            Term::Assigned(&result.limbs[2].clone(), -one),
+            Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
             zero,
             offset,
             CombinationOption::CombineToNextAdd(-one),
@@ -180,10 +180,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(a.native_mut(), -one),
+            Term::Assigned(&a.native(), -one),
             Term::Zero,
             Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(result.native_mut(), one),
+            Term::Assigned(&result.native(), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,

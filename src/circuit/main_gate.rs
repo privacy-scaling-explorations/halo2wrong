@@ -42,7 +42,7 @@ pub enum CombinationOption<F: FieldExt> {
 }
 
 pub enum Term<'a, F: FieldExt> {
-    Assigned(&'a mut dyn Assigned<F>, F),
+    Assigned(&'a dyn Assigned<F>, F),
     Unassigned(Option<F>, F),
     Zero,
 }
@@ -86,31 +86,19 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn cond_select(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut impl Assigned<F>,
-        b: &mut impl Assigned<F>,
-        cond: &mut AssignedCondition<F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        cond: &AssignedCondition<F>,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
 
-    fn add(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
-    fn add_with_aux(
-        &self,
-        region: &mut Region<'_, F>,
-        a: &mut impl Assigned<F>,
-        b: &mut impl Assigned<F>,
-        aux: F,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error>;
+    fn add(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn add_with_aux(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, aux: F, offset: &mut usize)
+        -> Result<AssignedValue<F>, Error>;
 
-    fn sub(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
-    fn sub_with_aux(
-        &self,
-        region: &mut Region<'_, F>,
-        a: &mut impl Assigned<F>,
-        b: &mut impl Assigned<F>,
-        aux: F,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error>;
+    fn sub(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn sub_with_aux(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, aux: F, offset: &mut usize)
+        -> Result<AssignedValue<F>, Error>;
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 
@@ -128,19 +116,19 @@ pub trait MainGateInstructions<F: FieldExt> {
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
-    fn add(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn add(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
         self.add_with_aux(region, a, b, F::zero(), offset)
     }
 
-    fn sub(&self, region: &mut Region<'_, F>, a: &mut impl Assigned<F>, b: &mut impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn sub(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
         self.sub_with_aux(region, a, b, F::zero(), offset)
     }
 
     fn add_with_aux(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut impl Assigned<F>,
-        b: &mut impl Assigned<F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
         aux: F,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
@@ -153,8 +141,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         let (_, _, cell, _) = self.combine(
             region,
-            Term::Assigned(a, one),
-            Term::Assigned(b, one),
+            Term::Assigned(&a, one),
+            Term::Assigned(&b, one),
             Term::Unassigned(c, -one),
             Term::Zero,
             aux,
@@ -168,8 +156,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn sub_with_aux(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut impl Assigned<F>,
-        b: &mut impl Assigned<F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
         aux: F,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
@@ -182,8 +170,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         let (_, _, cell, _) = self.combine(
             region,
-            Term::Assigned(a, one),
-            Term::Assigned(b, -one),
+            Term::Assigned(&a, one),
+            Term::Assigned(&b, -one),
             Term::Unassigned(c, -one),
             Term::Zero,
             aux,
@@ -197,9 +185,9 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn cond_select(
         &self,
         region: &mut Region<'_, F>,
-        a: &mut impl Assigned<F>,
-        b: &mut impl Assigned<F>,
-        cond: &mut AssignedCondition<F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        cond: &AssignedCondition<F>,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
         let dif = a.value().map(|a| a - b.value().unwrap());
@@ -217,8 +205,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         let (_, _, _, dif_cell) = self.combine(
             region,
-            Term::Assigned(a, one),
-            Term::Assigned(b, -one),
+            Term::Assigned(&a, one),
+            Term::Assigned(&b, -one),
             Term::Zero,
             Term::Unassigned(dif, one),
             zero,
@@ -232,7 +220,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             region,
             Term::Assigned(dif, zero),
             Term::Assigned(cond, zero),
-            Term::Assigned(b, one),
+            Term::Assigned(&b, one),
             Term::Unassigned(res, -one),
             zero,
             offset,
@@ -580,7 +568,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            &mut layouter.assign_region(
+            layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let mut offset = 0;

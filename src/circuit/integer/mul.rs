@@ -31,8 +31,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _mul(
         &self,
         region: &mut Region<'_, N>,
-        a: &mut AssignedInteger<N>,
-        b: &mut AssignedInteger<N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
@@ -63,10 +63,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
 
         let range_chip = self.range_chip();
-        let quotient = &mut self.range_assign_integer(region, quotient.into(), self.mul_quotient_range_tune(), offset)?;
-        let result = &mut self.range_assign_integer(region, result.into(), self.mul_result_range_tune(), offset)?;
-        let v_0 = &mut range_chip.range_value(region, &v_0.into(), self.mul_v0_range_tune(), offset)?;
-        let v_1 = &mut range_chip.range_value(region, &v_1.into(), self.mul_v1_range_tune(), offset)?;
+        let quotient = &self.range_assign_integer(region, quotient.into(), self.mul_quotient_range_tune(), offset)?;
+        let result = &self.range_assign_integer(region, result.into(), self.mul_result_range_tune(), offset)?;
+        let v_0 = &range_chip.range_value(region, &v_0.into(), self.mul_v0_range_tune(), offset)?;
+        let v_1 = &range_chip.range_value(region, &v_1.into(), self.mul_v1_range_tune(), offset)?;
 
         // Constaints:
 
@@ -123,9 +123,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
                 let (_, _, _, t_i_cell) = main_gate.combine(
                     region,
-                    Term::Assigned(a.limb_mut(j), zero),
-                    Term::Assigned(b.limb_mut(k), zero),
-                    Term::Assigned(quotient.limb_mut(k), negative_wrong_modulus[j]),
+                    Term::Assigned(&a.limb(j), zero),
+                    Term::Assigned(&b.limb(k), zero),
+                    Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
                     Term::Unassigned(t, -one),
                     zero,
                     offset,
@@ -161,10 +161,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, _, _) = main_gate.combine(
             region,
-            Term::Assigned(&mut intermediate_values_cycling[0].clone(), one),
-            Term::Assigned(&mut intermediate_values_cycling[1].clone(), left_shifter_r),
-            Term::Assigned(&mut result.limbs[0].clone(), -one),
-            Term::Assigned(&mut result.limbs[1].clone(), -left_shifter_r),
+            Term::Assigned(&intermediate_values_cycling[0].clone(), one),
+            Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
+            Term::Assigned(&result.limbs[0].clone(), -one),
+            Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
             zero,
             offset,
             CombinationOption::CombineToNextAdd(-one),
@@ -191,10 +191,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(&mut intermediate_values_cycling[2].clone(), one),
-            Term::Assigned(&mut intermediate_values_cycling[3].clone(), left_shifter_r),
-            Term::Assigned(&mut result.limbs[2].clone(), -one),
-            Term::Assigned(&mut result.limbs[3].clone(), -left_shifter_r),
+            Term::Assigned(&intermediate_values_cycling[2].clone(), one),
+            Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
+            Term::Assigned(&result.limbs[2].clone(), -one),
+            Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
             zero,
             offset,
             CombinationOption::CombineToNextAdd(-one),
@@ -215,10 +215,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(a.native_mut(), zero),
-            Term::Assigned(b.native_mut(), zero),
-            Term::Assigned(quotient.native_mut(), -self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(result.native_mut(), -one),
+            Term::Assigned(&a.native(), zero),
+            Term::Assigned(&b.native(), zero),
+            Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+            Term::Assigned(&result.native(), -one),
             zero,
             offset,
             CombinationOption::SingleLinerMul,

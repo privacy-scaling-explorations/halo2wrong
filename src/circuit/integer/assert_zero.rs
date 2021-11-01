@@ -25,7 +25,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         self.rns.bit_len_limb
     }
 
-    pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+    pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.clone();
@@ -52,9 +52,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let range_chip = self.range_chip();
         // main_gate.assign_value(region, value, M, offset);
-        let quotient = &mut range_chip.range_value(region, &quotient.into(), self.assert_zero_quotient_range_tune(), offset)?;
-        let v_0 = &mut range_chip.range_value(region, &v_0.into(), self.assert_zero_v0_range_tune(), offset)?;
-        let v_1 = &mut range_chip.range_value(region, &v_1.into(), self.assert_zero_v1_range_tune(), offset)?;
+        let quotient = &range_chip.range_value(region, &quotient.into(), self.assert_zero_quotient_range_tune(), offset)?;
+        let v_0 = &range_chip.range_value(region, &v_0.into(), self.assert_zero_v0_range_tune(), offset)?;
+        let v_1 = &range_chip.range_value(region, &v_1.into(), self.assert_zero_v1_range_tune(), offset)?;
 
         // | A   | B | C   | D |
         // | --- | - | --- | - |
@@ -71,7 +71,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, t_0_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(0), one),
+            Term::Assigned(&a.limb(0), one),
             Term::Assigned(quotient, negative_wrong_modulus[0]),
             Term::Unassigned(t_0, -one),
             Term::Zero,
@@ -79,11 +79,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_0 = &mut AssignedValue::<N>::new(t_0_cell, t_0);
+        let t_0 = &AssignedValue::<N>::new(t_0_cell, t_0);
 
         let (_, _, t_1_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(1), one),
+            Term::Assigned(&a.limb(1), one),
             Term::Assigned(quotient, negative_wrong_modulus[1]),
             Term::Unassigned(t_1, -one),
             Term::Zero,
@@ -91,11 +91,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_1 = &mut AssignedValue::<N>::new(t_1_cell, t_1);
+        let t_1 = &AssignedValue::<N>::new(t_1_cell, t_1);
 
         let (_, _, t_2_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(2), one),
+            Term::Assigned(&a.limb(2), one),
             Term::Assigned(quotient, negative_wrong_modulus[2]),
             Term::Unassigned(t_2, -one),
             Term::Zero,
@@ -103,11 +103,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_2 = &mut AssignedValue::<N>::new(t_2_cell, t_2);
+        let t_2 = &AssignedValue::<N>::new(t_2_cell, t_2);
 
         let (_, _, t_3_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb_mut(3), one),
+            Term::Assigned(&a.limb(3), one),
             Term::Assigned(quotient, negative_wrong_modulus[3]),
             Term::Unassigned(t_3, -one),
             Term::Zero,
@@ -115,7 +115,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
-        let t_3 = &mut AssignedValue::<N>::new(t_3_cell, t_3);
+        let t_3 = &AssignedValue::<N>::new(t_3_cell, t_3);
 
         // u_0 = t_0 + t_1 * R
         // u_0 = v_0 * R^2
@@ -162,7 +162,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, _, _) = main_gate.combine(
             region,
-            Term::Assigned(a.native_mut(), -one),
+            Term::Assigned(&a.native(), -one),
             Term::Zero,
             Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
             Term::Zero,
