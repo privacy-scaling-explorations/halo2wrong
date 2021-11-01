@@ -1,6 +1,6 @@
 use super::{IntegerChip, IntegerInstructions};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::range::{RangeInstructions, RangeTune};
+use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::Quotient;
 use halo2::arithmetic::FieldExt;
@@ -8,20 +8,20 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn red_v0_range_tune(&self) -> RangeTune {
-        RangeTune::Fits
+    fn red_v0_range_tune(&self) -> usize {
+        self.rns.bit_len_limb
     }
 
-    fn red_v1_range_tune(&self) -> RangeTune {
-        RangeTune::Fits
+    fn red_v1_range_tune(&self) -> usize {
+        self.rns.bit_len_limb
     }
 
-    fn red_result_range_tune(&self) -> RangeTune {
-        RangeTune::Fits
+    fn red_result_range_tune(&self) -> usize {
+        self.rns.bit_len_limb
     }
 
-    fn red_quotient_range_tune(&self) -> RangeTune {
-        RangeTune::Fits
+    fn red_quotient_range_tune(&self) -> usize {
+        self.rns.bit_len_limb
     }
 
     pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {

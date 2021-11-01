@@ -1,11 +1,10 @@
 use super::main_gate::MainGate;
-use super::range::RangeTune;
 use super::{AssignedCondition, AssignedInteger, UnassignedInteger};
 use crate::circuit::main_gate::{CombinationOption, MainGateConfig, MainGateInstructions, Term};
 use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
 use crate::circuit::{AssignedLimb, AssignedValue};
 use crate::rns::{Common, Integer, Rns};
-use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{BIT_LEN_LIMB, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::{ConstraintSystem, Error};
@@ -36,7 +35,7 @@ trait IntegerInstructions<F: FieldExt> {
         &self,
         region: &mut Region<'_, F>,
         integer: UnassignedInteger<F>,
-        range_tune: RangeTune,
+        most_significant_limb_bit_len: usize,
         offset: &mut usize,
     ) -> Result<AssignedInteger<F>, Error>;
     fn add(&self, region: &mut Region<'_, F>, a: &mut AssignedInteger<F>, b: &mut AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
@@ -77,31 +76,24 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         &self,
         region: &mut Region<'_, N>,
         integer: UnassignedInteger<N>,
-        range_tune: RangeTune,
+        most_significant_limb_bit_len: usize,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         let range_chip = self.range_chip();
-
         let max_val = (big_uint::one() << self.rns.bit_len_limb) - 1usize;
+        assert!(most_significant_limb_bit_len <= self.rns.bit_len_limb);
 
-        let assigned = range_chip.range_value(region, &integer.limb(0), RangeTune::Fits, offset)?;
+        let assigned = range_chip.range_value(region, &integer.limb(0), self.rns.bit_len_limb, offset)?;
         let limb_0 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
 
-        let assigned = range_chip.range_value(region, &integer.limb(1), RangeTune::Fits, offset)?;
+        let assigned = range_chip.range_value(region, &integer.limb(1), self.rns.bit_len_limb, offset)?;
         let limb_1 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
 
-        let assigned = range_chip.range_value(region, &integer.limb(2), RangeTune::Fits, offset)?;
+        let assigned = range_chip.range_value(region, &integer.limb(2), self.rns.bit_len_limb, offset)?;
         let limb_2 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
 
-        let bit_len = match range_tune {
-            RangeTune::Fits => self.rns.bit_len_limb,
-            RangeTune::Fine(bit_len) => self.rns.bit_len_limb - bit_len,
-            RangeTune::Overflow(_) => {
-                panic!("overflown integer not expected for ranging")
-            }
-        };
-        let max_val = (big_uint::one() << bit_len) - 1usize;
-        let assigned = range_chip.range_value(region, &integer.limb(3), range_tune.clone(), offset)?;
+        let max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
+        let assigned = range_chip.range_value(region, &integer.limb(3), most_significant_limb_bit_len, offset)?;
         let limb_3 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val);
 
         // find the native value

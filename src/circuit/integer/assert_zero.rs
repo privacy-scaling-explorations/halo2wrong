@@ -1,6 +1,6 @@
 use super::IntegerChip;
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::range::{RangeInstructions, RangeTune};
+use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::{Common, Quotient};
 use halo2::arithmetic::FieldExt;
@@ -10,18 +10,19 @@ use num_bigint::BigUint as big_uint;
 use num_traits::Zero;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn assert_zero_v0_range_tune(&self) -> RangeTune {
-        // RangeTune::Overflow(2)
-        RangeTune::Fits
+    fn assert_zero_v0_range_tune(&self) -> usize {
+        // TODO
+        self.rns.bit_len_limb
     }
 
-    fn assert_zero_v1_range_tune(&self) -> RangeTune {
-        // RangeTune::Overflow(3)
-        RangeTune::Fits
+    fn assert_zero_v1_range_tune(&self) -> usize {
+        // TODO
+        self.rns.bit_len_limb
     }
 
-    fn assert_zero_quotient_range_tune(&self) -> RangeTune {
-        RangeTune::Fits
+    fn assert_zero_quotient_range_tune(&self) -> usize {
+        // TODO
+        self.rns.bit_len_limb
     }
 
     pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {

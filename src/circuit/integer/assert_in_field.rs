@@ -1,15 +1,14 @@
 use super::{IntegerChip, IntegerInstructions};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::range::RangeTune;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn range_tune_assert_in_field_result(&self) -> RangeTune {
+    fn range_tune_assert_in_field_result(&self) -> usize {
         // TODO:
-        RangeTune::Fits
+        self.rns.bit_len_limb
     }
 
     pub(crate) fn _assert_in_field(&self, region: &mut Region<'_, N>, input: &mut AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {

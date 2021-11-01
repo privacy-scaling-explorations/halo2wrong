@@ -29,13 +29,6 @@ pub struct RangeConfig {
     fine_tune_tables: Vec<TableConfig>,
 }
 
-#[derive(Clone, Debug)]
-pub enum RangeTune {
-    Fits,
-    Overflow(usize),
-    Fine(usize),
-}
-
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
     base_bit_len: usize,
@@ -61,234 +54,6 @@ impl<F: FieldExt> RangeChip<F> {
     fn main_gate(&self) -> MainGate<F> {
         MainGate::<F>::new(self.main_gate_config())
     }
-
-    fn range_value_fits(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        let main_gate = self.main_gate();
-        let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS;
-        let one = F::one();
-        let zero = F::zero();
-        let r = self.left_shifter[0];
-        let rr = self.left_shifter[1];
-        let rrr = self.left_shifter[2];
-
-        // Witness layout of RangeTune::Fits w/o running sum
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | a_3 |
-        // | -   | -   | -   | in  |
-
-        // Witness layout of RangeTune::Fits with running sum
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | a_3 |
-        // | -   | new | cur | in  |
-
-        // enable dense decomposion range check
-        self.config.s_dense_limb_range.enable(region, *offset)?;
-
-        // input is decomposed insto smaller limbs
-        let limbs = input.decompose(number_of_limbs, self.base_bit_len);
-
-        // combine limbs into the next row
-        // returned cells are subjected to small range lookup
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | a_3 |
-        // this row must constain
-        // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - in = 0
-
-        let _ = main_gate.combine(
-            region,
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
-            zero,
-            offset,
-            // enable further wire for intermediate sum
-            CombinationOption::CombineToNextAdd(-one),
-        )?;
-
-        // proceeed to next row
-
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | -   | -   | -   | in  |
-        // only cycle input value to the futher cell
-
-        // assign the input and proceed the next row
-        let assigned = main_gate.assign_value(region, input, MainGateColumn::D, offset)?;
-
-        Ok(assigned)
-    }
-
-    fn range_value_overflow(
-        &self,
-        region: &mut Region<'_, F>,
-        input: &UnassignedValue<F>,
-        offset: &mut usize,
-        bit_len: usize,
-    ) -> Result<AssignedValue<F>, Error> {
-        let main_gate = self.main_gate();
-        let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS + 1;
-        let (one, zero) = (F::one(), F::zero());
-        let r = self.left_shifter[0];
-        let rr = self.left_shifter[1];
-        let rrr = self.left_shifter[2];
-
-        // Witness layout of RangeTune::Overflow
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | a_3 |
-        // | -   | a_4 | in  | t   |
-
-        // enable dense decomposion range check
-        self.config.s_dense_limb_range.enable(region, *offset)?;
-
-        // input is decomposed insto smaller limbs
-        let limbs = input.decompose(number_of_limbs, self.base_bit_len);
-
-        // enable further wire for intermediate sum
-        let combination_option = CombinationOption::CombineToNextAdd(-F::one());
-
-        // combine limbs into the next row
-        // returned cells are subjected to small range lookup
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | a_3 |
-        // first row must constain
-        // a_0 + a_1 * R + a_2 * R^2 + a_3 * R^3 - t = 0
-        let _ = main_gate.combine(
-            region,
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[3]), rrr),
-            zero,
-            offset,
-            combination_option,
-        )?;
-
-        // proceeed to next row
-
-        // enable fine decomposion range check of main gate B column
-        self.get_table(bit_len)?.selector.enable(region, *offset)?;
-
-        // get most significant shifter for overflow value
-        let msb_shifter = self.left_shifter[3];
-
-        // make first combination witness values
-        let coeffs = limbs.as_ref().map(|limbs| {
-            // last limb is the overflow value
-            let overflow_value = limbs[number_of_limbs - 1];
-            // input value must exist if limbs do
-            let input_value = input.value().unwrap();
-            // combination of previous row must go to column 'D'
-            let intermediate_combination = input_value - overflow_value * msb_shifter;
-            (overflow_value, input_value, intermediate_combination)
-        });
-
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | -   | a_4 | in  | t   |
-        // second row must constain
-        // a_4 * R^4 - input + t  = 0
-        let (_, _, cell, _) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.1), -one),
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        Ok(input.assign(cell))
-    }
-
-    fn range_value_fine(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, offset: &mut usize, bit_len: usize) -> Result<AssignedValue<F>, Error> {
-        let main_gate = self.main_gate();
-        let number_of_limbs = NUMBER_OF_LOOKUP_LIMBS;
-        let one = F::one();
-        let minus_one = -F::one();
-        let zero = F::zero();
-        let r = self.left_shifter[0];
-        let rr = self.left_shifter[1];
-
-        // Layout of RangeTune::Fine
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | -   |
-        // | -   | a_3 | in  | t   |
-
-        // enable dense decomposion range check
-        self.config.s_dense_limb_range.enable(region, *offset)?;
-
-        // input is decomposed insto smaller limbs
-        let limbs = input.decompose(number_of_limbs, self.base_bit_len);
-
-        // enable further wire for intermediate sum
-        let combination_option = CombinationOption::CombineToNextAdd(-F::one());
-
-        // combine limbs into the next row
-        // returned cells are subjected to small range lookup
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | a_0 | a_1 | a_2 | -   |
-        // this row must constain
-        // a_0 + a_1 * R + a_2 * R^2 - t = 0
-        let _ = main_gate.combine(
-            region,
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), one),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), r),
-            Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), rr),
-            Term::Zero,
-            zero,
-            offset,
-            combination_option,
-        )?;
-
-        // proceeed to next row
-
-        // enable fine decomposion range check of main gate B column
-        self.get_table(bit_len)?.selector.enable(region, *offset)?;
-
-        // get most significant shifter for a_3 i.e R^3
-        let msb_shifter = self.left_shifter[2];
-
-        // make first combination witness values
-        let coeffs = limbs.as_ref().map(|limbs| {
-            // last limb is the overflow value
-            let fine_tune_value = limbs[number_of_limbs - 1];
-            // input value must exist if limbs do
-            let input_value = input.value().unwrap();
-            // combination of previous row must go to column 'D'
-            let intermediate_combination = input_value - fine_tune_value * msb_shifter;
-            (fine_tune_value, input_value, intermediate_combination)
-        });
-
-        // make fixed bases of final combination
-        // let bases = vec![F::zero(), msb_shifter, -F::one(), F::one()];
-
-        // | A   | B   | C   | D   |
-        // | --- | --- | --- | --- |
-        // | -   | a_3 | in  | t   |
-        // second row must constain
-        // a_3 * R^3 - input + t  = 0
-        let (_, _, cell, _) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.0), msb_shifter),
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.1), minus_one),
-            Term::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        Ok(input.assign(cell))
-    }
 }
 
 impl<F: FieldExt> Chip<F> for RangeChip<F> {
@@ -303,14 +68,8 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    // fn range_integer(
-    //     &self,
-    //     region: &mut Region<'_, F>,
-    //     integer: UnassignedInteger<F>,
-    //     tune: RangeTune,
-    //     offset: &mut usize,
-    // ) -> Result<Vec<AssignedLimb<F>>, Error>;
-    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, tune: RangeTune, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, bit_len: usize, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+
     #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
     #[cfg(not(feature = "no_lookup"))]
@@ -318,43 +77,144 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    // fn range_integer(
-    //     &self,
-    //     region: &mut Region<'_, F>,
-    //     integer: UnassignedInteger<F>,
-    //     tune: RangeTune,
-    //     offset: &mut usize,
-    // ) -> Result<Vec<AssignedLimb<F>>, Error> {
-    //     let limbs = Vec::with_capacity(NUMBER_OF_LIMBS);
-    //     for i in 0..NUMBER_OF_LIMBS {
-    //         let tune = if i == NUMBER_OF_LIMBS - 1 { RangeTune::Fits } else { tune.clone() };
-    //         let limb = integer.limb(i);
-    //         let assigned = self.range_value(region, limb, tune, offset)?;
-    //         let max_val = big_uint::zero();
-    //         let one = big_uint::one();
-    //         if i == NUMBER_OF_LIMBS - 1 {
-    //             let bit_len = match tune {
-    //                 RangeTune::Fits => BIT_LEN_LIMB,
-    //                 RangeTune::Fine(bit_len) => BIT_LEN_LIMB - bit_len,
-    //                 RangeTune::Overflow(bit_len) => {
-    //                     panic!("overflown integer not expected for ranging")
-    //                 }
-    //             };
-    //             (one << bit_len) - 1usize;
-    //         } else {
-    //             (one << BIT_LEN_LIMB) - 1usize;
-    //         }
-    //         limbs.push(AssignedLimb::new(assigned.cell, assigned.value, max_val));
-    //     }
-    //     Ok(limbs)
-    // }
+    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, bit_len: usize, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        let main_gate = self.main_gate();
+        let (one, zero) = (F::one(), F::zero());
+        let r = self.left_shifter[0];
+        let rr = self.left_shifter[1];
+        let rrr = self.left_shifter[2];
+        let rrrr = self.left_shifter[3];
 
-    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, tune: RangeTune, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        match tune {
-            RangeTune::Overflow(bit_len) => self.range_value_overflow(region, input, offset, bit_len),
-            RangeTune::Fine(bit_len) => self.range_value_fine(region, input, offset, bit_len),
-            RangeTune::Fits => self.range_value_fits(region, input, offset),
+        let number_of_dense_limbs = bit_len / self.base_bit_len;
+        let fine_limb_bit_len = bit_len % self.base_bit_len;
+        let number_of_limbs = number_of_dense_limbs + if fine_limb_bit_len == 0 { 0 } else { 1 };
+
+        assert!(number_of_dense_limbs < NUMBER_OF_LOOKUP_LIMBS + 1);
+        assert!(number_of_limbs > 0);
+
+        if number_of_dense_limbs != 0 {
+            // Enable dense decomposion range check.
+            // Notice that fine tune limb will be in the dense limb set.
+            self.config.s_dense_limb_range.enable(region, *offset)?;
         }
+
+        // Bases for linear combination to the input.
+        let bases = vec![one, r, rr, rrr, rrrr];
+
+        let assigned = if (number_of_dense_limbs == 1 && fine_limb_bit_len == 0) || number_of_dense_limbs == 0 {
+            // Single row range proof case
+            // Only assign the input to this row
+
+            // Open small table selector if this value is in small table
+            if number_of_dense_limbs == 0 {
+                self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
+            }
+
+            // | A   | B   | C   | D   |
+            // | --- | --- | --- | --- |
+            // | -   | a_0 | -   | -   |
+            main_gate.assign_value(region, &UnassignedValue::new(input.value), MainGateColumn::B, offset)
+        } else {
+            let first_row_with_fine_tune = number_of_dense_limbs < 4 && fine_limb_bit_len != 0;
+            // let first_row_dense = number_of_dense_limbs == 4;
+            let has_overflow = number_of_dense_limbs == 4 && fine_limb_bit_len > 0;
+
+            // Enable table selector for last limb ie fine tuning limb.
+            if first_row_with_fine_tune {
+                self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
+            }
+
+            // Input is decomposed insto smaller limbs
+            let limbs = input.decompose(number_of_limbs, self.base_bit_len);
+
+            // Witness layouts for different cases:
+
+            // number_of_dense_limbs = 4 & file_limb_len = 0 or
+            // number_of_dense_limbs = 3 & file_limb_len > 0
+            // | A   | B   | C   | D   |
+            // | --- | --- | --- | --- |
+            // | a_0 | a_3 | a_1 | a_2 |
+            // | -   |     |     | in  |
+
+            // number_of_dense_limbs = 3 & file_limb_len = 0 or
+            // number_of_dense_limbs = 2 & file_limb_len > 0
+            // | A   | B   | C   | D   |
+            // | --- | --- | --- | --- |
+            // | a_0 | a_2 | a_1 | -   |
+            // | -   |     |     | in  |
+
+            // number_of_dense_limbs = 2 & file_limb_len = 0 or
+            // number_of_dense_limbs = 1 & file_limb_len > 0
+            // | A   | B   | C   | D   |
+            // | --- | --- | --- | --- |
+            // | a_0 | a_1 | -   | -   |
+            // | -   |     |     | in  |
+
+            // number_of_dense_limbs = 4 & file_limb_len > 1
+            // | A   | B   | C   | D   |
+            // | --- | --- | --- | --- |
+            // | a_0 | a_3 | a_1 | a_2 |
+            // | -   | a_4 | in  | t   |
+
+            // Least significant Term in first row
+            let term_0 = Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), bases[0]);
+
+            // Most significant Term in first row
+            let term_1 = if has_overflow {
+                Term::Unassigned(limbs.as_ref().map(|limbs| limbs[number_of_limbs - 2]), bases[number_of_limbs - 2])
+            } else {
+                Term::Unassigned(limbs.as_ref().map(|limbs| limbs[number_of_limbs - 1]), bases[number_of_limbs - 1])
+            };
+
+            let term_2 = if number_of_limbs > 2 {
+                Term::Unassigned(limbs.as_ref().map(|limbs| limbs[1]), bases[1])
+            } else {
+                Term::Zero
+            };
+
+            let term_3 = if number_of_limbs > 3 {
+                Term::Unassigned(limbs.as_ref().map(|limbs| limbs[2]), bases[2])
+            } else {
+                Term::Zero
+            };
+
+            // If dense limb selector is open the sum will be assigned to next row.
+            let combination_option = CombinationOption::CombineToNextAdd(-one);
+            let _ = main_gate.combine(region, term_0, term_1, term_2, term_3, zero, offset, combination_option)?;
+
+            if has_overflow {
+                self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
+                // make first combination witness values
+                let coeffs = limbs.as_ref().map(|limbs| {
+                    // last limb is the overflow value
+                    let overflow_value = limbs[number_of_limbs - 1];
+                    // input value must exist if limbs do
+                    let input_value = input.value().unwrap();
+                    // combination of previous row must go to column 'D'
+                    let intermediate_combination = input_value - overflow_value * rrrr;
+                    (overflow_value, input_value, intermediate_combination)
+                });
+
+                // Second row must constain
+                // a_4 * R^4 - input + t  = 0
+                let (_, _, cell, _) = main_gate.combine(
+                    region,
+                    Term::Zero,
+                    Term::Unassigned(coeffs.map(|coeffs| coeffs.0), rrrr),
+                    Term::Unassigned(coeffs.map(|coeffs| coeffs.1), -one),
+                    Term::Unassigned(coeffs.map(|coeffs| coeffs.2), one),
+                    zero,
+                    offset,
+                    CombinationOption::SingleLinerAdd,
+                )?;
+                Ok(input.assign(cell))
+            } else {
+                // Assign sum the the next row.
+                main_gate.assign_value(region, &UnassignedValue::new(input.value), MainGateColumn::D, offset)
+            }
+        };
+
+        assigned
     }
 
     #[cfg(not(feature = "no_lookup"))]
@@ -484,7 +344,7 @@ impl<F: FieldExt> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
-    use super::{RangeChip, RangeConfig, RangeInstructions, RangeTune};
+    use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::UnassignedValue;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
@@ -502,14 +362,12 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestCircuit<F: FieldExt> {
-        value_overflow: Option<F>,
-        value_fine: Option<F>,
-        value_fits: Option<F>,
+        input: Vec<(usize, Option<F>)>,
     }
 
     impl<F: FieldExt> TestCircuit<F> {
         fn fine_tune_bit_lengths() -> Vec<usize> {
-            vec![4]
+            (1..Self::base_bit_len()).map(|i| i).collect()
         }
 
         fn base_bit_len() -> usize {
@@ -542,31 +400,12 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let mut offset = 0;
-                    let tune_len = Self::fine_tune_bit_lengths()[0];
-                    let zero = &UnassignedValue::new(Some(F::zero()));
-                    let base = Self::base_bit_len() as u64;
-                    let base = 1 << base;
-                    let max_limb = base - 1;
-                    let three_limb = &UnassignedValue::new(Some(F::from_u64(max_limb + max_limb * base + max_limb * base * base)));
 
-                    range_chip.range_value(&mut region, zero, RangeTune::Fits, &mut offset)?;
-                    range_chip.range_value(&mut region, zero, RangeTune::Overflow(tune_len), &mut offset)?;
-                    range_chip.range_value(&mut region, zero, RangeTune::Fine(tune_len), &mut offset)?;
-
-                    // three limbed value must pass all ranges
-                    range_chip.range_value(&mut region, three_limb, RangeTune::Fits, &mut offset)?;
-                    range_chip.range_value(&mut region, three_limb, RangeTune::Overflow(tune_len), &mut offset)?;
-                    range_chip.range_value(&mut region, three_limb, RangeTune::Fine(tune_len), &mut offset)?;
-
-                    // tests against inputs
-                    range_chip.range_value(&mut region, &UnassignedValue::new(self.value_fits), RangeTune::Fits, &mut offset)?;
-                    range_chip.range_value(&mut region, &UnassignedValue::new(self.value_fine), RangeTune::Fine(tune_len), &mut offset)?;
-                    range_chip.range_value(
-                        &mut region,
-                        &UnassignedValue::new(self.value_overflow),
-                        RangeTune::Overflow(tune_len),
-                        &mut offset,
-                    )?;
+                    for value in self.input.iter() {
+                        let bit_len = value.0;
+                        let value = value.1;
+                        range_chip.range_value(&mut region, &UnassignedValue::new(value), bit_len, &mut offset)?;
+                    }
 
                     Ok(())
                 },
@@ -583,26 +422,24 @@ mod tests {
 
     #[test]
     fn test_range_circuit() {
+        let base_bit_len = TestCircuit::<Fp>::base_bit_len();
         #[cfg(not(feature = "no_lookup"))]
-        let k: u32 = (TestCircuit::<Fp>::base_bit_len() + 1) as u32;
+        let k: u32 = (base_bit_len + 1) as u32;
         #[cfg(feature = "no_lookup")]
         let k: u32 = 8;
 
-        let fine_tune_shift = TestCircuit::<Fp>::fine_tune_bit_lengths()[0];
-        let val_shift_4 = TestCircuit::<Fp>::base_bit_len() * NUMBER_OF_LOOKUP_LIMBS;
-        let val_shift_3 = TestCircuit::<Fp>::base_bit_len() * (NUMBER_OF_LOOKUP_LIMBS - 1);
+        let min_bit_len = 1;
+        let max_bit_len = base_bit_len * (NUMBER_OF_LOOKUP_LIMBS + 1) - 1;
 
-        let value_fits = Some(Fp::from_u128((1 << val_shift_4) - 1));
-        let value_overflow = Some(Fp::from_u128((1 << (val_shift_4 + fine_tune_shift)) - 1));
-        let value_fine = Some(Fp::from_u128((1 << (val_shift_3 + fine_tune_shift)) - 1));
+        let input = (min_bit_len..(max_bit_len + 1))
+            .map(|i| {
+                let bit_len = i as usize;
+                let value = Some(Fp::from_u128((1 << i) - 1));
+                (bit_len, value)
+            })
+            .collect();
 
-        // happy path
-
-        let circuit = TestCircuit::<Fp> {
-            value_overflow,
-            value_fits,
-            value_fine,
-        };
+        let circuit = TestCircuit::<Fp> { input };
 
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
@@ -610,45 +447,17 @@ mod tests {
         };
         assert_eq!(prover.verify(), Ok(()));
 
-        // bad paths:
+        // negative paths:
+        for bit_len in min_bit_len..(max_bit_len + 1) {
+            let input = vec![(bit_len, Some(Fp::from_u128(1 << bit_len)))];
 
-        let value_fits_bad = Some(Fp::from_u128(1 << val_shift_4));
-        let circuit = TestCircuit::<Fp> {
-            value_overflow,
-            value_fits: value_fits_bad,
-            value_fine,
-        };
+            let circuit = TestCircuit::<Fp> { input };
 
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_ne!(prover.verify(), Ok(()));
-
-        let value_overflow_bad = Some(Fp::from_u128(1 << (val_shift_4 + fine_tune_shift)));
-        let circuit = TestCircuit::<Fp> {
-            value_overflow: value_overflow_bad,
-            value_fits,
-            value_fine,
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_ne!(prover.verify(), Ok(()));
-
-        let value_fine_bad = Some(Fp::from_u128(1 << (val_shift_3 + fine_tune_shift)));
-        let circuit = TestCircuit::<Fp> {
-            value_overflow,
-            value_fits,
-            value_fine: value_fine_bad,
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_ne!(prover.verify(), Ok(()));
+            let prover = match MockProver::run(k, &circuit, vec![]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            assert_ne!(prover.verify(), Ok(()));
+        }
     }
 }

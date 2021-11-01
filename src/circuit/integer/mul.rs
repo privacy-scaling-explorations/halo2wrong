@@ -1,6 +1,6 @@
 use super::{IntegerChip, IntegerInstructions};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::range::{RangeInstructions, RangeTune};
+use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::Quotient;
 use crate::NUMBER_OF_LIMBS;
@@ -10,22 +10,22 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn mul_v0_range_tune(&self) -> RangeTune {
-        RangeTune::Overflow(2)
+    fn mul_v0_range_tune(&self) -> usize {
+        self.rns.bit_len_limb + 2
     }
 
-    fn mul_v1_range_tune(&self) -> RangeTune {
-        RangeTune::Overflow(3)
+    fn mul_v1_range_tune(&self) -> usize {
+        self.rns.bit_len_limb + 3
     }
 
-    fn mul_quotient_range_tune(&self) -> RangeTune {
-        // TODO:
-        RangeTune::Fits
+    fn mul_quotient_range_tune(&self) -> usize {
+        // TODO
+        self.rns.bit_len_limb
     }
 
-    fn mul_result_range_tune(&self) -> RangeTune {
-        // TODO:
-        RangeTune::Fits
+    fn mul_result_range_tune(&self) -> usize {
+        // TODO
+        self.rns.bit_len_limb
     }
 
     pub(crate) fn _mul(
