@@ -252,13 +252,13 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         // val * val - val  = 0
 
-        let (_, minus_one, zero) = (F::one(), -F::one(), -F::zero());
+        let (one, zero) = (F::one(), -F::zero());
 
         let (cell_0, cell_1, cell_2, _) = self.combine(
             region,
             Term::Unassigned(value, zero),
             Term::Unassigned(value, zero),
-            Term::Unassigned(value, minus_one),
+            Term::Unassigned(value, -one),
             Term::Zero,
             zero,
             offset,
