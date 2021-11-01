@@ -1,5 +1,5 @@
 [package]
-name = "halo2-playground"
+name = "halo2wrong"
 version = "0.1.0"
 authors = ["kilic <kiliconu@itu.edu.tr>"]
 edition = "2018"
