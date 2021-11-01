@@ -58,8 +58,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         main_gate.combine(
             region,
-            Term::Assigned(result.limb(0), -one),
-            Term::Assigned(input.limb(0), -one),
+            Term::Assigned(result.limb_mut(0), -one),
+            Term::Assigned(input.limb_mut(0), -one),
             Term::Assigned(b_0, left_shifter),
             Term::Zero,
             modulus_minus_one.limb_value(0),
@@ -74,8 +74,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
         main_gate.combine(
             region,
-            Term::Assigned(result.limb(1), -one),
-            Term::Assigned(input.limb(1), -one),
+            Term::Assigned(result.limb_mut(1), -one),
+            Term::Assigned(input.limb_mut(1), -one),
             Term::Assigned(b_1, left_shifter),
             Term::Assigned(b_0, -one),
             modulus_minus_one.limb_value(1),
@@ -90,8 +90,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 0 = -c_2 + p_2 - a_2 + b_2 * R - b_1
         main_gate.combine(
             region,
-            Term::Assigned(result.limb(2), -one),
-            Term::Assigned(input.limb(2), -one),
+            Term::Assigned(result.limb_mut(2), -one),
+            Term::Assigned(input.limb_mut(2), -one),
             Term::Assigned(b_2, left_shifter),
             Term::Assigned(b_1, -one),
             modulus_minus_one.limb_value(2),
@@ -107,8 +107,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(result.limb(3), -one),
-            Term::Assigned(input.limb(3), -one),
+            Term::Assigned(result.limb_mut(3), -one),
+            Term::Assigned(input.limb_mut(3), -one),
             Term::Zero,
             Term::Assigned(b_2, -one),
             modulus_minus_one.limb_value(3),

@@ -68,7 +68,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, t_0_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb(0), one),
+            Term::Assigned(a.limb_mut(0), one),
             Term::Assigned(quotient, negative_wrong_modulus[0]),
             Term::Unassigned(t_0, -one),
             Term::Zero,
@@ -80,7 +80,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, t_1_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb(1), one),
+            Term::Assigned(a.limb_mut(1), one),
             Term::Assigned(quotient, negative_wrong_modulus[1]),
             Term::Unassigned(t_1, -one),
             Term::Zero,
@@ -92,7 +92,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, t_2_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb(2), one),
+            Term::Assigned(a.limb_mut(2), one),
             Term::Assigned(quotient, negative_wrong_modulus[2]),
             Term::Unassigned(t_2, -one),
             Term::Zero,
@@ -104,7 +104,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (_, _, t_3_cell, _) = main_gate.combine(
             region,
-            Term::Assigned(a.limb(3), one),
+            Term::Assigned(a.limb_mut(3), one),
             Term::Assigned(quotient, negative_wrong_modulus[3]),
             Term::Unassigned(t_3, -one),
             Term::Zero,
@@ -180,10 +180,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(a.native(), -one),
+            Term::Assigned(a.native_mut(), -one),
             Term::Zero,
             Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(result.native(), one),
+            Term::Assigned(result.native_mut(), one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,

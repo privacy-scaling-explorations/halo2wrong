@@ -10,20 +10,20 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn mul_v0_range_tune(&self) -> usize {
+    pub(crate) fn mul_v0_range_tune(&self) -> usize {
         self.rns.bit_len_limb + 2
     }
 
-    fn mul_v1_range_tune(&self) -> usize {
+    pub(crate) fn mul_v1_range_tune(&self) -> usize {
         self.rns.bit_len_limb + 3
     }
 
-    fn mul_quotient_range_tune(&self) -> usize {
+    pub(crate) fn mul_quotient_range_tune(&self) -> usize {
         // TODO
         self.rns.bit_len_limb
     }
 
-    fn mul_result_range_tune(&self) -> usize {
+    pub(crate) fn mul_result_range_tune(&self) -> usize {
         // TODO
         self.rns.bit_len_limb
     }
@@ -73,15 +73,18 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // t_0 = a_0 * b_0 + q_0 * p_0
 
         // t_1 =    a_0 * b_1 + a_1 * b_0 + q_0 * p_1 + q_1 * p_0
+        // constained as:
         // t_1 =    a_0 * b_1 + q_0 * p_1 + tmp
         // tmp =    a_1 * b_0 + q_1 * p_0
 
-        // t_2   =    a_0 * b_2 + a_1 * b_1e + a_2 * b_0 + q_0 * p_2 + q_1 * p_1 + q_2 * p_0
+        // t_2   =    a_0 * b_2 + a_1 * b_1 + a_2 * b_0 + q_0 * p_2 + q_1 * p_1 + q_2 * p_0
+        // constained as:
         // t_2   =    a_0 * b_2 + q_0 * p_2 + tmp_a
         // tmp_a =    a_1 * b_1 + q_1 * p_1 + tmp_b
         // tmp_b =    a_2 * b_0 + q_2 * p_0
 
         // t_3   =    a_0 * b_3 + a_1 * b_2 + a_1 * b_2 + a_3 * b_0 + q_0 * p_3 + q_1 * p_2 + q_2 * p_1 + q_3 * p_0
+        // constained as:
         // t_3   =    a_0 * b_3 + q_0 * p_3 + tmp_a
         // tmp_a =    a_1 * b_2 + q_1 * p_2 + tmp_b
         // tmp_b =    a_2 * b_1 + q_2 * p_1 + tmp_c
@@ -100,8 +103,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_2 | b_0 | q_0 | tmp_b |
 
         // | a_0 | b_3 | q_3 | t_3   |
-        // | a_1 | b_1 | q_2 | tmp_b |
-        // | a_2 | b_2 | q_1 | tmp_a |
+        // | a_1 | b_2 | q_2 | tmp_b |
+        // | a_2 | b_1 | q_1 | tmp_a |
         // | a_3 | b_0 | q_0 | tmp_c |
 
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
@@ -120,9 +123,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
                 let (_, _, _, t_i_cell) = main_gate.combine(
                     region,
-                    Term::Assigned(a.limb(j), zero),
-                    Term::Assigned(b.limb(k), zero),
-                    Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
+                    Term::Assigned(a.limb_mut(j), zero),
+                    Term::Assigned(b.limb_mut(k), zero),
+                    Term::Assigned(quotient.limb_mut(k), negative_wrong_modulus[j]),
                     Term::Unassigned(t, -one),
                     zero,
                     offset,
@@ -212,10 +215,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(a.native(), zero),
-            Term::Assigned(b.native(), zero),
-            Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(result.native(), -one),
+            Term::Assigned(a.native_mut(), zero),
+            Term::Assigned(b.native_mut(), zero),
+            Term::Assigned(quotient.native_mut(), -self.rns.wrong_modulus_in_native_modulus),
+            Term::Assigned(result.native_mut(), -one),
             zero,
             offset,
             CombinationOption::SingleLinerMul,

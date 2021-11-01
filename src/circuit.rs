@@ -138,12 +138,20 @@ impl<F: FieldExt> AssignedInteger<F> {
         Ok(self.limbs[idx].value.as_ref().ok_or(Error::SynthesisError)?.fe())
     }
 
-    pub fn limb(&mut self, idx: usize) -> &mut AssignedLimb<F> {
+    pub fn limb_mut(&mut self, idx: usize) -> &mut AssignedLimb<F> {
         &mut self.limbs[idx]
     }
 
-    pub fn native(&mut self) -> &mut AssignedValue<F> {
+    pub fn limb(&self, idx: usize) -> AssignedLimb<F> {
+        self.limbs[idx].clone()
+    }
+
+    pub fn native_mut(&mut self) -> &mut AssignedValue<F> {
         &mut self.native_value
+    }
+
+    pub fn native(&mut self) -> AssignedValue<F> {
+        self.native_value.clone()
     }
 }
 

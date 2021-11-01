@@ -19,14 +19,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
 
         for idx in 0..NUMBER_OF_LIMBS {
-            let a_limb = a.limb(idx);
-            let b_limb = b.limb(idx);
+            let a_limb = a.limb_mut(idx);
+            let b_limb = b.limb_mut(idx);
             let c_limb = main_gate.add(region, a_limb, b_limb, offset)?;
             let c_max = a_limb.add(b_limb);
 
             c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
         }
-        let c_native = main_gate.add(region, a.native(), b.native(), offset)?;
+        let c_native = main_gate.add(region, a.native_mut(), b.native_mut(), offset)?;
 
         Ok(AssignedInteger::new(c_limbs, c_native))
     }
