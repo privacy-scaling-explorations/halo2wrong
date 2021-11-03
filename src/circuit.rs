@@ -7,6 +7,7 @@ use halo2::{
 use num_bigint::BigUint as big_uint;
 use std::marker::PhantomData;
 
+mod ecc;
 mod integer;
 mod main_gate;
 mod range;
