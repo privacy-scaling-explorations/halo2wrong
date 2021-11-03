@@ -1,19 +1,18 @@
 use super::main_gate::MainGate;
 use super::{AssignedCondition, AssignedInteger, UnassignedInteger};
-use crate::circuit::main_gate::{CombinationOption, MainGateConfig, MainGateInstructions, Term};
-use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
-use crate::circuit::{AssignedLimb, AssignedValue};
-use crate::rns::{Common, Integer, Rns};
+use crate::circuit::main_gate::{MainGateConfig, MainGateInstructions};
+use crate::circuit::range::{RangeChip, RangeConfig};
+use crate::circuit::AssignedLimb;
+use crate::rns::{Integer, Rns};
 use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::{ConstraintSystem, Error};
-use num_bigint::BigUint as big_uint;
-use num_traits::One;
 
 mod add;
 mod assert_in_field;
 mod assert_zero;
+mod assign;
 mod mul;
 mod reduce;
 mod square;
@@ -30,33 +29,34 @@ pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
     rns: Rns<Wrong, Native>,
 }
 
-trait IntegerInstructions<F: FieldExt> {
-    fn assign_integer(&self, region: &mut Region<'_, F>, integer: Option<Integer<F>>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
+trait IntegerInstructions<N: FieldExt> {
+    fn assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn range_assign_integer(
         &self,
-        region: &mut Region<'_, F>,
-        integer: UnassignedInteger<F>,
+        region: &mut Region<'_, N>,
+        integer: UnassignedInteger<N>,
         most_significant_limb_bit_len: usize,
         offset: &mut usize,
-    ) -> Result<AssignedInteger<F>, Error>;
-    fn add(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
-    fn sub(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
-    fn mul(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
-    fn square(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
-    fn reduce(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
-    fn assert_strict_equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
-    fn assert_equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
-    fn assert_not_equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
-    fn assert_not_zero(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
-    fn assert_in_field(&self, region: &mut Region<'_, F>, input: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
+    ) -> Result<AssignedInteger<N>, Error>;
+    fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_not_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+    fn is_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn cond_select(
         &self,
-        region: &mut Region<'_, F>,
-        a: &AssignedInteger<F>,
-        b: &AssignedInteger<F>,
-        cond: &AssignedCondition<F>,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+        cond: &AssignedCondition<N>,
         offset: &mut usize,
-    ) -> Result<AssignedInteger<F>, Error>;
+    ) -> Result<AssignedInteger<N>, Error>;
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
@@ -87,112 +87,11 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         most_significant_limb_bit_len: usize,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
-        let range_chip = self.range_chip();
-        let max_val = (big_uint::one() << self.rns.bit_len_limb) - 1usize;
-        assert!(most_significant_limb_bit_len <= self.rns.bit_len_limb);
-
-        let assigned = range_chip.range_value(region, &integer.limb(0), self.rns.bit_len_limb, offset)?;
-        let limb_0 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
-
-        let assigned = range_chip.range_value(region, &integer.limb(1), self.rns.bit_len_limb, offset)?;
-        let limb_1 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
-
-        let assigned = range_chip.range_value(region, &integer.limb(2), self.rns.bit_len_limb, offset)?;
-        let limb_2 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
-
-        let max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
-        let assigned = range_chip.range_value(region, &integer.limb(3), most_significant_limb_bit_len, offset)?;
-        let limb_3 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val);
-
-        // find the native value
-        let main_gate = self.main_gate();
-        let (zero, one) = (N::zero(), N::one());
-        let r = self.rns.left_shifter_r;
-        let rr = self.rns.left_shifter_2r;
-        let rrr = self.rns.left_shifter_3r;
-
-        let (_, _, _, _) = main_gate.combine(
-            region,
-            Term::Assigned(limb_0, one),
-            Term::Assigned(limb_1, r),
-            Term::Assigned(limb_2, rr),
-            Term::Assigned(limb_3, rrr),
-            zero,
-            offset,
-            CombinationOption::CombineToNextAdd(-one),
-        )?;
-
-        let native_value = integer.native();
-        let (_, _, _, native_value_cell) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Zero,
-            Term::Zero,
-            Term::Unassigned(native_value.value, zero),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        let native_value = native_value.assign(native_value_cell);
-
-        Ok(AssignedInteger {
-            limbs: vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()],
-            native_value,
-        })
+        self._range_assign_integer(region, integer, most_significant_limb_bit_len, offset)
     }
 
     fn assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        let main_gate = self.main_gate();
-
-        let (zero, one) = (N::zero(), N::one());
-        let r = self.rns.left_shifter_r;
-        let rr = self.rns.left_shifter_2r;
-        let rrr = self.rns.left_shifter_3r;
-
-        let (cell_0, cell_1, cell_2, cell_3) = main_gate.combine(
-            region,
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(0)), one),
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(1)), r),
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(2)), rr),
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(3)), rrr),
-            zero,
-            offset,
-            CombinationOption::CombineToNextAdd(-one),
-        )?;
-
-        let native_value = integer.as_ref().map(|integer| integer.native());
-
-        let (_, _, _, native_value_cell) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Zero,
-            Term::Zero,
-            Term::Unassigned(native_value, zero),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        let cells = vec![cell_0, cell_1, cell_2, cell_3];
-
-        let limbs = cells
-            .iter()
-            .enumerate()
-            .map(|(i, cell)| AssignedLimb {
-                value: integer.as_ref().map(|integer| integer.limb(i)),
-                cell: *cell,
-                max_val: self.rns.limb_max_val.clone(),
-            })
-            .collect();
-
-        let native_value = AssignedValue {
-            value: native_value,
-            cell: native_value_cell,
-        };
-        let assigned_integer = AssignedInteger { limbs, native_value };
-
-        Ok(assigned_integer)
+        self._assign_integer(region, integer, offset)
     }
 
     fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
@@ -215,6 +114,16 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         let main_gate = self.main_gate();
         for idx in 0..NUMBER_OF_LIMBS {
             main_gate.assert_not_equal(region, a.limb(idx), b.limb(idx), offset)?;
+        }
+        Ok(())
+    }
+
+    fn is_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        self.assert_in_field(region, a, offset)?;
+        self.assert_in_field(region, b, offset)?;
+        let main_gate = self.main_gate();
+        for idx in 0..NUMBER_OF_LIMBS {
+            main_gate.is_equal(region, a.limb(idx), b.limb(idx), offset)?;
         }
         Ok(())
     }
@@ -570,9 +479,9 @@ mod tests {
         let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         #[cfg(not(feature = "no_lookup"))]
-        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        let k: u32 = (rns.bit_len_lookup + 1) as u32;
         #[cfg(feature = "no_lookup")]
-        let K: u32 = 8;
+        let k: u32 = 8;
 
         let integer_a = rns.rand_prenormalized();
         let integer_b = rns.rand_prenormalized();
@@ -586,7 +495,7 @@ mod tests {
             rns: rns.clone(),
         };
 
-        let prover = match MockProver::run(K, &circuit, vec![]) {
+        let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -657,9 +566,9 @@ mod tests {
         let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
 
         #[cfg(not(feature = "no_lookup"))]
-        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        let k: u32 = (rns.bit_len_lookup + 1) as u32;
         #[cfg(feature = "no_lookup")]
-        let K: u32 = 8;
+        let k: u32 = 8;
 
         let integer_a = rns.rand_prenormalized();
 
@@ -671,7 +580,7 @@ mod tests {
             rns: rns.clone(),
         };
 
-        let prover = match MockProver::run(K, &circuit, vec![]) {
+        let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
