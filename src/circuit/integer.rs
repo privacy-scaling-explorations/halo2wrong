@@ -46,6 +46,8 @@ trait IntegerInstructions<F: FieldExt> {
     fn reduce(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, offset: &mut usize) -> Result<AssignedInteger<F>, Error>;
     fn assert_strict_equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
     fn assert_equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_not_equal(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, b: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_not_zero(&self, region: &mut Region<'_, F>, a: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
     fn assert_in_field(&self, region: &mut Region<'_, F>, input: &AssignedInteger<F>, offset: &mut usize) -> Result<(), Error>;
     fn cond_select(
         &self,
@@ -193,28 +195,36 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         Ok(assigned_integer)
     }
 
+    fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let c = &self._sub(region, a, b, offset)?;
+        self._assert_zero(region, c, offset)?;
+        Ok(())
+    }
+
     fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
-        let (zero, one) = (N::zero(), N::one());
-
         for idx in 0..NUMBER_OF_LIMBS {
-            let (_, _, _, _) = main_gate.combine(
-                region,
-                Term::Assigned(&a.limb(idx), one),
-                Term::Assigned(&b.limb(idx), -one),
-                Term::Zero,
-                Term::Zero,
-                zero,
-                offset,
-                CombinationOption::SingleLinerAdd,
-            )?;
+            main_gate.assert_equal(region, a.limb(idx), b.limb(idx), offset)?;
         }
         Ok(())
     }
 
-    fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
-        let c = &self._sub(region, a, b, offset)?;
-        self._assert_zero(region, c, offset)?;
+    fn assert_not_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        self.assert_in_field(region, a, offset)?;
+        self.assert_in_field(region, b, offset)?;
+        let main_gate = self.main_gate();
+        for idx in 0..NUMBER_OF_LIMBS {
+            main_gate.assert_not_equal(region, a.limb(idx), b.limb(idx), offset)?;
+        }
+        Ok(())
+    }
+
+    fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        self.assert_in_field(region, a, offset)?;
+        let main_gate = self.main_gate();
+        for idx in 0..NUMBER_OF_LIMBS {
+            main_gate.assert_not_zero(region, a.limb(idx), offset)?;
+        }
         Ok(())
     }
 
