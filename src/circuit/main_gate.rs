@@ -1,9 +1,10 @@
 use super::{Assigned, AssignedBit, AssignedCondition, AssignedValue, UnassignedValue};
-use halo2::arithmetic::FieldExt;
+use halo2::arithmetic::{Field, FieldExt};
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
+use std::ops::Mul;
 
 pub enum MainGateColumn {
     A = 0,
@@ -116,8 +117,17 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
 
-    fn div(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
-    fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn div_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+
+    fn div(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        offset: &mut usize,
+    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
+    fn invert_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
 
     fn assert_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
@@ -133,6 +143,8 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn sub(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
     fn sub_with_aux(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, aux: F, offset: &mut usize)
         -> Result<AssignedValue<F>, Error>;
+
+    fn mul(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 
@@ -166,10 +178,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         aux: F,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = a.value().map(|a_val| {
-            let b_val = b.value().unwrap();
-            a_val + b_val
-        });
+        let c = match (a.value(), b.value()) {
+            (Some(a), Some(b)) => Some(a + b),
+            _ => None,
+        };
 
         let one = F::one();
 
@@ -195,10 +207,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         aux: F,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = a.value().map(|a_val| {
-            let b_val = b.value().unwrap();
-            a_val - b_val + aux
-        });
+        let c = match (a.value(), b.value()) {
+            (Some(a), Some(b)) => Some(a - b + aux),
+            _ => None,
+        };
 
         let one = F::one();
 
@@ -216,12 +228,35 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(AssignedValue::new(cell, c))
     }
 
-    fn div(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn mul(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => {
-                let b_inverse = b.invert().unwrap();
-                Some(a * b_inverse)
-            }
+            (Some(a), Some(b)) => Some(a * b),
+            _ => None,
+        };
+
+        let (zero, one) = (F::zero(), F::one());
+
+        let (_, _, cell, _) = self.combine(
+            region,
+            Term::assigned_to_mul(&a),
+            Term::assigned_to_mul(&b),
+            Term::Unassigned(c, -one),
+            Term::Zero,
+            zero,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn div_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        let c = match (a.value(), b.value()) {
+            (Some(a), Some(b)) => match b.invert().into() {
+                Some(b_inverted) => Some(a * &b_inverted),
+                // Non inversion case will never be verified
+                _ => Some(F::zero()),
+            },
             _ => None,
         };
 
@@ -239,10 +274,29 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(AssignedValue::new(cell, c))
     }
 
-    fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        // TODO: should we go for invert or zero?
+    fn div(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        offset: &mut usize,
+    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
+        let (b_inverted, cond) = self.invert(region, b, offset)?;
+        let res = self.mul(region, a, b_inverted, offset)?;
+        Ok((res, cond))
+    }
+
+    fn invert_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        // Just enforce the equation below
+        // If input 'a' is zero then no valid witness will be found
+        // a * a' - 1 = 0
+
         let inverse = match a.value() {
-            Some(value) => Some(value.invert().unwrap()),
+            Some(a) => match a.invert().into() {
+                Some(a) => Some(a),
+                // Non inversion case will never be verified
+                _ => Some(F::zero()),
+            },
             _ => None,
         };
 
@@ -258,6 +312,68 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         )?;
 
         Ok(AssignedValue::new(cell, inverse))
+    }
+
+    fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
+        let (one, zero) = (F::one(), F::zero());
+
+        // Returns 'r' as a condition bit that defines if inversion successful or not
+
+        // First enfoce 'r' to be a bit
+        // (a * a') - 1 + r = 0
+        // r * a' - r = 0
+        // if r = 1 then a' = 1
+        // if r = 0 then a' = 1/a
+
+        // Witness layout:
+        // | A | B  | C | D |
+        // | - | -- | - | - |
+        // | a | a' | r | - |
+        // | r | a' | r | - |
+
+        let (r, a_inv) = match a.value() {
+            Some(a) => match a.invert().into() {
+                Some(e) => (Some(zero), Some(e)),
+                None => (Some(one), Some(one)),
+            },
+            _ => (None, None),
+        };
+
+        let r = self.assign_bit(region, r, offset)?;
+
+        // (a * a') - 1 + r = 0
+        // | A | B  | C | D |
+        // | - | -- | - | - |
+        // | a | a' | r | - |
+        let (_, a_inv_cell, _, _) = self.combine(
+            region,
+            Term::assigned_to_mul(&a),
+            Term::unassigned_to_mul(a_inv),
+            Term::assigned_to_add(&r),
+            Term::Zero,
+            -one,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
+        let a_inv = AssignedValue::new(a_inv_cell, a_inv);
+
+        // r * a' - r = 0
+        // | A | B  | C | D |
+        // | - | -- | - | - |
+        // | r | a' | r | - |
+
+        let (_, _, _, _) = self.combine(
+            region,
+            Term::assigned_to_mul(&r),
+            Term::assigned_to_mul(&a_inv),
+            Term::assigned_to_sub(&r),
+            Term::Zero,
+            zero,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
+
+        Ok((a_inv, r))
     }
 
     fn assert_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
@@ -300,13 +416,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         let (x, r) = match (a.value(), b.value()) {
             (Some(a), Some(b)) => {
-                if a == b {
-                    (Some(F::one()), Some(F::one()))
-                } else {
-                    let c = a - b;
-                    let x = c.invert().unwrap();
-                    let r = F::zero();
-                    (Some(x), Some(r))
+                let c = a - b;
+                match c.invert().into() {
+                    Some(inverted) => (Some(inverted), Some(zero)),
+                    None => (Some(one), Some(one)),
                 }
             }
             _ => (None, None),
@@ -377,8 +490,13 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn assert_not_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
         // Non-zero element must have an inverse
         // a * w - 1 = 0
+
         let w = match a.value() {
-            Some(a) => a.invert().into(),
+            Some(a) => match a.invert().into() {
+                Some(inverted) => Some(inverted),
+                // Non inversion case will never be verified
+                _ => Some(F::zero()),
+            },
             _ => None,
         };
 
@@ -397,63 +515,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     }
 
     fn is_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
-        let (one, zero) = (F::one(), F::zero());
-
-        // Enfoce r to be a bit
-        // (a * a') - 1 + r = 0
-        // r * a' - r = 0
-        // if r = 1 then a' = 1
-        // if r = 0 then a' = 1/a
-
-        // Witness layout:
-        // | A | B  | C | D |
-        // | - | -- | - | - |
-        // | a | a' | r | - |
-        // | r | a' | r | - |
-
-        let (r, a_inv) = match a.value() {
-            Some(a) => match a.invert().into() {
-                Some(e) => (Some(zero), Some(e)),
-                None => (Some(one), Some(one)),
-            },
-            _ => (None, None),
-        };
-
-        let r = self.assign_bit(region, r, offset)?;
-
-        // (a * a') - 1 + r = 0
-        // | A | B  | C | D |
-        // | - | -- | - | - |
-        // | a | a' | r | - |
-        let (_, a_inv_cell, _, _) = self.combine(
-            region,
-            Term::assigned_to_mul(&a),
-            Term::unassigned_to_mul(a_inv),
-            Term::assigned_to_add(&r),
-            Term::Zero,
-            -one,
-            offset,
-            CombinationOption::SingleLinerMul,
-        )?;
-        let a_inv = AssignedValue::new(a_inv_cell, a_inv);
-
-        // r * a' - r = 0
-        // | A | B  | C | D |
-        // | - | -- | - | - |
-        // | r | a' | r | - |
-
-        let (_, _, _, _) = self.combine(
-            region,
-            Term::assigned_to_mul(&r),
-            Term::assigned_to_mul(&a_inv),
-            Term::assigned_to_sub(&r),
-            Term::Zero,
-            zero,
-            offset,
-            CombinationOption::SingleLinerMul,
-        )?;
-
-        Ok(r)
+        let (_, is_zero) = self.invert(region, a, offset)?;
+        Ok(is_zero)
     }
 
     fn cond_select(
@@ -464,16 +527,14 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         cond: &AssignedCondition<F>,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
-        let dif = a.value().map(|a| a - b.value().unwrap());
-        let res = a.value().map(|a| {
-            let b = b.value().unwrap();
-            let cond = cond.bool_value.unwrap();
-            if cond {
-                a
-            } else {
-                b
+        let (dif, res) = match (a.value(), b.value(), cond.bool_value) {
+            (Some(a), Some(b), Some(cond)) => {
+                let dif = a - b;
+                let res = if cond { a } else { b };
+                (Some(dif), Some(res))
             }
-        });
+            _ => (None, None),
+        };
 
         let (one, zero) = (F::one(), F::zero());
 
