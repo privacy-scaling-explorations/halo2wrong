@@ -17,6 +17,8 @@ mod mul;
 mod reduce;
 mod square;
 mod sub;
+mod invert;
+mod div;
 
 #[derive(Clone, Debug)]
 pub struct IntegerConfig {
@@ -79,10 +81,11 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn div(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        unimplemented!();
+        self._div(region, a, b, offset)
     }
+
     fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        unimplemented!();
+        self._invert(region, a, offset)
     }
 
     fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
@@ -693,5 +696,192 @@ mod tests {
         };
 
         assert_ne!(prover.verify(), Ok(()));
+    }
+
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitInvert<W: FieldExt, N: FieldExt> {
+        integer_a: Option<Integer<N>>,
+        integer_b: Option<Integer<N>>,
+        rns: Rns<W, N>,
+    }
+
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitInvert<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            let main_gate_config = MainGate::<N>::configure(meta);
+            let overflow_bit_lengths = TestCircuitConfig::overflow_bit_lengths();
+            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let integer_config = IntegerChip::<W, N>::configure(meta, &range_config, &main_gate_config);
+            TestCircuitConfig {
+                integer_config,
+                main_gate_config,
+            }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
+                    let integer_b_0 = &integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
+                    let integer_a_1 = &integer_a_0.clone();
+                    let integer_b_1 = &integer_chip.invert(&mut region, integer_a_0, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_limb_range_table(&mut layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_overflow_range_tables(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_invert_circuit() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a_cand = rns.rand_prenormalized();
+        let integer_a =
+            if rns.value(&integer_a_cand) % &rns.wrong_modulus == 0u32.into() {
+                rns.new_from_big(1u32.into())
+            } else {
+                integer_a_cand
+            };
+        let integer_b = rns.invert(&integer_a);
+
+        let circuit = TestCircuitInvert::<Wrong, Native> {
+            integer_a: Some(integer_a),
+            integer_b: integer_b,
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitDivision<W: FieldExt, N: FieldExt> {
+        integer_a: Option<Integer<N>>,
+        integer_b: Option<Integer<N>>,
+        integer_c: Option<Integer<N>>,
+        rns: Rns<W, N>,
+    }
+
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitDivision<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            let main_gate_config = MainGate::<N>::configure(meta);
+            let overflow_bit_lengths = TestCircuitConfig::overflow_bit_lengths();
+            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let integer_config = IntegerChip::<W, N>::configure(meta, &range_config, &main_gate_config);
+            TestCircuitConfig {
+                integer_config,
+                main_gate_config,
+            }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
+                    let integer_b_0 = &integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
+                    let integer_c_0 = &integer_chip.assign_integer(&mut region, self.integer_c.clone(), offset)?.clone();
+                    let integer_a_1 = &integer_a_0.clone();
+                    let integer_b_1 = &integer_b_0.clone();
+                    let integer_c_1 = &integer_chip.div(&mut region, integer_a_0, integer_b_0, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
+                    integer_chip.assert_equal(&mut region, integer_c_0, integer_c_1, offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_limb_range_table(&mut layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_overflow_range_tables(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_division_circuit() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a = rns.rand_prenormalized();
+        let integer_b_cand = rns.rand_prenormalized();
+        let integer_b =
+            if rns.value(&integer_b_cand) % &rns.wrong_modulus == 0u32.into() {
+                rns.new_from_big(1u32.into())
+            } else {
+                integer_b_cand
+            };
+        let integer_c = rns.div(&integer_a, &integer_b);
+
+        let circuit = TestCircuitDivision::<Wrong, Native> {
+            integer_a: Some(integer_a.clone()),
+            integer_b: Some(integer_b),
+            integer_c: integer_c,
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
     }
 }
