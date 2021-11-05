@@ -44,8 +44,8 @@ trait IntegerInstructions<N: FieldExt> {
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-    fn div(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-    fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn div(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error>;
+    fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error>;
     fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
@@ -80,11 +80,11 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._square(region, a, offset)
     }
 
-    fn div(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    fn div(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
         self._div(region, a, b, offset)
     }
 
-    fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
         self._invert(region, a, offset)
     }
 
@@ -207,9 +207,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
 #[cfg(test)]
 mod tests {
-
     use super::{IntegerChip, IntegerConfig, IntegerInstructions};
-    use crate::circuit::main_gate::{MainGate, MainGateConfig};
+    use crate::circuit::AssignedValue;
+    use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
     use crate::circuit::range::{RangeChip, RangeInstructions};
     use crate::rns::{Integer, Limb, Rns};
     use halo2::arithmetic::FieldExt;
@@ -703,6 +703,7 @@ mod tests {
     struct TestCircuitInvert<W: FieldExt, N: FieldExt> {
         integer_a: Option<Integer<N>>,
         integer_b: Option<Integer<N>>,
+        cond: Option<N>,
         rns: Rns<W, N>,
     }
 
@@ -734,10 +735,12 @@ mod tests {
                     let offset = &mut 0;
                     let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
                     let integer_b_0 = &integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
+                    let cond_0 = integer_chip.main_gate().assign_bit(&mut region, self.cond.clone(), offset)?.clone();
                     let integer_a_1 = &integer_a_0.clone();
-                    let integer_b_1 = &integer_chip.invert(&mut region, integer_a_0, offset)?;
+                    let (integer_b_1, cond_1) = &integer_chip.invert(&mut region, integer_a_0, offset)?;
                     integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
                     integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
+                    integer_chip.main_gate().assert_equal(&mut region, cond_0, cond_1.clone(), offset)?;
 
                     Ok(())
                 },
@@ -778,6 +781,7 @@ mod tests {
         let circuit = TestCircuitInvert::<Wrong, Native> {
             integer_a: Some(integer_a),
             integer_b: integer_b,
+            cond: Some(Native::zero()),
             rns: rns.clone(),
         };
 
@@ -789,11 +793,44 @@ mod tests {
         assert_eq!(prover.verify(), Ok(()));
     }
 
+    #[test]
+    fn test_zero_invert_circuit() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a = rns.new_from_big(0u32.into());
+        let integer_b = rns.new_from_big(1u32.into());
+
+        let circuit = TestCircuitInvert::<Wrong, Native> {
+            integer_a: Some(integer_a),
+            integer_b: Some(integer_b),
+            cond: Some(Native::one()),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+
     #[derive(Default, Clone, Debug)]
     struct TestCircuitDivision<W: FieldExt, N: FieldExt> {
         integer_a: Option<Integer<N>>,
         integer_b: Option<Integer<N>>,
         integer_c: Option<Integer<N>>,
+        cond: Option<N>,
         rns: Rns<W, N>,
     }
 
@@ -826,12 +863,14 @@ mod tests {
                     let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
                     let integer_b_0 = &integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
                     let integer_c_0 = &integer_chip.assign_integer(&mut region, self.integer_c.clone(), offset)?.clone();
+                    let cond_0 = integer_chip.main_gate().assign_bit(&mut region, self.cond.clone(), offset)?.clone();
                     let integer_a_1 = &integer_a_0.clone();
                     let integer_b_1 = &integer_b_0.clone();
-                    let integer_c_1 = &integer_chip.div(&mut region, integer_a_0, integer_b_0, offset)?;
+                    let (integer_c_1, cond_1) = &integer_chip.div(&mut region, integer_a_0, integer_b_0, offset)?;
                     integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
                     integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
                     integer_chip.assert_equal(&mut region, integer_c_0, integer_c_1, offset)?;
+                    integer_chip.main_gate().assert_equal(&mut region, cond_0, cond_1.clone(), offset)?;
 
                     Ok(())
                 },
@@ -874,6 +913,40 @@ mod tests {
             integer_a: Some(integer_a.clone()),
             integer_b: Some(integer_b),
             integer_c: integer_c,
+            cond: Some(Native::zero()),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn test_zero_division_circuit() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a = rns.rand_prenormalized();
+        let integer_b = rns.new_from_big(0u32.into());
+        let integer_c = integer_a.clone();
+
+        let circuit = TestCircuitDivision::<Wrong, Native> {
+            integer_a: Some(integer_a),
+            integer_b: Some(integer_b),
+            integer_c: Some(integer_c),
+            cond: Some(Native::one()),
             rns: rns.clone(),
         };
 
