@@ -21,11 +21,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (zero, one) = (N::zero(), N::one());
         let integer_one = self.rns.new_from_big(1u32.into());
-        // TODO: Shall we just use SynthesisError here?
-        // Passing None to mul is undefined behavior for invert,
-        // throwing an error or panic would be a better choice.
-        let integer_a = a.integer().ok_or(Error::SynthesisError)?;
-        let integer_inv = self.rns.invert(&integer_a).or(Some(integer_one));
+        let integer_inv = a.integer().and_then(|integer_a| self.rns.invert(&integer_a).or(Some(integer_one)));
 
         // TODO: For range constraints, we have these options:
         // 1. extend mul to support prenormalized value.
@@ -68,8 +64,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 CombinationOption::SingleLinerMul,
             )?;
         }
-
-        println!("{}", offset);
 
         main_gate.combine(
             region,
