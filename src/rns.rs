@@ -127,7 +127,7 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub wrong_modulus: big_uint,
     pub limb_max_val: big_uint,
     pub most_significant_limb_max_val: big_uint,
-    native_modulus: big_uint,
+    pub native_modulus: big_uint,
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
 }
