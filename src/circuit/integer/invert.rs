@@ -1,7 +1,7 @@
 use super::{AssignedCondition, IntegerChip, IntegerInstructions, MainGateInstructions};
-use crate::NUMBER_OF_LIMBS;
-use crate::circuit::{Assigned, AssignedInteger};
 use crate::circuit::main_gate::{CombinationOption, Term};
+use crate::circuit::{Assigned, AssignedInteger};
+use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -21,14 +21,21 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let (zero, one) = (N::zero(), N::one());
         let integer_one = self.rns.new_from_big(1u32.into());
-        let integer_inv = a.integer().and_then(|integer_a| self.rns.invert(&integer_a).or(Some(integer_one)));
+
+        let inv_or_one = match a.integer() {
+            Some(a) => match self.rns.invert(&a) {
+                Some(a) => Some(a),
+                None => Some(integer_one),
+            },
+            None => None,
+        };
 
         // TODO: For range constraints, we have these options:
         // 1. extend mul to support prenormalized value.
         // 2. call normalize here.
         // 3. add wrong field range check on inv.
-        let inv = self.range_assign_integer(region, integer_inv.into(), self.inert_inv_range_tune(), offset)?;
-        let a_mul_inv = self.mul(region, &a, &inv, offset)?;
+        let inv_or_one = self.range_assign_integer(region, inv_or_one.into(), self.inert_inv_range_tune(), offset)?;
+        let a_mul_inv = self.mul(region, &a, &inv_or_one, offset)?;
 
         // We believe the mul result is strictly less than wrong modulus, so we add strict constraints here.
         // The limbs[1..NUMBER_OF_LIMBS] of a_mul_inv should be 0.
@@ -56,7 +63,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             main_gate.combine(
                 region,
                 Term::Assigned(&a_mul_inv.limbs[0], zero),
-                Term::Assigned(&inv.limbs[i], -one),
+                Term::Assigned(&inv_or_one.limbs[i], -one),
                 Term::Zero,
                 Term::Zero,
                 zero,
@@ -68,7 +75,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         main_gate.combine(
             region,
             Term::Assigned(&a_mul_inv.limbs[0], -one),
-            Term::Assigned(&inv.limbs[0], -one),
+            Term::Assigned(&inv_or_one.limbs[0], -one),
             Term::Zero,
             Term::Zero,
             one,
@@ -77,7 +84,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         )?;
 
         // Align with main_gain.invert(), cond = 1 - a_mul_inv
-        let cond = a_mul_inv.limbs[0].value().map(|a_mul_inv| { one - a_mul_inv });
+        let cond = a_mul_inv.limbs[0].value().map(|a_mul_inv| one - a_mul_inv);
         let (_, cond_cell, _, _) = main_gate.combine(
             region,
             Term::Assigned(&a_mul_inv.limbs[0], one),
@@ -89,6 +96,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             CombinationOption::SingleLinerMul,
         )?;
 
-        Ok((inv, AssignedCondition::new(cond_cell, cond)))
+        Ok((inv_or_one, AssignedCondition::new(cond_cell, cond)))
     }
 }
