@@ -387,6 +387,24 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         (u_0, u_1, v_0, v_1)
     }
+
+    pub(crate) fn invert(&self, a: &Integer<N>) -> Option<Integer<N>> {
+        let a_biguint = a.value();
+        let a_w = big_to_fe::<W>(a_biguint);
+        let inv_w = a_w.invert();
+
+        inv_w.map(|inv| {
+            self.new_from_big(fe_to_big(inv))
+        }).into()
+    }
+
+    pub(crate) fn div(&self, a: &Integer<N>, b: &Integer<N>) -> Option<Integer<N>> {
+        let modulus = self.wrong_modulus.clone();
+        self.invert(b).map(|b_inv| {
+            let a_mul_b = (a.value() * b_inv.value()) % modulus;
+            self.new_from_big(a_mul_b)
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -599,6 +617,50 @@ mod tests {
             let reduction_context = rns.mul(&el_0, &el_1);
             let result_1 = reduction_context.result;
             assert_eq!(result_1.value(), result_0);
+        }
+
+        // inv
+        for _ in 0..10000 {
+            let el = &rns.rand_prenormalized();
+            let result = rns.invert(&el);
+            let result = result.map(|inv| {
+                (inv.value() * el.value()) % wrong_modulus.clone()
+            });
+
+            match result {
+                Some(result) => assert_eq!(result, 1u32.into()),
+                None => assert_eq!(el.value(), 0u32.into())
+            }
+        }
+
+        // inv of 0
+        {
+            let el = rns.new_from_big(0u32.into());
+            let result = rns.invert(&el);
+            assert_eq!(result.map(|_| {}), None);
+        }
+
+        // div
+        for _ in 0..10000 {
+            let el_0 = &rns.rand_prenormalized();
+            let el_1 = &rns.rand_prenormalized();
+            let result_0 = rns.div(el_0, el_1);
+            let result = result_0.map(|result_0| {
+                (result_0.value() * el_1.value() - el_0.value()) % wrong_modulus.clone()
+            });
+
+            match result {
+                Some(result) => assert_eq!(result, 0u32.into()),
+                None => assert_eq!(el_1.value(), 0u32.into())
+            }
+        }
+
+        // div 0
+        {
+            let el_0 = &rns.rand_prenormalized();
+            let el_1 = &rns.new_from_big(0u32.into());
+            let result = rns.div(el_0, el_1);
+            assert_eq!(result.map(|_| {}), None);
         }
     }
 
