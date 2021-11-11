@@ -55,22 +55,21 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             CombinationOption::SingleLinerMul,
         )?;
 
-        // If a_mul_inv is 0 (i.e. not 1), then inv must be 1 (i.e. [1, 0, 0, 0]).
+        // If a_mul_inv is 0 (i.e. not 1), then inv_or_one must be 1.
+        // inv_or_one = 1 <-> inv_or_one[0] = 1 /\ inv_or_one.natvie = 1.
         // Here we short x.limbs[i] as x[i].
-        // 1. (a_mul_inv[0] - 1) * inv[1..NUMBER_OF_LIMBS] = 0
-        // 2. (a_mul_inv[0] - 1) * (inv[0] - 1) = 0
-        for i in 1..NUMBER_OF_LIMBS {
-            main_gate.combine(
-                region,
-                Term::Assigned(&a_mul_inv.limbs[0], zero),
-                Term::Assigned(&inv_or_one.limbs[i], -one),
-                Term::Zero,
-                Term::Zero,
-                zero,
-                offset,
-                CombinationOption::SingleLinerMul,
-            )?;
-        }
+        // 1. (a_mul_inv[0] - 1) * (inv_or_one.native - 1) = 0
+        // 2. (a_mul_inv[0] - 1) * (inv_or_one[0] - 1) = 0
+        main_gate.combine(
+            region,
+            Term::Assigned(&a_mul_inv.limbs[0], -one),
+            Term::Assigned(&inv_or_one.native(), -one),
+            Term::Zero,
+            Term::Zero,
+            one,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
 
         main_gate.combine(
             region,
