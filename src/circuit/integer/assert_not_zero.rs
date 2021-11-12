@@ -17,8 +17,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
-        // reduce result (r) should be less than 2 * wrong_modulus,
-        // so we only need to assert r <> 0 and r <> wrong_modulus.
+        // Reduce result (r) is restricted to be less than 1 << wrong_modulus_bit_lenght,
+        // so we only need to assert r <> 0 and r <> wrong modulus.
         let r = self._reduce(region, a, offset)?;
 
         // Sanity check.
@@ -29,8 +29,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // r = 0 <-> r % 2 ^ 64 = 0 /\ r % native_modulus = 0
         // r <> 0 <-> r % 2 ^ 64 <> 0 \/ r % native_modulus <> 0
         // r <> 0 <-> invert(r.limb(0)) \/ invert(r.native())
-        let (_, cond_zero_0) = main_gate.invert(region, r.limb(0), offset)?;
-        let (_, cond_zero_1) = main_gate.invert(region, r.native(), offset)?;
+        let cond_zero_0 = main_gate.is_zero(region, r.limb(0), offset)?;
+        let cond_zero_1 = main_gate.is_zero(region, r.native(), offset)?;
 
         // one of them should be succeed (0), i.e. cond_zero_0 * cond_zero_1 = 0
         main_gate.combine(
@@ -72,8 +72,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             CombinationOption::SingleLinerAdd,
         )?;
 
-        let (_, cond_wrong_0) = main_gate.invert(region, AssignedValue::<N>::new(limb_diff_cell, limb_diff), offset)?;
-        let (_, cond_wrong_1) = main_gate.invert(region, AssignedValue::<N>::new(native_diff_cell, native_diff), offset)?;
+        let cond_wrong_0 = main_gate.is_zero(region, AssignedValue::<N>::new(limb_diff_cell, limb_diff), offset)?;
+        let cond_wrong_1 = main_gate.is_zero(region, AssignedValue::<N>::new(native_diff_cell, native_diff), offset)?;
 
         main_gate.combine(
             region,
