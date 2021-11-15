@@ -12,6 +12,7 @@ use halo2::plonk::{ConstraintSystem, Error};
 mod add;
 mod assert_in_field;
 mod assert_zero;
+mod assert_not_zero;
 mod assign;
 mod mul;
 mod reduce;
@@ -121,12 +122,8 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn assert_not_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
-        self.assert_in_field(region, a, offset)?;
-        self.assert_in_field(region, b, offset)?;
-        let main_gate = self.main_gate();
-        for idx in 0..NUMBER_OF_LIMBS {
-            main_gate.assert_not_equal(region, a.limb(idx), b.limb(idx), offset)?;
-        }
+        let c = &self._sub(region, a, b, offset)?;
+        self._assert_not_zero(region, c, offset)?;
         Ok(())
     }
 
@@ -141,11 +138,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
-        self.assert_in_field(region, a, offset)?;
-        let main_gate = self.main_gate();
-        for idx in 0..NUMBER_OF_LIMBS {
-            main_gate.assert_not_zero(region, a.limb(idx), offset)?;
-        }
+        self._assert_not_zero(region, a, offset)?;
         Ok(())
     }
 
@@ -956,5 +949,142 @@ mod tests {
         };
 
         assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitAssertNotZero<W: FieldExt, N: FieldExt> {
+        integer_a: Option<Integer<N>>,
+        rns: Rns<W, N>,
+    }
+
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitAssertNotZero<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            let main_gate_config = MainGate::<N>::configure(meta);
+            let overflow_bit_lengths = TestCircuitConfig::overflow_bit_lengths();
+            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let integer_config = IntegerChip::<W, N>::configure(meta, &range_config, &main_gate_config);
+            TestCircuitConfig {
+                integer_config,
+                main_gate_config,
+            }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
+                    integer_chip.assert_not_zero(&mut region, integer_a_0, offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_limb_range_table(&mut layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_overflow_range_tables(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_invert_assert_not_zero() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a = rns.rand_prenormalized();
+
+        let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
+            integer_a: Some(integer_a.clone()),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        if rns.value(&integer_a) % rns.wrong_modulus == 0u32.into() {
+            assert_ne!(prover.verify(), Ok(()));
+        } else {
+            assert_eq!(prover.verify(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn test_invert_zero_assert_not_zero() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a = rns.new_from_big(0u32.into());
+
+        let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
+            integer_a: Some(integer_a.clone()),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_ne!(prover.verify(), Ok(()));
+    }
+
+    #[test]
+    fn test_invert_wrong_modulus_assert_not_zero() {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+
+        let bit_len_limb = 64;
+        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+
+        #[cfg(not(feature = "no_lookup"))]
+        let K: u32 = (rns.bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let K: u32 = 8;
+
+        let integer_a = rns.new_from_limbs(rns.wrong_modulus_decomposed.clone());
+
+        let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
+            integer_a: Some(integer_a.clone()),
+            rns: rns.clone(),
+        };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_ne!(prover.verify(), Ok(()));
     }
 }

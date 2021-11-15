@@ -3,6 +3,7 @@ use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::Quotient;
+use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -17,7 +18,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     fn red_result_range_tune(&self) -> usize {
-        self.rns.bit_len_limb
+        self.rns.bit_len_prenormalized - (self.rns.bit_len_limb * (NUMBER_OF_LIMBS - 1)) + 1
     }
 
     fn red_quotient_range_tune(&self) -> usize {
