@@ -107,6 +107,7 @@ pub trait MainGateInstructions<F: FieldExt> {
     ) -> Result<AssignedValue<F>, Error>;
 
     fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error>;
+    fn assert_bit(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
 
     fn cond_select(
         &self,
@@ -593,6 +594,34 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         *offset = *offset + 1;
 
         Ok(AssignedBit::<F>::new(cell_2, value))
+    }
+
+    fn assert_bit(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+        // val * val - val  = 0
+
+        // Witness layout:
+        // | A   | B   | C   | D |
+        // | --- | --- | --- | - |
+        // | val | val | val | - |
+
+        let (one, zero) = (F::one(), -F::zero());
+
+        let (cell_0, cell_1, cell_2, _) = self.combine(
+            region,
+            Term::Assigned(&a, zero),
+            Term::Assigned(&a, zero),
+            Term::Assigned(&a, -one),
+            Term::Zero,
+            zero,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
+
+        region.constrain_equal(cell_0, cell_1)?;
+        region.constrain_equal(cell_1, cell_2)?;
+        *offset = *offset + 1;
+
+        Ok(())
     }
 
     fn combine(

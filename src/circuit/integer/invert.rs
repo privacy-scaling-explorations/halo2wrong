@@ -44,22 +44,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         }
 
         // The limbs[0] of a_mul_inv should be 0 or 1, i.e. limbs[0] * limbs[0] - limbs[0] = 0.
-        main_gate.combine(
-            region,
-            Term::Assigned(&a_mul_inv.limbs[0], zero),
-            Term::Assigned(&a_mul_inv.limbs[0], zero),
-            Term::Assigned(&a_mul_inv.limbs[0], -one),
-            Term::Zero,
-            zero,
-            offset,
-            CombinationOption::SingleLinerMul,
-        )?;
+        main_gate.assert_bit(region, a_mul_inv.limb(0), offset)?;
 
         // If a_mul_inv is 0 (i.e. not 1), then inv_or_one must be 1.
         // inv_or_one = 1 <-> inv_or_one[0] = 1 /\ inv_or_one.natvie = 1.
         // Here we short x.limbs[i] as x[i].
         // 1. (a_mul_inv[0] - 1) * (inv_or_one.native - 1) = 0
         // 2. (a_mul_inv[0] - 1) * (inv_or_one[0] - 1) = 0
+
         main_gate.combine(
             region,
             Term::Assigned(&a_mul_inv.limbs[0], -one),
