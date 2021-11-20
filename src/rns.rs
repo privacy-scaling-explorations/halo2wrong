@@ -490,6 +490,12 @@ impl<F: FieldExt> Integer<F> {
         Self { limbs }
     }
 
+    pub fn from_bytes_le(e: &[u8], number_of_limbs: usize, bit_len: usize) -> Self {
+        let x = num_bigint::BigUint::from_bytes_le(e);
+        Self::from_big(x, number_of_limbs, bit_len)
+    }
+
+
     pub fn limbs(&self) -> Vec<F> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
     }
