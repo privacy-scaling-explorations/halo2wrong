@@ -109,6 +109,8 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error>;
     fn assert_bit(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
 
+    fn one_or_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
+
     fn cond_select(
         &self,
         region: &mut Region<'_, F>,
@@ -624,6 +626,28 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(())
     }
 
+    fn one_or_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+        // (a-1) * (b-1)  = 0
+
+        // Witness layout:
+        // | A   | B   | C   | D |
+        // | --- | --- | --- | - |
+        // | val | val | -   | - |
+
+        let one = F::one();
+        self.combine(
+            region,
+            Term::Assigned(&a, -one),
+            Term::Assigned(&b, -one),
+            Term::Zero,
+            Term::Zero,
+            one,
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
+
+        Ok(())
+    }
     fn combine(
         &self,
         region: &mut Region<'_, F>,

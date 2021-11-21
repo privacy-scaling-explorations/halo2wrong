@@ -19,7 +19,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     ) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
         let main_gate = self.main_gate();
 
-        let (zero, one) = (N::zero(), N::one());
+        let one = N::one();
         let integer_one = self.rns.new_from_big(1u32.into());
 
         let inv_or_one = match a.integer() {
@@ -51,28 +51,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // Here we short x.limbs[i] as x[i].
         // 1. (a_mul_inv[0] - 1) * (inv_or_one.native - 1) = 0
         // 2. (a_mul_inv[0] - 1) * (inv_or_one[0] - 1) = 0
-
-        main_gate.combine(
-            region,
-            Term::Assigned(&a_mul_inv.limbs[0], -one),
-            Term::Assigned(&inv_or_one.native(), -one),
-            Term::Zero,
-            Term::Zero,
-            one,
-            offset,
-            CombinationOption::SingleLinerMul,
-        )?;
-
-        main_gate.combine(
-            region,
-            Term::Assigned(&a_mul_inv.limbs[0], -one),
-            Term::Assigned(&inv_or_one.limbs[0], -one),
-            Term::Zero,
-            Term::Zero,
-            one,
-            offset,
-            CombinationOption::SingleLinerMul,
-        )?;
+        main_gate.one_or_one(region, a_mul_inv.limb(0), inv_or_one.native(), offset)?;
+        main_gate.one_or_one(region, a_mul_inv.limb(0), inv_or_one.limb(0), offset)?;
 
         // Align with main_gain.invert(), cond = 1 - a_mul_inv
         let cond = a_mul_inv.limbs[0].value().map(|a_mul_inv| one - a_mul_inv);
