@@ -16,22 +16,15 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         offset: &mut usize
     ) -> Result <AssignedInteger<F>, Error> {
         // (3 * a.x^2 + self.a) / 2 * a.y
-        let cst3 = {
-            let rns3 = self.integer_chip.rns.new_from_big(3u32.into());
-            &self.integer_chip.assign_integer(region, Some(rns3), offset)?
-        };
-        let cst2 = {
-            let rns2 = self.integer_chip.rns.new_from_big(2u32.into());
-            &self.integer_chip.assign_integer(region, Some(rns2), offset)?
-        };
-
         let xsqm = {
             let xsq = self.integer_chip.mul(region, &a.x, &a.x, offset)?;
-            self.integer_chip.mul(region, &xsq, cst3, offset)?
+            let xsq2 = self.integer_chip.add(region, &xsq, &xsq, offset)?;
+            self.integer_chip.add(region, &xsq, &xsq2, offset)?
+            //self.integer_chip.mul(region, &xsq, cst3, offset)?
         };
         let curvature = {
             let numerator = self.integer_chip.add(region, &xsqm, &self.a, offset)?;
-            let denominator = self.integer_chip.mul(region, &a.y, cst2, offset)?;
+            let denominator = self.integer_chip.add(region, &a.y, &a.y, offset)?;
             let (lambda, _) = self.integer_chip.div(region,
                 &numerator,
                 &denominator,
@@ -42,6 +35,7 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         Ok(curvature)
     }
 
+    // When calling lambda(a,b), we assume point a anb b are on curve.
     fn lambda(
         &self,
         region: &mut Region<'_, F>,
@@ -49,7 +43,7 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         b: &AssignedPoint<C,F>,
         offset: &mut usize
     ) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
-        let integer_gate = self.integer_gate();
+        let main_gate = self.main_gate();
 
         let numerator = self.integer_chip.sub(region, &a.y, &b.y, offset)?;
         let (_, eqy_cond) = self.integer_chip.invert(region, &numerator, offset)?;
@@ -64,8 +58,8 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         let lambda = self.integer_chip.cond_select(region, &lambda_neq, &lambda_eq, &eqx_cond, offset)?;
 
         // eqx_cond == 1 and eqy_cond == 0 means tangent is infinity
-        let not_eqy_cond = integer_gate.cond_not(region, &eqy_cond, offset)?;
-        let zero_cond = integer_gate.cond_and(region,
+        let not_eqy_cond = main_gate.cond_not(region, &eqy_cond, offset)?;
+        let zero_cond = main_gate.cond_and(region,
             &not_eqy_cond,
             &eqx_cond,
             offset,
@@ -86,7 +80,7 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         b: &AssignedPoint<C,F>,
         offset: &mut usize
     ) -> Result<AssignedPoint<C,F>, Error> {
-        let integer_gate = self.integer_gate();
+        let main_gate = self.main_gate();
 
         let (lambda, zero_cond) = self.lambda(region, a, b, offset)?;
         let lambda_square = self.integer_chip._square(region, &lambda, offset)?;
@@ -124,7 +118,7 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
          * otherwise -> p
          */
 
-        let id_sel = integer_gate.cond_or(
+        let id_sel = main_gate.cond_or(
             region,
             &a.is_identity(),
             &b.is_identity(),
