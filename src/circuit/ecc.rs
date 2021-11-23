@@ -70,6 +70,7 @@ pub struct EccChip<C: CurveAffine, F: FieldExt> {
     // We need to assign following integers based on constants of curve C
     a: AssignedInteger<F>,
     b: AssignedInteger<F>,
+    identity: AssignedPoint<C, F>,
 }
 
 impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
@@ -78,6 +79,10 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         config: EccConfig,
         integer_chip: IntegerChip<C::Base, F>
     ) -> Result<Self, Error> {
+        let main_gate_config = config.main_gate_config.clone();
+        let main_gate = MainGate::<F>::new(main_gate_config);
+
+        // Prepare constant_a and constant_b based on curve constants
         let ca = Integer::<F>::from_bytes_le(
                 &C::a().to_bytes(),
                 NUMBER_OF_LIMBS,
@@ -89,21 +94,28 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
                 integer_chip.rns.bit_len_limb
         );
 
-        let (a, b) = {
+        let zero = integer_chip.rns.new_from_big(0u32.into());
+
+        let (a, b, identity) = {
             let mut a: Option<AssignedInteger<F>> = None;
             let mut b: Option<AssignedInteger<F>> = None;
+            let mut identity: Option<AssignedPoint<C, F>> = None;
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
                     a = Some (integer_chip.assign_integer(&mut region, Some(ca.clone()), offset)?);
                     b = Some (integer_chip.assign_integer(&mut region, Some(cb.clone()), offset)?);
+                    let z = integer_chip.assign_integer(&mut region, Some(zero.clone()), offset)?;
+                    let c = main_gate.assign_bit(&mut region, Some(F::zero()), offset)?;
+                    identity = Some(AssignedPoint::new(z.clone(), z, c));
                     Ok(())
                 },
             )?;
-            (a.unwrap(), b.unwrap())
+            (a.unwrap(), b.unwrap(), identity.unwrap())
         };
-        Ok(EccChip {config, integer_chip, a, b})
+
+        Ok(EccChip {config, integer_chip, a, b, identity})
     }
 }
 
@@ -122,6 +134,14 @@ pub trait EccInstruction<C: CurveAffine, F: FieldExt> {
     fn mul_var(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
     fn mul_fix(&self, region: &mut Region<'_, F>, p: C, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
     fn multi_exp(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
+    fn select(
+        &self,
+        region: &mut Region<'_, F>,
+        c: &AssignedCondition<F>,
+        p1: &AssignedPoint<C,F>,
+        p2: &AssignedPoint<C,F>,
+        offset: &mut usize
+    ) -> Result<AssignedPoint<C,F>, Error>;
     fn combine(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, u: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
 }
 
@@ -171,6 +191,18 @@ impl<C: CurveAffine, F: FieldExt> EccInstruction<C, F> for EccChip<C, F> {
     fn multi_exp(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
         unimplemented!();
     }
+
+    fn select(
+        &self,
+        region: &mut Region<'_, F>,
+        c: &AssignedCondition<F>,
+        p1: &AssignedPoint<C,F>,
+        p2: &AssignedPoint<C,F>,
+        offset: &mut usize
+    ) -> Result<AssignedPoint<C,F>, Error> {
+        unimplemented!();
+    }
+
 
     fn combine(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, u: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
         unimplemented!();

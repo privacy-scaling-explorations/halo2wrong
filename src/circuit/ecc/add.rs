@@ -1,4 +1,4 @@
-use super::EccChip;
+use super::{EccChip, EccInstruction};
 use super::{AssignedPoint};
 use super::super::integer::{IntegerConfig, IntegerChip, IntegerInstructions};
 use crate::circuit::main_gate::{MainGateConfig, MainGateInstructions};
@@ -124,7 +124,7 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
             &a.is_identity(),
             offset
         )?;
-        let p = AssignedPoint::new(cx, cy, zero_cond);
+        let p = AssignedPoint::new(cx, cy, zero_cond.clone());
 
         /* Now combine the calculation using the following cond table
          * a.is_identity() -> b
@@ -132,13 +132,9 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
          * zero_cond -> self.identity()
          * otherwise -> p
          */
-
-        let id_sel = main_gate.cond_or(
-            region,
-            &a.is_identity(),
-            &b.is_identity(),
-            offset
-        )?;
+        let p = self.select(region, &zero_cond, &self.identity, &p, offset)?;
+        let p = self.select(region, &b.is_identity(), &a, &p, offset)?;
+        let p = self.select(region, &a.is_identity(), &b, &p, offset)?;
 
         Ok(p)
     }
