@@ -101,23 +101,27 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         let lambda_square = self.integer_chip._square(region, &lambda, offset)?;
 
         // cx = λ^2 - a.x - b.x
-        let sqsub = self.integer_chip._sub(region, &lambda_square, &a.x, offset)?;
-        let cx = self.integer_chip._sub(
+        let sqsub = self.integer_chip.sub(region, &lambda_square, &a.x, offset)?;
+        let sqsub = self.integer_chip.reduce(region, &sqsub, offset)?;
+        let cx = self.integer_chip.sub(
             region,
             &sqsub,
             &b.x,
             offset
         )?;
+        let cx = self.integer_chip.reduce(region, &cx, offset)?;
 
         // cy = λ(a.x - c.x) - a.y
-        let xsub = self.integer_chip._sub(region, &a.x, &cx, offset)?;
-        let yi = self.integer_chip._mul(
+        let xsub = self.integer_chip.sub(region, &a.x, &cx, offset)?;
+        let xsub = self.integer_chip.reduce(region, &xsub, offset)?;
+        let yi = self.integer_chip.mul(
             region,
             &lambda,
             &xsub,
             offset,
         )?;
-        let cy = self.integer_chip._sub(region, &yi, &a.y, offset)?;
+        let cy = self.integer_chip.sub(region, &yi, &a.y, offset)?;
+        let cy = self.integer_chip.reduce(region, &cy, offset)?;
         let cx_sel = self.integer_chip.cond_select(region,
             &b.x,
             &cx,

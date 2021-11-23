@@ -200,7 +200,12 @@ impl<C: CurveAffine, F: FieldExt> EccInstruction<C, F> for EccChip<C, F> {
         p2: &AssignedPoint<C,F>,
         offset: &mut usize
     ) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
+        let main_gate = self.main_gate();
+        let x = self.integer_chip.cond_select(region, &p1.x, &p2.x, c, offset)?;
+        let y = self.integer_chip.cond_select(region, &p1.y, &p2.y, c, offset)?;
+        let c = main_gate.cond_select(region, p1.z.clone(), p2.z.clone(), c, offset)?;
+        let c = AssignedCondition::new(c.cell(), c.value());
+        Ok(AssignedPoint::new(x, y, c))
     }
 
 
