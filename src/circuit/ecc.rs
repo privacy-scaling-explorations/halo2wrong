@@ -1,7 +1,7 @@
 use crate::rns::Integer;
 use crate::circuit::main_gate::{MainGateConfig};
 
-use super::{AssignedCondition, AssignedInteger};
+use super::{AssignedCondition, AssignedInteger, Assigned};
 use super::main_gate::{MainGate, MainGateInstructions};
 use super::integer::{IntegerConfig, IntegerChip, IntegerInstructions};
 use halo2::arithmetic::{FieldExt, CurveAffine};
@@ -116,7 +116,7 @@ pub trait EccInstruction<C: CurveAffine, F: FieldExt> {
         p0: &AssignedPoint<C,F>,
         p1: &AssignedPoint<C,F>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C,F>, Error>;
+    ) -> Result<(), Error>;
     fn add(&self, region: &mut Region<'_, F>, p0: &AssignedPoint<C,F>, p1: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
     fn double(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
     fn mul_var(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
@@ -144,8 +144,12 @@ impl<C: CurveAffine, F: FieldExt> EccInstruction<C, F> for EccChip<C, F> {
         p0: &AssignedPoint<C,F>,
         p1: &AssignedPoint<C,F>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
+    ) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        self.integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
+        self.integer_chip.assert_equal(region, &p0.y, &p1.y, offset)?;
+        main_gate.assert_equal(region, p0.z.clone(), p1.z.clone(), offset)?;
+        Ok(())
     }
 
     fn add(&self, region: &mut Region<'_, F>, p0: &AssignedPoint<C,F>, p1: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
@@ -320,34 +324,42 @@ mod tests {
         #[cfg(feature = "no_lookup")]
         let k: u32 = 8;
 
-        let sk = <C as CurveAffine>::ScalarExt::rand();
+        let sk = <C as CurveAffine>::ScalarExt::from_raw([2,0,0,0]);
         let generator = <C as PrimeCurveAffine> :: generator();
         let pk = generator * sk;
 
-        let pbase = //<C as PrimeCurveAffine> :: generator()
-            pk
+        let a = pk
             .to_affine()
             .coordinates()
             .unwrap();
+        let b = (pk + pk)
+            .to_affine()
+            .coordinates()
+            .unwrap();
+        let c = (pk + pk + pk)
+            .to_affine()
+            .coordinates()
+            .unwrap();
+
         let x = {
             let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &pbase.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+                &a.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
             let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &pbase.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+                &a.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
             Point::new(x, y)
         };
         let y = {
             let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &pbase.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+                &b.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
             let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &pbase.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+                &b.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
             Point::new(x, y)
         };
         let z = {
             let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &pbase.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+                &c.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
             let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &pbase.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+                &c.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
             Point::new(x, y)
         };
 

@@ -45,26 +45,41 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
     ) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
         let main_gate = self.main_gate();
 
+        /* There are three cases:
+         * a.y - b.y = 0 --> means the we need curvature
+         * a.y + b.y = 0 || a.y - b.y = 0 && b.y = 0 --> means infinity
+         * otherwise --> a.x != b.x --> normal tangent
+         */
         let numerator = self.integer_chip.sub(region, &a.y, &b.y, offset)?;
         let (_, eqy_cond) = self.integer_chip.invert(region, &numerator, offset)?;
+        let (_, y_is_zero) = self.integer_chip.invert(region, &a.y, offset)?;
 
         let (lambda_neq, eqx_cond) = {
             let denominator = self.integer_chip.sub(region, &a.x, &b.x, offset)?;
             self.integer_chip.div(region, &numerator, &denominator, offset)?
         };
 
-        // When eqx_cond == 1, we calculated the tangent curvature
-        let lambda_eq = self.curvature(region, a, offset)?;
-        let lambda = self.integer_chip.cond_select(region, &lambda_neq, &lambda_eq, &eqx_cond, offset)?;
-
-        // eqx_cond == 1 and eqy_cond == 0 means tangent is infinity
+        // eqx_cond == 1 and (y_is_zero || not_eqy_cond) implies infinity
         let not_eqy_cond = main_gate.cond_not(region, &eqy_cond, offset)?;
-        let zero_cond = main_gate.cond_and(region,
+        let icond = main_gate.cond_and(
+            region,
+            &y_is_zero,
             &not_eqy_cond,
+            offset,
+        )?;
+        let infinity_cond = main_gate.cond_and(
+            region,
+            &icond,
             &eqx_cond,
             offset,
         )?;
-        Ok((lambda, zero_cond))
+
+        // When eqx_cond == 1, we calculated the tangent curvature
+        let lambda_eq = self.curvature(region, a, offset)?;
+
+        let lambda = self.integer_chip.cond_select(region, &lambda_neq, &lambda_eq, &eqx_cond, offset)?;
+
+        Ok((lambda, infinity_cond))
     }
 
     /* We use affine coordinates since invert cost almost the same as mul in
