@@ -30,6 +30,7 @@ impl<C: CurveAffine, F: FieldExt> Point<C, F> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct AssignedPoint<C: CurveAffine, F: FieldExt > {
     x: AssignedInteger<F>,
     y: AssignedInteger<F>,
@@ -73,6 +74,63 @@ pub struct EccChip<C: CurveAffine, F: FieldExt> {
     identity: AssignedPoint<C, F>,
 }
 
+
+// Generic ecc operations that does not care about whether F equals C::ScalarExt or not
+pub trait GenericEccInstruction<External: CurveAffine, N: FieldExt> {
+    fn assign_point(&self, region: &mut Region<'_, N>, point: Point<External, N>, offset: &mut usize) -> Result<AssignedPoint<External, N>, Error>;
+
+    fn assert_equal(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedPoint<External, N>,
+        p1: &AssignedPoint<External, N>,
+        offset: &mut usize,
+    ) -> Result<(), Error>;
+
+    fn add(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedPoint<External, N>,
+        p1: &AssignedPoint<External, N>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<External, N>, Error>;
+}
+
+impl<External: CurveAffine, N: FieldExt> GenericEccInstruction<External, N> for EccChip<External, N> {
+
+    fn assign_point(&self, region: &mut Region<'_, N>, point: Point<External, N>, offset: &mut usize) -> Result<AssignedPoint<External, N>, Error> {
+        let x = self.integer_chip.assign_integer(region, Some(point.x.clone()), offset)?.clone();
+        let y = self.integer_chip.assign_integer(region, Some(point.y.clone()), offset)?.clone();
+        let z = self.main_gate().assign_bit(region, Some(N::zero()), offset)?.clone();
+        Ok(AssignedPoint::new(x,y,z))
+    }
+
+    fn assert_equal(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedPoint<External, N>,
+        p1: &AssignedPoint<External, N>,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        self.integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
+        self.integer_chip.assert_equal(region, &p0.y, &p1.y, offset)?;
+        main_gate.assert_equal(region, p0.z.clone(), p1.z.clone(), offset)?;
+        Ok(())
+    }
+
+    fn add(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedPoint<External, N>,
+        p1: &AssignedPoint<External, N>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<External, N>, Error> {
+        self._add(region, p0, p1, offset)
+    }
+}
+
+
 impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
     fn new(
         layouter: &mut impl Layouter<F>,
@@ -107,7 +165,7 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
                     a = Some (integer_chip.assign_integer(&mut region, Some(ca.clone()), offset)?);
                     b = Some (integer_chip.assign_integer(&mut region, Some(cb.clone()), offset)?);
                     let z = integer_chip.assign_integer(&mut region, Some(zero.clone()), offset)?;
-                    let c = main_gate.assign_bit(&mut region, Some(F::zero()), offset)?;
+                    let c = main_gate.assign_bit(&mut region, Some(F::one()), offset)?;
                     identity = Some(AssignedPoint::new(z.clone(), z, c));
                     Ok(())
                 },
@@ -116,80 +174,6 @@ impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
         };
 
         Ok(EccChip {config, integer_chip, a, b, identity})
-    }
-}
-
-pub trait EccInstruction<C: CurveAffine, F: FieldExt> {
-    fn assign_point(&self, region: &mut Region<'_, F>, point: Point<C,F>, offset: &mut usize) -> Result<AssignedPoint<C, F>, Error>;
-    fn assert_is_on_curve(&self, region: &mut Region<'_, F>, point: &AssignedPoint<C, F>, offset: &mut usize) -> Result<(), Error>;
-    fn assert_equal(
-        &self,
-        region: &mut Region<'_, F>,
-        p0: &AssignedPoint<C,F>,
-        p1: &AssignedPoint<C,F>,
-        offset: &mut usize,
-    ) -> Result<(), Error>;
-    fn add(&self, region: &mut Region<'_, F>, p0: &AssignedPoint<C,F>, p1: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
-    fn double(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
-    fn mul_var(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
-    fn mul_fix(&self, region: &mut Region<'_, F>, p: C, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
-    fn multi_exp(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
-    fn select(
-        &self,
-        region: &mut Region<'_, F>,
-        c: &AssignedCondition<F>,
-        p1: &AssignedPoint<C,F>,
-        p2: &AssignedPoint<C,F>,
-        offset: &mut usize
-    ) -> Result<AssignedPoint<C,F>, Error>;
-    fn combine(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, u: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error>;
-}
-
-impl<C: CurveAffine, F: FieldExt> EccInstruction<C, F> for EccChip<C, F> {
->>>>>>> optimize: using x+x+x instead of x*3
-    fn assign_point(&self, region: &mut Region<'_, F>, point: Point<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        let x = self.integer_chip.assign_integer(region, Some(point.x.clone()), offset)?.clone();
-        let y = self.integer_chip.assign_integer(region, Some(point.y.clone()), offset)?.clone();
-        let z = self.main_gate().assign_bit(region, Some(F::zero()), offset)?.clone();
-        Ok(AssignedPoint::new(x,y,z))
-    }
-
-    fn assert_is_on_curve(&self, region: &mut Region<'_, F>, point: &AssignedPoint<C,F>, offset: &mut usize) -> Result<(), Error> {
-        unimplemented!();
-    }
-
-    fn assert_equal(
-        &self,
-        region: &mut Region<'_, F>,
-        p0: &AssignedPoint<C,F>,
-        p1: &AssignedPoint<C,F>,
-        offset: &mut usize,
-    ) -> Result<(), Error> {
-        let main_gate = self.main_gate();
-        self.integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
-        self.integer_chip.assert_equal(region, &p0.y, &p1.y, offset)?;
-        main_gate.assert_equal(region, p0.z.clone(), p1.z.clone(), offset)?;
-        Ok(())
-    }
-
-    fn add(&self, region: &mut Region<'_, F>, p0: &AssignedPoint<C,F>, p1: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        self._add(region, p0, p1, offset)
-    }
-
-    fn double(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
-    }
-
-    fn mul_var(&self, region: &mut Region<'_, F>, p: &AssignedPoint<C,F>, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
-    }
-
-    fn mul_fix(&self, region: &mut Region<'_, F>, p: C, e: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
-    }
-
-    fn multi_exp(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
     }
 
     fn select(
@@ -208,49 +192,6 @@ impl<C: CurveAffine, F: FieldExt> EccInstruction<C, F> for EccChip<C, F> {
         Ok(AssignedPoint::new(x, y, c))
     }
 
-
-    fn combine(&self, region: &mut Region<'_, F>, terms: Vec<Term<C, F>>, u: F, offset: &mut usize) -> Result<AssignedPoint<C,F>, Error> {
-        unimplemented!();
-    }
-}
-*/
-
-impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
-    fn new(
-        layouter: &mut impl Layouter<F>,
-        config: EccConfig,
-        integer_chip: IntegerChip<C::Base, F>
-    ) -> Result<Self, Error> {
-        let ca = Integer::<F>::from_bytes_le(
-                &C::a().to_bytes(),
-                NUMBER_OF_LIMBS,
-                integer_chip.rns.bit_len_limb
-        );
-        let cb = Integer::<F>::from_bytes_le(
-                &C::b().to_bytes(),
-                NUMBER_OF_LIMBS,
-                integer_chip.rns.bit_len_limb
-        );
-
-        let (a, b) = {
-            let mut a: Option<AssignedInteger<F>> = None;
-            let mut b: Option<AssignedInteger<F>> = None;
-            layouter.assign_region(
-                || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    a = Some (integer_chip.assign_integer(&mut region, Some(ca.clone()), offset)?);
-                    b = Some (integer_chip.assign_integer(&mut region, Some(cb.clone()), offset)?);
-                    Ok(())
-                },
-            )?;
-            (a.unwrap(), b.unwrap())
-        };
-        Ok(EccChip {config, integer_chip, a, b})
-    }
-}
-
-impl<C: CurveAffine, F: FieldExt> EccChip<C, F> {
     fn main_gate(&self) -> MainGate<F> {
         let main_gate_config = self.config.main_gate_config.clone();
         MainGate::<F>::new(main_gate_config)
@@ -264,13 +205,17 @@ mod tests {
     use crate::circuit::AssignedValue;
     use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
     use crate::circuit::range::{RangeChip, RangeInstructions, RangeConfig};
-    use crate::circuit::ecc::{Point, EccChip, EccInstruction, EccConfig};
+    use crate::circuit::ecc::{Point, EccChip, GenericEccInstruction, EccConfig};
     use crate::rns::{Integer, Limb, Rns};
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use group::{Curve, prime::PrimeCurveAffine};
     use crate::NUMBER_OF_LIMBS;
+
+    // Testing EpAffine over Fq
+    use halo2::pasta::EpAffine as C;
+    use halo2::pasta::Fq as Native;
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
@@ -288,9 +233,9 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEcc<C: CurveAffine, N: FieldExt> {
-        x: Point<C, N>,
-        y: Point<C, N>,
-        z: Point<C, N>,
+        x: Option<Point<C, N>>,
+        y: Option<Point<C, N>>,
+        z: Option<Point<C, N>>,
         rns: Rns<C::Base, N>,
     }
 
@@ -327,9 +272,18 @@ mod tests {
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
-                    let px = ecc_chip.assign_point(&mut region, self.x.clone(), offset)?;
-                    let py = ecc_chip.assign_point(&mut region, self.y.clone(), offset)?;
-                    let pz = ecc_chip.assign_point(&mut region, self.z.clone(), offset)?;
+                    let px = match &self.x {
+                        Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
+                        None => ecc_chip.identity.clone(),
+                    };
+                    let py = match &self.y {
+                        Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
+                        None => ecc_chip.identity.clone(),
+                    };
+                    let pz = match &self.z {
+                        Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
+                        None => ecc_chip.identity.clone(),
+                    };
                     let r = ecc_chip.add(&mut region, &px, &py, offset)?;
                     ecc_chip.assert_equal(&mut region, &r, &pz, offset)?;
                     Ok(())
@@ -347,10 +301,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_ecc_add_circuit() {
-        use halo2::pasta::EpAffine as C;
-        use halo2::pasta::Fq as Native;
+    fn create_point(a:Option<u64>) -> Option<Point<C, Native>>{
+        let bit_len_limb = 64;
+        a.map(|a| {
+            let ma = <C as CurveAffine>::ScalarExt::from_raw([a,0,0,0]);
+            let generator = <C as PrimeCurveAffine> :: generator();
+            let pa = generator * ma;
+            let a = pa
+                .to_affine()
+                .coordinates()
+                .unwrap();
+            let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
+                &a.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+            let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
+                &a.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
+            Point::new(x, y)
+        })
+    }
+
+    fn test_ecc_add_circuit(a:Option<u64>, b:Option<u64>, c:Option<u64>) {
         let bit_len_limb = 64;
 
         let rns_base = Rns::<<C as CurveAffine>::Base, Native>::construct(bit_len_limb);
@@ -361,44 +330,9 @@ mod tests {
         #[cfg(feature = "no_lookup")]
         let k: u32 = 8;
 
-        let sk = <C as CurveAffine>::ScalarExt::from_raw([2,0,0,0]);
-        let generator = <C as PrimeCurveAffine> :: generator();
-        let pk = generator * sk;
-
-        let a = pk
-            .to_affine()
-            .coordinates()
-            .unwrap();
-        let b = (pk + pk)
-            .to_affine()
-            .coordinates()
-            .unwrap();
-        let c = (pk + pk + pk)
-            .to_affine()
-            .coordinates()
-            .unwrap();
-
-        let x = {
-            let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &a.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
-            let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &a.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
-            Point::new(x, y)
-        };
-        let y = {
-            let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &b.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
-            let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &b.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
-            Point::new(x, y)
-        };
-        let z = {
-            let x = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &c.x().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
-            let y = Integer::<<C as CurveAffine>::ScalarExt>::from_bytes_le(
-                &c.y().to_bytes(), NUMBER_OF_LIMBS, bit_len_limb);
-            Point::new(x, y)
-        };
+        let x = create_point(a);
+        let y = create_point(b);
+        let z = create_point(c);
 
         let circuit = TestEcc::<C, Native> {
             x: x,
@@ -414,4 +348,21 @@ mod tests {
 
         assert_eq!(prover.verify(), Ok(()));
     }
+
+
+    #[test]
+    fn test_ecc_add_circuit_eq () {
+      test_ecc_add_circuit(Some(2), Some(2), Some(4));
+    }
+
+    #[test]
+    fn test_ecc_add_circuit_neq () {
+      test_ecc_add_circuit(Some(2), Some(3), Some(5));
+    }
+
+    #[test]
+    fn test_ecc_add_circuit_zero_left () {
+      test_ecc_add_circuit(None, Some(3), Some(3));
+    }
+
 }

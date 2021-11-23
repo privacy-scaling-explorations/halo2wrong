@@ -653,7 +653,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             Term::Assigned(&a, one),
             Term::Assigned(&b, -one),
             Term::Zero,
-            Term::Unassigned(dif, one),
+            Term::Unassigned(dif, -one),
             zero,
             offset,
             CombinationOption::SingleLinerAdd,

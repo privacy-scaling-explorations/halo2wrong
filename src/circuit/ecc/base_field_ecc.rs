@@ -6,75 +6,61 @@ use halo2::plonk::Error;
 use super::{AssignedPoint, EccChip, Point, Term};
 
 pub trait BaseFieldEccInstruction<C: CurveAffine> {
-    fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: Point<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
-    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error>;
-    fn assert_equal(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error>;
-    fn add(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
-    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
+    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint <C, C::ScalarExt>, offset: &mut usize) -> Result<(), Error>;
+    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint <C, C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint <C, C::ScalarExt>, Error>;
     fn mul_var(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
-        p: AssignedPoint<C>,
+        p: AssignedPoint <C, C::ScalarExt>,
         e: AssignedValue<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error>;
-    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
-    fn multi_exp(&self, region: &mut Region<'_, C::ScalarExt>, terms: Vec<Term<C>>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
+    ) -> Result<AssignedPoint <C, C::ScalarExt>, Error>;
+    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint <C, C::ScalarExt>, Error>;
+    fn multi_exp(&self, region: &mut Region<'_, C::ScalarExt>, terms: Vec<Term<C, C::ScalarExt>>, offset: &mut usize) -> Result<AssignedPoint <C, C::ScalarExt>, Error>;
     fn combine(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
-        terms: Vec<Term<C>>,
+        terms: Vec<Term<C, C::ScalarExt>>,
         u: AssignedValue<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error>;
+    ) -> Result<AssignedPoint <C, C::ScalarExt>, Error>;
 }
 
-impl<C: CurveAffine> BaseFieldEccInstruction<C> for EccChip {
-    fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: Point<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+impl<C: CurveAffine> BaseFieldEccInstruction<C> for EccChip<C, C::ScalarExt> {
+
+    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint <C, C::ScalarExt>, offset: &mut usize) -> Result<(), Error> {
         unimplemented!();
     }
 
-    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error> {
-        unimplemented!();
-    }
-
-    fn assert_equal(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error> {
-        unimplemented!();
-    }
-
-    fn add(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
-        unimplemented!();
-    }
-
-    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint <C, C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint <C, C::ScalarExt>, Error> {
         unimplemented!();
     }
 
     fn mul_var(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
-        p: AssignedPoint<C>,
+        p: AssignedPoint <C, C::ScalarExt>,
         e: AssignedValue<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error> {
+    ) -> Result<AssignedPoint <C, C::ScalarExt>, Error> {
         unimplemented!();
     }
 
-    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint <C, C::ScalarExt>, Error> {
         unimplemented!();
     }
 
-    fn multi_exp(&self, region: &mut Region<'_, C::ScalarExt>, terms: Vec<Term<C>>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+    fn multi_exp(&self, region: &mut Region<'_, C::ScalarExt>, terms: Vec<Term<C, C::ScalarExt>>, offset: &mut usize) -> Result<AssignedPoint <C, C::ScalarExt>, Error> {
         unimplemented!();
     }
 
     fn combine(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
-        terms: Vec<Term<C>>,
+        terms: Vec<Term<C, C::ScalarExt>>,
         u: AssignedValue<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error> {
+    ) -> Result<AssignedPoint <C, C::ScalarExt>, Error> {
         unimplemented!();
     }
 }
