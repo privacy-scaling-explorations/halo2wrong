@@ -26,12 +26,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let b_limb = b.limb(idx);
             let aux = aux[idx];
             let c_max = a_limb.add_fe(aux);
-            let c_limb = main_gate.sub_with_aux(region, a_limb, b_limb, aux, offset)?;
+            let c_limb = main_gate.sub_with_constant(region, a_limb, b_limb, aux, offset)?;
 
             c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
         }
 
-        let c_native = main_gate.sub_with_aux(region, a.native(), b.native(), aux_native, offset)?;
+        let c_native = main_gate.sub_with_constant(region, a.native(), b.native(), aux_native, offset)?;
 
         Ok(AssignedInteger::new(c_limbs, c_native))
     }
