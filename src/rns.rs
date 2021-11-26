@@ -220,8 +220,12 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         }
     }
 
-    pub(crate) fn new_in_crt(&self, fe: W) -> Integer<N> {
+    pub(crate) fn new(&self, fe: W) -> Integer<N> {
         Integer::from_big(fe_to_big(fe), NUMBER_OF_LIMBS, self.bit_len_limb)
+    }
+
+    pub(crate) fn zero(&self) -> Integer<N> {
+        Integer::from_big(big_uint::zero(), NUMBER_OF_LIMBS, self.bit_len_limb)
     }
 
     pub(crate) fn new_from_limbs(&self, limbs: Vec<N>) -> Integer<N> {
@@ -393,9 +397,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let a_w = big_to_fe::<W>(a_biguint);
         let inv_w = a_w.invert();
 
-        inv_w.map(|inv| {
-            self.new_from_big(fe_to_big(inv))
-        }).into()
+        inv_w.map(|inv| self.new_from_big(fe_to_big(inv))).into()
     }
 
     pub(crate) fn div(&self, a: &Integer<N>, b: &Integer<N>) -> Option<Integer<N>> {
@@ -623,13 +625,11 @@ mod tests {
         for _ in 0..10000 {
             let el = &rns.rand_prenormalized();
             let result = rns.invert(&el);
-            let result = result.map(|inv| {
-                (inv.value() * el.value()) % wrong_modulus.clone()
-            });
+            let result = result.map(|inv| (inv.value() * el.value()) % wrong_modulus.clone());
 
             match result {
                 Some(result) => assert_eq!(result, 1u32.into()),
-                None => assert_eq!(el.value(), 0u32.into())
+                None => assert_eq!(el.value(), 0u32.into()),
             }
         }
 
@@ -645,13 +645,11 @@ mod tests {
             let el_0 = &rns.rand_prenormalized();
             let el_1 = &rns.rand_prenormalized();
             let result_0 = rns.div(el_0, el_1);
-            let result = result_0.map(|result_0| {
-                (result_0.value() * el_1.value() - el_0.value()) % wrong_modulus.clone()
-            });
+            let result = result_0.map(|result_0| (result_0.value() * el_1.value() - el_0.value()) % wrong_modulus.clone());
 
             match result {
                 Some(result) => assert_eq!(result, 0u32.into()),
-                None => assert_eq!(el_1.value(), 0u32.into())
+                None => assert_eq!(el_1.value(), 0u32.into()),
             }
         }
 
