@@ -143,6 +143,15 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
 
+    fn cond_select_or_assign(
+        &self,
+        region: &mut Region<'_, F>,
+        to_be_selected: impl Assigned<F>,
+        to_be_assigned: F,
+        cond: &AssignedCondition<F>,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error>;
+
     fn div_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
     fn div(
@@ -163,12 +172,26 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn is_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error>;
 
     fn add(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
-    fn add_with_aux(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, aux: F, offset: &mut usize)
-        -> Result<AssignedValue<F>, Error>;
+    fn add_with_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error>;
+
+    fn add_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, aux: F, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
     fn sub(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
-    fn sub_with_aux(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, aux: F, offset: &mut usize)
-        -> Result<AssignedValue<F>, Error>;
+    fn sub_with_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn mul(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
@@ -189,14 +212,14 @@ pub trait MainGateInstructions<F: FieldExt> {
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn add(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        self.add_with_aux(region, a, b, F::zero(), offset)
+        self.add_with_constant(region, a, b, F::zero(), offset)
     }
 
     fn sub(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        self.sub_with_aux(region, a, b, F::zero(), offset)
+        self.sub_with_constant(region, a, b, F::zero(), offset)
     }
 
-    fn add_with_aux(
+    fn add_with_constant(
         &self,
         region: &mut Region<'_, F>,
         a: impl Assigned<F>,
@@ -205,7 +228,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => Some(a + b),
+            (Some(a), Some(b)) => Some(a + b + aux),
             _ => None,
         };
 
@@ -225,7 +248,29 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(AssignedValue::new(cell, c))
     }
 
-    fn sub_with_aux(
+    fn add_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, constant: F, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        let c = match a.value() {
+            Some(a) => Some(a + constant),
+            _ => None,
+        };
+
+        let one = F::one();
+
+        let (_, _, cell, _) = self.combine(
+            region,
+            Term::Assigned(&a, one),
+            Term::Zero,
+            Term::Unassigned(c, -one),
+            Term::Zero,
+            constant,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn sub_with_constant(
         &self,
         region: &mut Region<'_, F>,
         a: impl Assigned<F>,
@@ -421,7 +466,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
     fn assert_not_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
         // (a - b) must have an inverse
-        let c = self.sub_with_aux(region, a, b, F::zero(), offset)?;
+        let c = self.sub_with_constant(region, a, b, F::zero(), offset)?;
         self.assert_not_zero(region, c, offset)?;
         Ok(())
     }
@@ -637,6 +682,15 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         cond: &AssignedCondition<F>,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
+        // We should satisfy the equation below with bit asserted condition flag
+        // c (a-b) + b - res = 0
+
+        // Witness layout:
+        // | A   | B   | C | D   |
+        // | --- | --- | - | --- |
+        // | dif | a   | b | -   |
+        // | c   | dif | b | res |
+
         let (dif, res) = match (a.value(), b.value(), cond.bool_value) {
             (Some(a), Some(b), Some(cond)) => {
                 let dif = a - b;
@@ -646,28 +700,85 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             _ => (None, None),
         };
 
-        let (one, zero) = (F::one(), F::zero());
-
+        // a - b - dif = 0
         let (_, _, _, dif_cell) = self.combine(
             region,
-            Term::Assigned(&a, one),
-            Term::Assigned(&b, -one),
+            Term::assigned_to_add(&a),
+            Term::assigned_to_sub(&b),
             Term::Zero,
-            Term::Unassigned(dif, -one),
-            zero,
+            Term::unassigned_to_sub(dif),
+            F::zero(),
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
 
         let dif = &mut AssignedValue::new(dif_cell, dif);
 
+        // cond * dif + b + a_or_b  = 0
         let (_, _, _, res_cell) = self.combine(
             region,
-            Term::Assigned(dif, zero),
-            Term::Assigned(cond, zero),
-            Term::Assigned(&b, one),
-            Term::Unassigned(res, -one),
-            zero,
+            Term::assigned_to_mul(dif),
+            Term::assigned_to_mul(cond),
+            Term::assigned_to_add(&b),
+            Term::unassigned_to_sub(res),
+            F::zero(),
+            offset,
+            CombinationOption::SingleLinerMul,
+        )?;
+
+        let res = AssignedValue::new(res_cell, res);
+
+        Ok(res)
+    }
+
+    fn cond_select_or_assign(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b: F,
+        cond: &AssignedCondition<F>,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error> {
+        // We should satisfy the equation below with bit asserted condition flag
+        // c (a-b_constant) + b_constant - res = 0
+
+        // Witness layout:
+        // | A   | B   | C | D   |
+        // | --- | --- | - | --- |
+        // | dif | a   | - | -   |
+        // | c   | dif | - | res |
+
+        let (dif, res) = match (a.value(), cond.bool_value) {
+            (Some(a), Some(cond)) => {
+                let dif = a - b;
+                let res = if cond { a } else { b };
+                (Some(dif), Some(res))
+            }
+            _ => (None, None),
+        };
+
+        // a - b - dif = 0
+        let (_, _, _, dif_cell) = self.combine(
+            region,
+            Term::assigned_to_add(&a),
+            Term::Zero,
+            Term::Zero,
+            Term::unassigned_to_sub(dif),
+            -b,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        let dif = &mut AssignedValue::new(dif_cell, dif);
+
+        // cond * dif + b + a_or_b  = 0
+        let (_, _, _, res_cell) = self.combine(
+            region,
+            Term::assigned_to_mul(dif),
+            Term::assigned_to_mul(cond),
+            Term::Zero,
+            Term::unassigned_to_sub(res),
+            b,
             offset,
             CombinationOption::SingleLinerMul,
         )?;
@@ -908,7 +1019,7 @@ mod tests {
 
     use std::marker::PhantomData;
 
-    use crate::circuit::{Assigned, UnassignedValue};
+    use crate::circuit::{Assigned, AssignedCondition, UnassignedValue};
 
     use super::{CombinationOption, MainGate, MainGateConfig, MainGateInstructions, Term};
     use halo2::arithmetic::FieldExt;
@@ -1383,6 +1494,252 @@ mod tests {
         let b = Fp::rand();
 
         let circuit = TestCircuitEquality::<Fp> { a: Some(a), b: Some(b) };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitArith<F: FieldExt> {
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitArith<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+            let main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                _marker: PhantomData,
+            };
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let mut offset = 0;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let c = a + b;
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let c_1 = main_gate.add(&mut region, a, b, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let c = a + b;
+                    let a = UnassignedValue::new(Some(a));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let c_1 = main_gate.add_constant(&mut region, a, b, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let aux = F::rand();
+                    let c = a + b + aux;
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let c_1 = main_gate.add_with_constant(&mut region, a, b, aux, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let c = a - b;
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let c_1 = main_gate.sub(&mut region, a, b, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let aux = F::rand();
+                    let c = a - b + aux;
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let c_1 = main_gate.sub_with_constant(&mut region, a, b, aux, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let c = a * b;
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let c_1 = main_gate.mul(&mut region, a, b, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let c = a * b.invert().unwrap();
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let c = UnassignedValue::new(Some(c));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let c_0 = main_gate.assign_value(&mut region, &c, super::MainGateColumn::A, &mut offset)?;
+                    let (c_1, _) = main_gate.div(&mut region, a, b, &mut offset)?;
+                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_main_gate_arith() {
+        const K: u32 = 8;
+
+        let circuit = TestCircuitArith::<Fp> { _marker: PhantomData::<Fp> };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitConditionals<F: FieldExt> {
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitConditionals<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+            let main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                _marker: PhantomData,
+            };
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let mut offset = 0;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let cond = F::zero();
+
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let cond = UnassignedValue::new(Some(cond));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond, super::MainGateColumn::A, &mut offset)?.into();
+                    let selected = main_gate.cond_select(&mut region, a, b.clone(), &cond, &mut offset)?;
+                    main_gate.assert_equal(&mut region, b, selected, &mut offset)?;
+
+                    let a = F::rand();
+                    let b = F::rand();
+                    let cond = F::one();
+
+                    let a = UnassignedValue::new(Some(a));
+                    let b = UnassignedValue::new(Some(b));
+                    let cond = UnassignedValue::new(Some(cond));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond, super::MainGateColumn::A, &mut offset)?.into();
+                    let selected = main_gate.cond_select(&mut region, a.clone(), b, &cond, &mut offset)?;
+                    main_gate.assert_equal(&mut region, a, selected, &mut offset)?;
+
+                    let a = F::rand();
+                    let b_constant = F::rand();
+                    let cond = F::zero();
+
+                    let a = UnassignedValue::new(Some(a));
+                    let b_unassigned = UnassignedValue::new(Some(b_constant));
+                    let cond = UnassignedValue::new(Some(cond));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let b_assigned = main_gate.assign_value(&mut region, &b_unassigned, super::MainGateColumn::A, &mut offset)?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond, super::MainGateColumn::A, &mut offset)?.into();
+                    let selected = main_gate.cond_select_or_assign(&mut region, a.clone(), b_constant, &cond, &mut offset)?;
+                    main_gate.assert_equal(&mut region, b_assigned, selected, &mut offset)?;
+
+                    let a = F::rand();
+                    let b_constant = F::rand();
+                    let cond = F::one();
+
+                    let a = UnassignedValue::new(Some(a));
+                    let cond = UnassignedValue::new(Some(cond));
+
+                    let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond, super::MainGateColumn::A, &mut offset)?.into();
+                    let selected = main_gate.cond_select_or_assign(&mut region, a.clone(), b_constant, &cond, &mut offset)?;
+                    main_gate.assert_equal(&mut region, a, selected, &mut offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_main_gate_cond() {
+        const K: u32 = 8;
+
+        let circuit = TestCircuitConditionals::<Fp> { _marker: PhantomData::<Fp> };
 
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,

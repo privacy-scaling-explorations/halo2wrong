@@ -31,6 +31,12 @@ pub struct AssignedCondition<F: FieldExt> {
     _marker: PhantomData<F>,
 }
 
+impl<F: FieldExt> From<AssignedValue<F>> for AssignedCondition<F> {
+    fn from(assigned: AssignedValue<F>) -> Self {
+        AssignedCondition::new(assigned.cell, assigned.value)
+    }
+}
+
 impl<F: FieldExt> AssignedCondition<F> {
     fn new(cell: Cell, value: Option<F>) -> Self {
         let bool_value = value.map(|value| if value == F::zero() { false } else { true });
