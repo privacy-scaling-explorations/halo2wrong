@@ -71,11 +71,6 @@ pub struct GeneralEccChip<Emulated: CurveAffine, F: FieldExt> {
     pub (super) config: EccConfig,
     pub (super) rns_base_field: Rns<Emulated::Base, F>,
     pub (super) rns_scalar_field: Rns<Emulated::Scalar, F>,
-
-    // We need following assigned constants for ecc operations
-    pub (super) a: AssignedInteger<F>,
-    pub (super) b: AssignedInteger<F>,
-    pub (super) identity: AssignedPoint<F>,
 }
 
 // Ecc operation mods
@@ -83,47 +78,14 @@ mod add;
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     pub (super) fn new(
-        layouter: &mut impl Layouter<N>,
         config: EccConfig,
         rns_base_field: Rns<Emulated::Base, N>,
         rns_scalar_field: Rns<Emulated::ScalarExt, N>
     ) -> Result<Self, Error> {
-        let main_gate_config = config.main_gate_config.clone();
-        let main_gate = MainGate::<N>::new(main_gate_config);
-        let base_chip = IntegerChip::<Emulated::Base, N>::new(config.integer_chip_config.clone(), rns_base_field.clone());
-
-        let a = rns_base_field.new(Emulated::a());
-        let b = rns_base_field.new(Emulated::b());
-        let zero = rns_base_field.new_from_big(0u32.into());
-
-        // for constants a, b and identity, we assign it once and borrow them in
-        // other operations to avoid duplication
-        let (a, b, identity) = {
-            let mut ca: Option<AssignedInteger<N>> = None;
-            let mut cb: Option<AssignedInteger<N>> = None;
-            let mut identity: Option<AssignedPoint<N>> = None;
-            layouter.assign_region(
-                || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    ca = Some (base_chip.assign_integer(&mut region, Some(a.clone()), offset)?);
-                    cb = Some (base_chip.assign_integer(&mut region, Some(b.clone()), offset)?);
-                    let z = base_chip.assign_integer(&mut region, Some(zero.clone()), offset)?;
-                    let c = main_gate.assign_bit(&mut region, Some(N::one()), offset)?;
-                    identity = Some(AssignedPoint::new(z.clone(), z, c));
-                    Ok(())
-                },
-            )?;
-            (ca.unwrap(), cb.unwrap(), identity.unwrap())
-        };
-
         Ok (Self {
             config,
             rns_base_field,
             rns_scalar_field,
-            a,
-            b,
-            identity,
         })
     }
 
@@ -272,10 +234,10 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
 #[cfg(test)]
 mod tests {
     use halo2::arithmetic::{CurveAffine, FieldExt, Field};
-    use crate::circuit::integer::{IntegerChip, IntegerConfig};
+    use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
     use crate::circuit::range::{RangeChip, RangeInstructions, RangeConfig};
-    use crate::circuit::ecc::{Point, EccConfig};
+    use crate::circuit::ecc::{Point, EccConfig, AssignedPoint};
     use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
     use crate::rns::{Integer, Limb, Rns};
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
@@ -337,26 +299,31 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let ecc_chip = GeneralEccChip::<C, N>::new(
-                &mut layouter,
                 config.ecc_chip_config,
                 self.rns_base.clone(),
                 self.rns_scalar.clone()
             )?;
             let offset = &mut 0;
+            let main_gate = ecc_chip.main_gate();
+            let base_chip = ecc_chip.base_field_chip();
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
+                    let z = self.rns_base.new_from_big(0u32.into());
+                    let z = base_chip.assign_integer(&mut region, Some(z), offset)?;
+                    let c = main_gate.assign_bit(&mut region, Some(N::one()), offset)?;
+                    let identity = AssignedPoint::new(z.clone(), z, c);
                     let px = match &self.x {
                         Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
-                        None => ecc_chip.identity.clone(),
+                        None => identity.clone(),
                     };
                     let py = match &self.y {
                         Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
-                        None => ecc_chip.identity.clone(),
+                        None => identity.clone(),
                     };
                     let pz = match &self.z {
                         Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
-                        None => ecc_chip.identity.clone(),
+                        None => identity.clone(),
                     };
                     let r = ecc_chip.add(&mut region, &px, &py, offset)?;
                     ecc_chip.assert_equal(&mut region, &r, &pz, offset)?;

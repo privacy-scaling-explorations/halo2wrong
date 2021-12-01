@@ -7,7 +7,7 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 
-impl<C: CurveAffine, F: FieldExt> GeneralEccChip<C, F> {
+impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
     fn curvature(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, offset: &mut usize) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
         let base_chip = self.base_field_chip();
         // (3 * a.x^2 + self.a) / 2 * a.y
@@ -18,7 +18,7 @@ impl<C: CurveAffine, F: FieldExt> GeneralEccChip<C, F> {
             //base_chip.mul(region, &xsq, cst3, offset)?
         };
         let (curvature, icond) = {
-            let numerator = base_chip.add(region, &xsqm, &self.a, offset)?;
+            let numerator = base_chip.add_constant(region, &xsqm, &self.parameter_a(), offset)?;
             let denominator = base_chip.add(region, &a.y, &a.y, offset)?;
             let numerator = base_chip.reduce(region, &numerator, offset)?;
             let denominator = base_chip.reduce(region, &denominator, offset)?;
@@ -80,6 +80,7 @@ impl<C: CurveAffine, F: FieldExt> GeneralEccChip<C, F> {
         b: &AssignedPoint<F>,
         offset: &mut usize,
     ) -> Result<AssignedPoint<F>, Error> {
+        let main_gate = self.main_gate();
         let base_chip = self.base_field_chip();
 
         let (lambda, zero_cond) = self.lambda(region, a, b, offset)?;
@@ -105,7 +106,8 @@ impl<C: CurveAffine, F: FieldExt> GeneralEccChip<C, F> {
          * zero_cond -> self.identity()
          * otherwise -> p
          */
-        let p = self.select(region, &zero_cond, &self.identity, &p, offset)?;
+        let nzero = main_gate.cond_not(region, &zero_cond, offset)?;
+        let p = self.select_or_assign(region, &nzero, &p, Emulated::identity(), offset)?;
         let p = self.select(region, &b.is_identity(), &a, &p, offset)?;
         let p = self.select(region, &a.is_identity(), &b, &p, offset)?;
 

@@ -54,11 +54,6 @@ pub trait BaseFieldEccInstruction<C: CurveAffine> {
 pub struct BaseFieldEccChip<C: CurveAffine> {
     config: EccConfig,
     rns: Rns<C::Base, C::ScalarExt>,
-
-    // We need following assigned constants for ecc operations
-    a: AssignedInteger<C::ScalarExt>,
-    b: AssignedInteger<C::ScalarExt>,
-    identity: AssignedPoint<C::ScalarExt>,
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
@@ -66,9 +61,6 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Self {
             config: g.config,
             rns: g.rns_base_field,
-            a: g.a,
-            b: g.b,
-            identity: g.identity,
         }
     }
     fn as_general(&self) -> GeneralEccChip<C, C::ScalarExt> {
@@ -76,19 +68,14 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
             config: self.config.clone(),
             rns_base_field: self.rns.clone(),
             rns_scalar_field: Rns::<C::ScalarExt, C::ScalarExt>::construct(self.rns.bit_len_limb),
-
-            a: self.a.clone(),
-            b: self.b.clone(),
-            identity: self.identity.clone(),
         }
     }
     fn new(
-        layouter: &mut impl Layouter<C::ScalarExt>,
         config: EccConfig,
         rns: Rns<C::Base, C::ScalarExt>,
     ) -> Result<Self, Error> {
         let rns_ext = Rns::<C::ScalarExt, C::ScalarExt>::construct(rns.bit_len_limb);
-        let general_chip = GeneralEccChip::new(layouter, config, rns, rns_ext)?;
+        let general_chip = GeneralEccChip::new(config, rns, rns_ext)?;
         Ok(Self::from_general(general_chip))
     }
 
