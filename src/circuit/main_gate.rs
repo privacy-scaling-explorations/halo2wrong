@@ -1,10 +1,9 @@
 use super::{Assigned, AssignedBit, AssignedCondition, AssignedValue, UnassignedValue};
-use halo2::arithmetic::{Field, FieldExt};
+use halo2::arithmetic::FieldExt;
 use halo2::circuit::{Cell, Region};
 use halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed};
 use halo2::poly::Rotation;
 use std::marker::PhantomData;
-use std::ops::Mul;
 
 pub enum MainGateColumn {
     A = 0,
@@ -602,14 +601,14 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             _ => None,
         };
 
-        let (zero, one) = (F::zero(), F::one());
+        let zero = F::zero();
 
         // c + c1 * c2 - c1 - c2 = 0
         let (_, _, cell, _) = self.combine(
             region,
-            Term::Assigned(c1, -F::one()),
-            Term::Assigned(c2, -F::one()),
-            Term::Unassigned(c, one),
+            Term::assigned_to_sub(c1),
+            Term::assigned_to_sub(c2),
+            Term::unassigned_to_add(c),
             Term::Zero,
             zero,
             offset,
@@ -631,13 +630,13 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             _ => None,
         };
 
-        let (zero, one) = (F::zero(), F::one());
+        let zero = F::zero();
 
         let (_, _, cell, _) = self.combine(
             region,
             Term::assigned_to_mul(c1),
             Term::assigned_to_mul(c2),
-            Term::Unassigned(c, -one),
+            Term::unassigned_to_sub(c),
             Term::Zero,
             zero,
             offset,
@@ -660,13 +659,13 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             _ => None,
         };
 
-        let (_, _, cell, _) = self.combine(
+        let (_, cell, _, _) = self.combine(
             region,
             Term::assigned_to_add(c),
             Term::unassigned_to_add(not_c),
             Term::Zero,
             Term::Zero,
-            one,
+            -one,
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
