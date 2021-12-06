@@ -1,76 +1,54 @@
 use crate::circuit::integer::{IntegerChip, IntegerInstructions};
 use crate::circuit::main_gate::{MainGate, MainGateInstructions};
 use crate::circuit::{AssignedCondition, AssignedInteger, AssignedValue};
+use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
 use crate::rns::{Integer, Rns};
-use halo2::arithmetic::{CurveAffine, Field, FieldExt};
-use halo2::circuit::Region;
+use halo2::arithmetic::{CurveAffine, Field};
+use halo2::circuit::{Region, Layouter};
 use halo2::plonk::Error;
 
 use super::EccConfig;
 
-#[derive(Default, Clone, Debug)]
-struct Point<N: FieldExt> {
-    x: Integer<N>,
-    y: Integer<N>,
-    is_identity: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct AssignedPoint<C: CurveAffine> {
-    x: AssignedInteger<C::ScalarExt>,
-    y: AssignedInteger<C::ScalarExt>,
-    // indicate whether the poinit is the identity point of curve or not
-    z: AssignedCondition<C::ScalarExt>,
-}
-
-impl<C: CurveAffine> AssignedPoint<C> {
-    pub fn new(x: AssignedInteger<C::ScalarExt>, y: AssignedInteger<C::ScalarExt>, z: AssignedCondition<C::ScalarExt>) -> AssignedPoint<C> {
-        AssignedPoint { x, y, z }
-    }
-
-    pub fn is_identity(&self) -> AssignedCondition<C::ScalarExt> {
-        self.z.clone()
-    }
-}
+use crate::circuit::ecc::{Point, AssignedPoint};
 
 pub trait BaseFieldEccInstruction<C: CurveAffine> {
-    fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: C, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
+    fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: C, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 
-    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<(), Error>;
 
-    fn assert_equal(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_equal(&self, region: &mut Region<'_, C::ScalarExt>, p0: &AssignedPoint<C::ScalarExt>, p1: &AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<(), Error>;
 
     fn select(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
         c: &AssignedCondition<C::ScalarExt>,
-        p1: &AssignedPoint<C>,
-        p2: &AssignedPoint<C>,
+        p1: &AssignedPoint<C::ScalarExt>,
+        p2: &AssignedPoint<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error>;
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 
     fn select_or_assign(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
         c: &AssignedCondition<C::ScalarExt>,
-        p1: &AssignedPoint<C>,
+        p1: &AssignedPoint<C::ScalarExt>,
         p2: C,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error>;
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 
-    fn add(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
+    fn add(&self, region: &mut Region<'_, C::ScalarExt>, p0: &AssignedPoint<C::ScalarExt>, p1: &AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 
-    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
+    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 
     fn mul_var(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
-        p: AssignedPoint<C>,
+        p: AssignedPoint<C::ScalarExt>,
         e: AssignedValue<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error>;
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 
-    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C>, Error>;
+    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error>;
 }
 
 pub struct BaseFieldEccChip<C: CurveAffine> {
@@ -79,8 +57,26 @@ pub struct BaseFieldEccChip<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
-    fn new(config: EccConfig, rns: Rns<C::Base, C::ScalarExt>) -> Self {
-        Self { config, rns }
+    fn from_general(g: GeneralEccChip<C, C::ScalarExt>) -> Self {
+        Self {
+            config: g.config,
+            rns: g.rns_base_field,
+        }
+    }
+    fn as_general(&self) -> GeneralEccChip<C, C::ScalarExt> {
+        GeneralEccChip {
+            config: self.config.clone(),
+            rns_base_field: self.rns.clone(),
+            rns_scalar_field: Rns::<C::ScalarExt, C::ScalarExt>::construct(self.rns.bit_len_limb),
+        }
+    }
+    fn new(
+        config: EccConfig,
+        rns: Rns<C::Base, C::ScalarExt>,
+    ) -> Result<Self, Error> {
+        let rns_ext = Rns::<C::ScalarExt, C::ScalarExt>::construct(rns.bit_len_limb);
+        let general_chip = GeneralEccChip::new(config, rns, rns_ext)?;
+        Ok(Self::from_general(general_chip))
     }
 
     fn integer_chip(&self) -> IntegerChip<C::Base, C::ScalarExt> {
@@ -121,7 +117,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 }
 
 impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
-    fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: C, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+    fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: C, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         let integer_chip = self.integer_chip();
         let point = self.into_rns_point(point);
         // FIX: This won't help for a prover assigns the infinity
@@ -132,11 +128,11 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y, z))
     }
 
-    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error> {
+    fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<(), Error> {
         unimplemented!();
     }
 
-    fn assert_equal(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<(), Error> {
+    fn assert_equal(&self, region: &mut Region<'_, C::ScalarExt>, p0: &AssignedPoint<C::ScalarExt>, p1: &AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let integer_chip = self.integer_chip();
         integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
@@ -149,10 +145,10 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         &self,
         region: &mut Region<'_, C::ScalarExt>,
         c: &AssignedCondition<C::ScalarExt>,
-        p1: &AssignedPoint<C>,
-        p2: &AssignedPoint<C>,
+        p1: &AssignedPoint<C::ScalarExt>,
+        p2: &AssignedPoint<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error> {
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         let main_gate = self.main_gate();
         let integer_chip = self.integer_chip();
         let x = integer_chip.cond_select(region, &p1.x, &p2.x, c, offset)?;
@@ -165,10 +161,10 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         &self,
         region: &mut Region<'_, C::ScalarExt>,
         c: &AssignedCondition<C::ScalarExt>,
-        p1: &AssignedPoint<C>,
+        p1: &AssignedPoint<C::ScalarExt>,
         p2: C,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error> {
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         let main_gate = self.main_gate();
         let integer_chip = self.integer_chip();
         let p2 = self.into_rns_point(p2);
@@ -186,25 +182,33 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y, c))
     }
 
-    fn add(&self, region: &mut Region<'_, C::ScalarExt>, p0: AssignedPoint<C>, p1: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
-        unimplemented!();
+    fn add(
+        &self,
+        region: &mut Region<'_, C::ScalarExt>,
+        p0: &AssignedPoint<C::ScalarExt>,
+        p1: &AssignedPoint<C::ScalarExt>,
+        offset: &mut usize
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+        // Addition does not involve any scalar operation thus is the same as
+        // it is in generic ecc.
+        self.as_general().add(region, p0, p1, offset)
     }
 
-    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+    fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         unimplemented!();
     }
 
     fn mul_var(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
-        p: AssignedPoint<C>,
+        p: AssignedPoint<C::ScalarExt>,
         e: AssignedValue<C::ScalarExt>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<C>, Error> {
+    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         unimplemented!();
     }
 
-    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C>, Error> {
+    fn mul_fix(&self, region: &mut Region<'_, C::ScalarExt>, p: C, e: AssignedValue<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         unimplemented!();
     }
 }
