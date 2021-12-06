@@ -161,6 +161,7 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
     ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
     fn invert_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn wnaf(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<Vec<AssignedValue<F>>, Error>;
     fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
 
     fn assert_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
@@ -354,6 +355,56 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         let (b_inverted, cond) = self.invert(region, b, offset)?;
         let res = self.mul(region, a, b_inverted, offset)?;
         Ok((res, cond))
+    }
+
+    fn wnaf(
+        &self,
+        region: &mut Region<'_, F>,
+        input: impl Assigned<F>,
+        offset: &mut usize,
+    ) -> Result<Vec<AssignedValue<F>>, Error> {
+        use crate::rns::{fe_to_big, big_to_fe};
+        use num_bigint::BigUint as big_uint;
+
+        let mut res = vec![];
+        let mut d = match input.value() {
+            Some(v) => fe_to_big(v),
+            _ => big_uint::from(0 as u64),
+        };
+
+        while d > big_uint::from(0 as u64) {
+            let di = if d.clone() % big_uint::from(2 as u64) == big_uint::from(1 as u64) {
+                if d.clone() % big_uint::from(4 as u64) >= big_uint::from(2 as u64) {
+                    (d.clone() % big_uint::from(4 as u64)) - big_uint::from(2 as u64)
+                } else {
+                    d.clone() % big_uint::from(4 as u64)
+                }
+            } else {
+                big_uint::from(0 as u64)
+            };
+
+            // TODO: range check on term_a ?
+            let term_a = Term::unassigned_to_add(Some(big_to_fe(di.clone())));
+            let term_d = Term::unassigned_to_sub(Some(big_to_fe(d.clone())));
+
+            d = d - di.clone();
+
+            let (cell, _, _, _) = self.combine(
+                region,
+                term_a,
+                Term::Zero,
+                Term::Zero,
+                term_d,
+                F::zero(),
+                offset,
+                CombinationOption::CombineToNextAdd(F::from_u64(2)),
+            )?;
+
+            d = d / big_uint::from(2 as u64);
+            res.push(AssignedValue::new(cell, Some(big_to_fe(di.clone()))));
+        }
+
+        Ok(res)
     }
 
     fn invert_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
@@ -1739,6 +1790,70 @@ mod tests {
         const K: u32 = 8;
 
         let circuit = TestCircuitConditionals::<Fp> { _marker: PhantomData::<Fp> };
+
+        let prover = match MockProver::run(K, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitWNAF<F: FieldExt> {
+        d: F,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitWNAF<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+            let main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                _marker: PhantomData,
+            };
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let mut offset = 0;
+
+                    let d = main_gate.assign_value(&mut region, &UnassignedValue::new(Some(self.d)), super::MainGateColumn::A, &mut offset)?;
+                    let res = main_gate.wnaf(&mut region, d, &mut offset)?;
+                    let d0 = main_gate.assign_value(&mut region, &UnassignedValue::new(Some(F::from(0))), super::MainGateColumn::A, &mut offset)?;
+                    let d1 = main_gate.assign_value(&mut region, &UnassignedValue::new(Some(F::from(1))), super::MainGateColumn::A, &mut offset)?;
+                    let d2 = main_gate.assign_value(&mut region, &UnassignedValue::new(Some(F::from(0))), super::MainGateColumn::A, &mut offset)?;
+                    let d3 = main_gate.assign_value(&mut region, &UnassignedValue::new(Some(F::from(1))), super::MainGateColumn::A, &mut offset)?;
+
+                    main_gate.assert_equal(&mut region, d0, res[0].clone(), &mut offset)?;
+                    main_gate.assert_equal(&mut region, d1, res[1].clone(), &mut offset)?;
+                    main_gate.assert_equal(&mut region, d2, res[2].clone(), &mut offset)?;
+                    main_gate.assert_equal(&mut region, d3, res[3].clone(), &mut offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_main_gate_wnaf() {
+        const K: u32 = 8;
+
+        let d = Fp::from_u64(10);
+        let circuit = TestCircuitWNAF::<Fp> { d };
 
         let prover = match MockProver::run(K, &circuit, vec![]) {
             Ok(prover) => prover,
