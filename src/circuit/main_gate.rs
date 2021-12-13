@@ -38,6 +38,7 @@ pub enum CombinationOption<F: FieldExt> {
     SingleLinerMul,
     SingleLinerAdd,
     CombineToNextMul(F),
+    CombineToNextMulN(F, F),
     CombineToNextAdd(F),
 }
 
@@ -187,6 +188,8 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
 
+    fn neg_with_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, aux: F, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+
     fn mul(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
     fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
@@ -257,6 +260,28 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             Term::Unassigned(c, -one),
             Term::Zero,
             constant,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn neg_with_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, aux: F, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        let c = match a.value() {
+            Some(a) => Some(-a + aux),
+            _ => None,
+        };
+
+        let one = F::one();
+
+        let (_, _, cell, _) = self.combine(
+            region,
+            Term::Assigned(&a, -one),
+            Term::Zero,
+            Term::Unassigned(c, -one),
+            Term::Zero,
+            aux,
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
@@ -855,6 +880,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
 
         Ok(())
     }
+
     fn combine(
         &self,
         region: &mut Region<'_, F>,
@@ -886,6 +912,10 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         match option {
             CombinationOption::CombineToNextMul(base) => {
                 region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
+                region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(base))?;
+            }
+            CombinationOption::CombineToNextMulN(base, n) => {
+                region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(n))?;
                 region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(base))?;
             }
             CombinationOption::CombineToNextAdd(base) => {

@@ -17,6 +17,7 @@ mod assign;
 mod div;
 mod invert;
 mod mul;
+mod neg;
 mod reduce;
 mod square;
 mod sub;
@@ -64,6 +65,7 @@ pub trait IntegerInstructions<N: FieldExt> {
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn div(
@@ -119,6 +121,10 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self.reduce_if_necessary(region, a, offset)?;
         self.reduce_if_necessary(region, b, offset)?;
         self._sub(region, a, b, offset)
+    }
+
+    fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._neg(region, a, offset)
     }
 
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
