@@ -270,6 +270,11 @@ impl<F: FieldExt> RangeChip<F> {
     }
 
     pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: &MainGateConfig, fine_tune_bit_lengths: Vec<usize>) -> RangeConfig {
+        let mut fine_tune_bit_lengths = fine_tune_bit_lengths.clone();
+        fine_tune_bit_lengths.sort();
+        fine_tune_bit_lengths.dedup();
+        let fine_tune_bit_lengths: Vec<usize> = fine_tune_bit_lengths.into_iter().filter(|e| *e != 0).collect();
+
         let a = main_gate_config.a;
         let b = main_gate_config.b;
         let c = main_gate_config.c;

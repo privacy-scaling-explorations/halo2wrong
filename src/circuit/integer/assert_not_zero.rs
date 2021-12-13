@@ -1,7 +1,6 @@
 use super::IntegerChip;
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::{AssignedInteger, AssignedValue};
-use crate::BIT_LEN_LIMB;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -18,8 +17,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let r = self._reduce(region, a, offset)?;
 
         // Sanity check.
-        // This algorithm requires that wrong modulus * 2 <= native modulus * 2 ^ BIT_LEN_LIMB.
-        let two_pow_limb_bits_minus_1 = big_uint::from(2u64).pow((BIT_LEN_LIMB - 1).try_into().unwrap());
+        // This algorithm requires that wrong modulus * 2 <= native modulus * 2 ^ bit_len_limb.
+        let two_pow_limb_bits_minus_1 = big_uint::from(2u64).pow((self.rns.bit_len_limb - 1).try_into().unwrap());
         assert!(self.rns.wrong_modulus.clone() <= self.rns.native_modulus.clone() * two_pow_limb_bits_minus_1);
 
         // r = 0 <-> r % 2 ^ 64 = 0 /\ r % native_modulus = 0

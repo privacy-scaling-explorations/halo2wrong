@@ -1,10 +1,11 @@
-use crate::rns::{decompose_fe as decompose, fe_to_big, Common, Integer, Limb};
+use crate::rns::{compose, decompose_fe as decompose, fe_to_big, Common, Integer, Limb};
 use halo2::plonk::Error;
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Region},
 };
 use num_bigint::BigUint as big_uint;
+use num_traits::Zero;
 use std::marker::PhantomData;
 
 mod ecc;
@@ -63,7 +64,7 @@ type AssignedBit<F> = AssignedCondition<F>;
 pub struct AssignedLimb<F: FieldExt> {
     value: Option<Limb<F>>,
     cell: Cell,
-    pub max_val: big_uint,
+    max_val: big_uint,
 }
 
 impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {
@@ -79,6 +80,10 @@ impl<F: FieldExt> AssignedLimb<F> {
     fn new(cell: Cell, value: Option<F>, max_val: big_uint) -> Self {
         let value = value.map(|value| Limb::<F>::new(value));
         AssignedLimb { value, cell, max_val }
+    }
+
+    fn max_val(&self) -> big_uint {
+        self.max_val.clone()
     }
 
     fn add(&self, other: &Self) -> big_uint {
@@ -119,18 +124,28 @@ impl<F: FieldExt> UnassignedInteger<F> {
 pub struct AssignedInteger<F: FieldExt> {
     limbs: Vec<AssignedLimb<F>>,
     native_value: AssignedValue<F>,
+    bit_len_limb: usize,
 }
 
 impl<F: FieldExt> AssignedInteger<F> {
-    pub fn new(limbs: Vec<AssignedLimb<F>>, native_value: AssignedValue<F>) -> Self {
-        AssignedInteger { limbs, native_value }
+    pub fn new(limbs: Vec<AssignedLimb<F>>, native_value: AssignedValue<F>, bit_len_limb: usize) -> Self {
+        AssignedInteger {
+            limbs,
+            native_value,
+            bit_len_limb,
+        }
     }
 
-    pub fn integer(&self) -> Option<Integer<F>> {
+    pub fn integer(&self, bit_len_limb: usize) -> Option<Integer<F>> {
         self.limbs[0].value.as_ref().map(|_| {
             let limbs = self.limbs.iter().map(|limb| limb.value.clone().unwrap()).collect();
-            Integer::new(limbs)
+            Integer::new(limbs, bit_len_limb)
         })
+    }
+
+    pub fn max_val(&self) -> big_uint {
+        // self.limbs.iter().fold(big_uint::zero(), |a, b| a + &b.max_val)
+        compose(self.limbs.iter().map(|limb| limb.max_val()).collect(), self.bit_len_limb)
     }
 
     pub fn limb_value(&self, idx: usize) -> Result<F, Error> {

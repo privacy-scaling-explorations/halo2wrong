@@ -1,4 +1,4 @@
-use super::{AssignedCondition, IntegerChip, IntegerInstructions, MainGateInstructions};
+use super::{AssignedCondition, IntegerChip, IntegerInstructions, MainGateInstructions, Range};
 use crate::circuit::main_gate::{CombinationOption, Term};
 use crate::circuit::{Assigned, AssignedInteger};
 use crate::NUMBER_OF_LIMBS;
@@ -7,10 +7,6 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn inert_inv_range_tune(&self) -> usize {
-        self.rns.bit_len_prenormalized - (self.rns.bit_len_limb * (NUMBER_OF_LIMBS - 1)) + 1
-    }
-
     pub(crate) fn _invert(
         &self,
         region: &mut Region<'_, N>,
@@ -22,7 +18,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let one = N::one();
         let integer_one = self.rns.new_from_big(1u32.into());
 
-        let inv_or_one = match a.integer() {
+        let inv_or_one = match a.integer(self.rns.bit_len_limb) {
             Some(a) => match self.rns.invert(&a) {
                 Some(a) => Some(a),
                 None => Some(integer_one),
@@ -34,7 +30,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 1. extend mul to support prenormalized value.
         // 2. call normalize here.
         // 3. add wrong field range check on inv.
-        let inv_or_one = self.range_assign_integer(region, inv_or_one.into(), self.inert_inv_range_tune(), offset)?;
+        let inv_or_one = self.range_assign_integer(region, inv_or_one.into(), Range::Remainder, offset)?;
         let a_mul_inv = self.mul(region, &a, &inv_or_one, offset)?;
 
         // We believe the mul result is strictly less than wrong modulus, so we add strict constraints here.

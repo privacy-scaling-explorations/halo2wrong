@@ -1,36 +1,27 @@
-use super::{IntegerChip, IntegerInstructions};
+use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
 use crate::rns::Quotient;
-use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     fn red_v0_range_tune(&self) -> usize {
-        self.rns.bit_len_limb
+        self.rns.bit_len_limb + self.rns.red_v0_overflow
     }
 
     fn red_v1_range_tune(&self) -> usize {
-        self.rns.bit_len_limb
-    }
-
-    fn red_result_range_tune(&self) -> usize {
-        self.rns.bit_len_prenormalized - (self.rns.bit_len_limb * (NUMBER_OF_LIMBS - 1)) + 1
-    }
-
-    fn red_quotient_range_tune(&self) -> usize {
-        self.rns.bit_len_limb
+        self.rns.bit_len_limb + self.rns.red_v1_overflow
     }
 
     pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| self.rns.reduce(&integer_a));
+        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| self.rns.reduce(&integer_a));
 
         let quotient = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
@@ -50,8 +41,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
 
         let range_chip = self.range_chip();
-        let result = &self.range_assign_integer(region, result.into(), self.red_result_range_tune(), offset)?;
-        let quotient = &range_chip.range_value(region, &quotient.into(), self.red_quotient_range_tune(), offset)?;
+        let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
+        let quotient = &range_chip.range_value(region, &quotient.into(), self.rns.bit_len_limb, offset)?;
         let v_0 = &range_chip.range_value(region, &v_0.into(), self.red_v0_range_tune(), offset)?;
         let v_1 = &range_chip.range_value(region, &v_1.into(), self.red_v1_range_tune(), offset)?;
 

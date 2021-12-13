@@ -1,9 +1,10 @@
-use super::IntegerChip;
+use super::{IntegerChip, Range};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedLimb, AssignedValue, UnassignedInteger};
 use crate::rns::Common;
 use crate::rns::Integer;
+use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -15,12 +16,17 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         &self,
         region: &mut Region<'_, N>,
         integer: UnassignedInteger<N>,
-        most_significant_limb_bit_len: usize,
+        range: Range,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         let range_chip = self.range_chip();
         let max_val = (big_uint::one() << self.rns.bit_len_limb) - 1usize;
-        assert!(most_significant_limb_bit_len <= self.rns.bit_len_limb);
+
+        let most_significant_limb_bit_len = match range {
+            Range::Operand => self.rns.max_most_significant_operand_limb.bits() as usize,
+            Range::Remainder => self.rns.max_most_significant_reduced_limb.bits() as usize,
+            Range::MulQuotient => self.rns.max_most_significant_mul_quotient_limb.bits() as usize,
+        };
 
         let assigned = range_chip.range_value(region, &integer.limb(0), self.rns.bit_len_limb, offset)?;
         let limb_0 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
@@ -67,10 +73,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let native_value = native_value.assign(native_value_cell);
 
-        Ok(AssignedInteger {
-            limbs: vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()],
-            native_value,
-        })
+        Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
     }
 
     pub(crate) fn _assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
@@ -110,10 +113,17 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let limbs = cells
             .iter()
             .enumerate()
-            .map(|(i, cell)| AssignedLimb {
-                value: integer.as_ref().map(|integer| integer.limb(i)),
-                cell: *cell,
-                max_val: self.rns.limb_max_val.clone(),
+            .map(|(i, cell)| {
+                let max_val = if i == NUMBER_OF_LIMBS - 1 {
+                    self.rns.max_most_significant_reduced_limb.clone()
+                } else {
+                    self.rns.max_reduced_limb.clone()
+                };
+                AssignedLimb {
+                    value: integer.as_ref().map(|integer| integer.limb(i)),
+                    cell: *cell,
+                    max_val,
+                }
             })
             .collect();
 
@@ -121,8 +131,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             value: native_value,
             cell: native_value_cell,
         };
-        let assigned_integer = AssignedInteger { limbs, native_value };
 
-        Ok(assigned_integer)
+        Ok(self.new_assigned_integer(limbs, native_value))
     }
 }
