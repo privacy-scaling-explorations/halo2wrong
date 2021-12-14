@@ -32,8 +32,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| {
             let reduction_result = self.rns.reduce(&integer_a);
-
-            assert_eq!(reduction_result.result.value(), big_uint::zero());
+            // assert_eq!(reduction_result.result.value(), big_uint::zero());
             reduction_result
         });
 

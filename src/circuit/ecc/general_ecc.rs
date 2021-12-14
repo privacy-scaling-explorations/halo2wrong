@@ -1,10 +1,10 @@
 use super::EccConfig;
-use crate::circuit::integer::{IntegerChip, IntegerInstructions};
+use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
 use crate::circuit::main_gate::{MainGate, MainGateInstructions};
 use crate::circuit::{AssignedCondition, AssignedInteger};
 use crate::rns::{Integer, Rns};
-use halo2::arithmetic::{CurveAffine, Field, FieldExt};
-use halo2::circuit::Region;
+use halo2::arithmetic::{CurveAffine, CurveExt, Field, FieldExt};
+use halo2::circuit::{Layouter, Region};
 use halo2::plonk::Error;
 
 use crate::circuit::ecc::{AssignedPoint, Point};
@@ -68,11 +68,13 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     }
 
     fn scalar_field_chip(&self) -> IntegerChip<Emulated::ScalarExt, N> {
-        IntegerChip::<Emulated::ScalarExt, N>::new(self.config.integer_chip_config.clone(), self.rns_scalar_field.clone())
+        let integer_chip_config = self.config.integer_chip_config();
+        IntegerChip::<Emulated::ScalarExt, N>::new(integer_chip_config, self.rns_scalar_field.clone())
     }
 
     fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N> {
-        IntegerChip::<Emulated::Base, N>::new(self.config.integer_chip_config.clone(), self.rns_base_field.clone())
+        let integer_chip_config = self.config.integer_chip_config();
+        IntegerChip::<Emulated::Base, N>::new(integer_chip_config, self.rns_base_field.clone())
     }
 
     fn main_gate(&self) -> MainGate<N> {
@@ -110,18 +112,33 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for GeneralEccChip<Emulated, N> {
     fn assert_is_on_curve(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
-        unimplemented!();
+        let integer_chip = self.base_field_chip();
+
+        let y_square = &integer_chip.square(region, &point.y, offset)?;
+        let x_square = &integer_chip.square(region, &point.x, offset)?;
+        let x_cube = &integer_chip.mul(region, &point.x, x_square, offset)?;
+        let x_cube_b = &integer_chip.add_constant(region, x_cube, &self.parameter_b(), offset)?;
+        if self.is_a_0() {
+            integer_chip.assert_equal(region, x_cube_b, y_square, offset)?;
+        } else {
+            let a_x = &integer_chip.mul_constant(region, &point.x, &self.parameter_a(), offset)?;
+            let must_be_y_square = &integer_chip.add(region, a_x, x_cube_b, offset)?;
+            integer_chip.assert_equal(region, must_be_y_square, y_square, offset)?;
+        }
+
+        Ok(())
     }
 
     fn assign_point(&self, region: &mut Region<'_, N>, point: Emulated, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let integer_chip = self.base_field_chip();
+
         let point = self.into_rns_point(point);
-        // FIX: This won't help for a prover assigns the infinity
-        assert!(!point.is_identity);
-        let x = integer_chip.assign_integer(region, Some(point.x), offset)?;
-        let y = integer_chip.assign_integer(region, Some(point.y), offset)?;
+        let x = integer_chip.range_assign_integer(region, Some(point.x).into(), Range::Remainder, offset)?;
+        let y = integer_chip.range_assign_integer(region, Some(point.y).into(), Range::Remainder, offset)?;
         let z = self.main_gate().assign_bit(region, Some(N::zero()), offset)?;
-        Ok(AssignedPoint::new(x, y, z))
+        let point = AssignedPoint::new(x, y, z);
+        self.assert_is_on_curve(region, &point, offset)?;
+        Ok(point)
     }
 
     fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
@@ -194,40 +211,84 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
 #[cfg(test)]
 mod tests {
     use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
-    use crate::circuit::ecc::{AssignedPoint, EccConfig};
-    use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions};
-    use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
+    use crate::circuit::ecc::EccConfig;
+    use crate::circuit::main_gate::{MainGate, MainGateConfig};
     use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
     use crate::rns::Rns;
-    use group::prime::PrimeCurveAffine;
+    use crate::NUMBER_OF_LOOKUP_LIMBS;
+    use group::Group;
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
+    use halo2::pasta::EqAffine;
+    use halo2::pasta::Fp;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
 
-    // Testing EpAffine over Fq
-    use halo2::pasta::EpAffine as C;
-    use halo2::pasta::Fq as Native;
+    const BIT_LEN_LIMB: usize = 68;
+
+    fn rns<C: CurveAffine, N: FieldExt>() -> (Rns<C::Base, N>, Rns<C::ScalarExt, N>) {
+        let rns_base = Rns::<C::Base, N>::construct(BIT_LEN_LIMB);
+        let rns_scalar = Rns::<C::Scalar, N>::construct(BIT_LEN_LIMB);
+        (rns_base, rns_scalar)
+    }
+
+    fn setup<C: CurveAffine, N: FieldExt>() -> (Rns<C::Base, N>, Rns<C::ScalarExt, N>, u32) {
+        let (rns_base, rns_scalar) = rns::<C, N>();
+        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+        #[cfg(not(feature = "no_lookup"))]
+        let k: u32 = (bit_len_lookup + 1) as u32;
+        #[cfg(feature = "no_lookup")]
+        let k: u32 = 8;
+        (rns_base, rns_scalar, k)
+    }
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
         main_gate_config: MainGateConfig,
-        integer_chip_config: IntegerConfig,
-        ecc_chip_config: EccConfig,
         range_config: RangeConfig,
     }
 
     impl TestCircuitConfig {
-        fn overflow_bit_lengths() -> Vec<usize> {
-            vec![2, 3]
+        fn ecc_chip_config(&self) -> EccConfig {
+            EccConfig {
+                range_config: self.range_config.clone(),
+                main_gate_config: self.main_gate_config.clone(),
+            }
+        }
+    }
+
+    impl TestCircuitConfig {
+        fn new<C: CurveAffine, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
+            let main_gate_config = MainGate::<N>::configure(meta);
+
+            let (rns_base, rns_scalar) = rns::<C, N>();
+
+            let mut overflow_bit_lengths: Vec<usize> = vec![];
+            overflow_bit_lengths.extend(rns_base.overflow_lengths());
+            overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
+
+            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+
+            TestCircuitConfig {
+                main_gate_config,
+                range_config,
+            }
+        }
+
+        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
+            let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+            let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_limb_range_table(layouter)?;
+            #[cfg(not(feature = "no_lookup"))]
+            range_chip.load_overflow_range_tables(layouter)?;
+
+            Ok(())
         }
     }
 
     #[derive(Default, Clone, Debug)]
     struct TestEcc<C: CurveAffine, N: FieldExt> {
-        x: Option<C>,
-        y: Option<C>,
-        z: Option<C>,
         rns_base: Rns<C::Base, N>,
         rns_scalar: Rns<C::ScalarExt, N>,
     }
@@ -241,92 +302,76 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            let main_gate_config = MainGate::<N>::configure(meta);
-            let overflow_bit_lengths = TestCircuitConfig::overflow_bit_lengths();
-            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
-            let integer_chip_config = IntegerChip::<C::Base, N>::configure(meta, &range_config, &main_gate_config);
-            let ecc_chip_config = EccConfig {
-                main_gate_config: main_gate_config.clone(),
-                integer_chip_config: integer_chip_config.clone(),
-            };
-            TestCircuitConfig {
-                range_config,
-                integer_chip_config,
-                main_gate_config,
-                ecc_chip_config,
-            }
+            TestCircuitConfig::new::<C, N>(meta)
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let ecc_chip = GeneralEccChip::<C, N>::new(config.ecc_chip_config, self.rns_base.clone(), self.rns_scalar.clone())?;
-            let offset = &mut 0;
-            let main_gate = ecc_chip.main_gate();
-            let base_chip = ecc_chip.base_field_chip();
+            let ecc_chip_config = config.ecc_chip_config();
+            let ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, self.rns_base.clone(), self.rns_scalar.clone())?;
+
+            // let main_gate = ecc_chip.main_gate();
+            // let base_chip = ecc_chip.base_field_chip();
+
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
-                    let z = self.rns_base.new_from_big(0u32.into());
-                    let z = base_chip.assign_integer(&mut region, Some(z), offset)?;
-                    let c = main_gate.assign_bit(&mut region, Some(N::one()), offset)?;
-                    let identity = AssignedPoint::new(z.clone(), z, c);
-                    let px = match &self.x {
-                        Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
-                        None => identity.clone(),
-                    };
-                    let py = match &self.y {
-                        Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
-                        None => identity.clone(),
-                    };
-                    let pz = match &self.z {
-                        Some(x) => ecc_chip.assign_point(&mut region, x.clone(), offset)?,
-                        None => identity.clone(),
-                    };
-                    let r = ecc_chip.add(&mut region, &px, &py, offset)?;
-                    ecc_chip.assert_equal(&mut region, &r, &pz, offset)?;
+                    let offset = &mut 0;
+
+                    use rand::thread_rng;
+                    let mut rng = thread_rng();
+
+                    // this should fail
+
+                    // let x = self.rns_base.rand_in_remainder_range();
+                    // let y = self.rns_base.rand_in_remainder_range();
+                    // let z = N::zero();
+                    // let x = base_chip.assign_integer(&mut region, Some(x), offset)?;
+                    // let y = base_chip.assign_integer(&mut region, Some(y), offset)?;
+                    // let z = main_gate.assign_value(&mut region, &Some(z).into(), MainGateColumn::A, offset)?.into();
+                    // let point = AssignedPoint { x, y, z };
+                    // ecc_chip.assert_is_on_curve(&mut region, &point, offset)?;
+
+                    // test addition
+
+                    let a = C::CurveExt::random(&mut rng);
+                    let b = C::CurveExt::random(&mut rng);
+
+                    let c = a + b;
+                    let a = &ecc_chip.assign_point(&mut region, a.into(), offset)?;
+                    let b = &ecc_chip.assign_point(&mut region, b.into(), offset)?;
+                    let c_0 = &ecc_chip.assign_point(&mut region, c.into(), offset)?;
+
+                    let c_1 = &ecc_chip.add(&mut region, a, b, offset)?;
+                    ecc_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+
+                    // test doubling
+
+                    let e = C::CurveExt::random(&mut rng);
+                    let a = e.clone();
+                    let b = e.clone();
+                    let c = a + b;
+
+                    let a = &ecc_chip.assign_point(&mut region, a.into(), offset)?;
+                    let b = &ecc_chip.assign_point(&mut region, b.into(), offset)?;
+                    let c_0 = &ecc_chip.assign_point(&mut region, c.into(), offset)?;
+                    let c_1 = &ecc_chip.add(&mut region, a, b, offset)?;
+
+                    ecc_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+
                     Ok(())
                 },
             )?;
 
-            let range_chip = RangeChip::<N>::new(config.range_config, self.rns_base.bit_len_lookup);
-            #[cfg(not(feature = "no_lookup"))]
-            range_chip.load_limb_range_table(&mut layouter)?;
-            #[cfg(not(feature = "no_lookup"))]
-            range_chip.load_overflow_range_tables(&mut layouter)?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
     }
 
-    fn create_point(a: Option<u64>) -> Option<C> {
-        a.map(|a| {
-            let ma = <C as CurveAffine>::ScalarExt::from_raw([a, 0, 0, 0]);
-            let generator = <C as PrimeCurveAffine>::generator();
-            (generator * ma).into()
-        })
-    }
-
-    fn test_ecc_add_circuit(a: Option<u64>, b: Option<u64>, c: Option<u64>) {
-        let bit_len_limb = 68;
-
-        let rns_base = Rns::<<C as CurveAffine>::Base, Native>::construct(bit_len_limb);
-        let rns_scalar = Rns::<<C as CurveAffine>::ScalarExt, Native>::construct(bit_len_limb);
-
-        #[cfg(not(feature = "no_lookup"))]
-        let k: u32 = (rns_base.bit_len_lookup + 1) as u32;
-        #[cfg(feature = "no_lookup")]
-        let k: u32 = 8;
-
-        let x = create_point(a);
-        let y = create_point(b);
-        let z = create_point(c);
-
-        let circuit = TestEcc::<C, Native> {
-            x: x,
-            y: y,
-            z: z,
-            rns_base: rns_base.clone(),
-            rns_scalar: rns_scalar.clone(),
-        };
+    #[test]
+    fn test_general_ecc_addition() {
+        let (rns_base, rns_scalar, k) = setup::<EqAffine, Fp>();
+        let circuit = TestEcc::<EqAffine, Fp> { rns_base, rns_scalar };
 
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
@@ -334,20 +379,5 @@ mod tests {
         };
 
         assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[test]
-    fn test_ecc_add_circuit_eq() {
-        test_ecc_add_circuit(Some(2), Some(2), Some(4));
-    }
-
-    #[test]
-    fn test_ecc_add_circuit_neq() {
-        test_ecc_add_circuit(Some(2), Some(3), Some(5));
-    }
-
-    #[test]
-    fn test_ecc_add_circuit_zero_left() {
-        test_ecc_add_circuit(None, Some(3), Some(3));
     }
 }
