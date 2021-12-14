@@ -107,6 +107,7 @@ pub trait MainGateInstructions<F: FieldExt> {
     ) -> Result<AssignedValue<F>, Error>;
 
     fn assign_bit(&self, region: &mut Region<'_, F>, value: Option<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error>;
+
     fn assert_bit(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
 
     fn one_or_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;

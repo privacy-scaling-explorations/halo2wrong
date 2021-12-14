@@ -7,7 +7,7 @@ use crate::rns::{Common, Integer, Rns};
 use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
-use halo2::plonk::{ConstraintSystem, Error};
+use halo2::plonk::Error;
 
 mod add;
 mod assert_in_field;
@@ -34,7 +34,15 @@ pub struct IntegerConfig {
     main_gate_config: MainGateConfig,
 }
 
-#[derive(Clone, Debug)]
+impl IntegerConfig {
+    pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
+        Self {
+            range_config,
+            main_gate_config,
+        }
+    }
+}
+
 pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
     config: IntegerConfig,
     pub rns: Rns<Wrong, Native>,
@@ -60,6 +68,7 @@ pub trait IntegerInstructions<N: FieldExt> {
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn div(
         &self,
@@ -133,6 +142,12 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
             &self.reduce_if_max_operand_value_exceeds(region, b, offset)?,
         );
         self._mul(region, a, b, offset)
+    }
+
+    fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
+        self._mul_constant(region, a, b, offset)
     }
 
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
@@ -291,13 +306,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         IntegerChip { config, rns }
     }
 
-    pub fn configure(_: &mut ConstraintSystem<N>, range_config: &RangeConfig, main_gate_config: &MainGateConfig) -> IntegerConfig {
-        IntegerConfig {
-            range_config: range_config.clone(),
-            main_gate_config: main_gate_config.clone(),
-        }
-    }
-
     fn range_chip(&self) -> RangeChip<N> {
         let bit_len_lookup = self.rns.bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
         RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
@@ -313,9 +321,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::circuit::main_gate::{MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
-    use crate::circuit::range::{RangeChip, RangeInstructions};
+    use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
     use crate::circuit::{AssignedCondition, AssignedInteger, UnassignedValue};
     use crate::rns::{Common, Integer, Limb, Rns};
+    use crate::NUMBER_OF_LOOKUP_LIMBS;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -329,10 +338,10 @@ mod tests {
             self._assign_integer(region, integer, offset, false)
         }
     }
+    const BIT_LEN_LIMB: usize = 68;
 
     fn rns<W: FieldExt, N: FieldExt>() -> Rns<W, N> {
-        let bit_len_limb = 68;
-        Rns::<W, N>::construct(bit_len_limb)
+        Rns::<W, N>::construct(BIT_LEN_LIMB)
     }
 
     fn setup<W: FieldExt, N: FieldExt>() -> (Rns<W, N>, u32) {
@@ -346,24 +355,33 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
+        range_config: RangeConfig,
         main_gate_config: MainGateConfig,
-        integer_config: IntegerConfig,
     }
 
     impl TestCircuitConfig {
         fn new<W: FieldExt, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
+
             let overflow_bit_lengths = rns::<W, N>().overflow_lengths();
             let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
-            let integer_config = IntegerChip::<W, N>::configure(meta, &range_config, &main_gate_config);
+
             TestCircuitConfig {
-                integer_config,
+                range_config,
                 main_gate_config,
             }
         }
 
-        fn config_range<W: FieldExt, N: FieldExt>(&self, layouter: &mut impl Layouter<N>, rns: Rns<W, N>) -> Result<(), Error> {
-            let range_chip = RangeChip::<N>::new(self.integer_config.range_config.clone(), rns.bit_len_lookup);
+        fn integer_chip_config(&self) -> IntegerConfig {
+            IntegerConfig {
+                range_config: self.range_config.clone(),
+                main_gate_config: self.main_gate_config.clone(),
+            }
+        }
+
+        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
+            let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+            let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(layouter)?;
             #[cfg(not(feature = "no_lookup"))]
@@ -393,7 +411,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -411,7 +429,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -471,7 +489,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
 
             layouter.assign_region(
@@ -494,7 +512,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -529,7 +547,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
 
             layouter.assign_region(
@@ -569,7 +587,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -604,7 +622,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
 
             layouter.assign_region(
@@ -640,11 +658,7 @@ mod tests {
                 },
             )?;
 
-            let range_chip = RangeChip::<N>::new(config.integer_config.range_config, self.rns.bit_len_lookup);
-            #[cfg(not(feature = "no_lookup"))]
-            range_chip.load_limb_range_table(&mut layouter)?;
-            #[cfg(not(feature = "no_lookup"))]
-            range_chip.load_overflow_range_tables(&mut layouter)?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -680,7 +694,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -693,7 +707,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -762,7 +776,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -781,7 +795,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -863,7 +877,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -885,7 +899,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -963,7 +977,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -976,7 +990,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -1061,7 +1075,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
 
             layouter.assign_region(
@@ -1236,7 +1250,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -1271,7 +1285,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_config.clone(), self.rns.clone());
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
             let rns = self.rns.clone();
 
@@ -1345,7 +1359,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, self.rns.clone())?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -1355,6 +1369,7 @@ mod tests {
     fn test_condition_circuit() {
         let (rns, k) = setup();
         let circuit = TestCircuitConditionals::<Wrong, Native> { rns };
+
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),

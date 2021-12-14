@@ -1,5 +1,5 @@
-use super::integer::IntegerConfig;
 use super::main_gate::MainGateConfig;
+use super::{integer::IntegerConfig, range::RangeConfig};
 use crate::circuit::{AssignedCondition, AssignedInteger};
 use crate::rns::Integer;
 use halo2::arithmetic::FieldExt;
@@ -36,6 +36,12 @@ mod general_ecc;
 
 #[derive(Clone, Debug)]
 pub struct EccConfig {
-    integer_chip_config: IntegerConfig,
+    range_config: RangeConfig,
     main_gate_config: MainGateConfig,
+}
+
+impl EccConfig {
+    fn integer_chip_config(&self) -> IntegerConfig {
+        IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    }
 }
