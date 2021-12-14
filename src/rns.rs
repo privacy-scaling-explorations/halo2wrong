@@ -33,14 +33,6 @@ fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
     e
 }
 
-fn compose_fe<F: FieldExt>(input: Vec<F>, bit_len: usize) -> big_uint {
-    let mut e = big_uint::zero();
-    for (i, limb) in input.iter().enumerate() {
-        e += fe_to_big(*limb) << (bit_len * i)
-    }
-    e
-}
-
 pub trait Common<F: FieldExt> {
     fn value(&self) -> big_uint;
 
@@ -269,7 +261,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     }
 
     pub(crate) fn value(&self, a: &Integer<N>) -> big_uint {
-        compose_fe(a.limbs(), self.bit_len_limb)
+        compose(a.limbs().into_iter().map(|limb| fe_to_big(limb)).collect(), self.bit_len_limb)
     }
 
     pub(crate) fn compare_to_modulus(&self, integer: &Integer<N>) -> ComparisionResult<N> {
@@ -410,39 +402,35 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Limb<F: FieldExt> {
-    _value: F,
-}
+pub struct Limb<F: FieldExt>(F);
 
 impl<F: FieldExt> Common<F> for Limb<F> {
     fn value(&self) -> big_uint {
-        fe_to_big(self._value)
+        fe_to_big(self.0)
     }
 }
 
 impl<F: FieldExt> Default for Limb<F> {
     fn default() -> Self {
-        Limb { _value: F::zero() }
+        Limb(F::zero())
     }
 }
 
 impl<F: FieldExt> From<big_uint> for Limb<F> {
     fn from(e: big_uint) -> Self {
-        Self { _value: big_to_fe(e) }
+        Self(big_to_fe(e))
     }
 }
 
 impl<F: FieldExt> From<&str> for Limb<F> {
     fn from(e: &str) -> Self {
-        Self {
-            _value: big_to_fe(big_uint::from_str_radix(e, 16).unwrap()),
-        }
+        Self(big_to_fe(big_uint::from_str_radix(e, 16).unwrap()))
     }
 }
 
 impl<F: FieldExt> Limb<F> {
     pub(crate) fn new(value: F) -> Self {
-        Limb { _value: value }
+        Limb(value)
     }
 
     pub(crate) fn from_big(e: big_uint) -> Self {
@@ -450,7 +438,7 @@ impl<F: FieldExt> Limb<F> {
     }
 
     pub(crate) fn fe(&self) -> F {
-        self._value
+        self.0
     }
 }
 
@@ -497,7 +485,6 @@ impl<F: FieldExt> Integer<F> {
         Self::from_big(x, number_of_limbs, bit_len)
     }
 
-
     pub fn limbs(&self) -> Vec<F> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
     }
@@ -512,7 +499,7 @@ impl<F: FieldExt> Integer<F> {
 
     pub fn scale(&mut self, k: F) {
         for limb in self.limbs.iter_mut() {
-            limb._value = limb._value * k;
+            limb.0 = limb.0 * k;
         }
     }
 }

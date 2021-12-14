@@ -1,8 +1,8 @@
 use super::AssignedPoint;
+use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
 use crate::circuit::integer::IntegerInstructions;
 use crate::circuit::main_gate::MainGateInstructions;
 use crate::circuit::{Assigned, AssignedCondition, AssignedInteger};
-use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -73,13 +73,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
      * Thus coordinate z in point is used as an indicator of whether the point is
      * identity(infinity) or not.
      */
-    pub(crate) fn _add(
-        &self,
-        region: &mut Region<'_, F>,
-        a: &AssignedPoint<F>,
-        b: &AssignedPoint<F>,
-        offset: &mut usize,
-    ) -> Result<AssignedPoint<F>, Error> {
+    pub(crate) fn _add(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
         let main_gate = self.main_gate();
         let base_chip = self.base_field_chip();
 

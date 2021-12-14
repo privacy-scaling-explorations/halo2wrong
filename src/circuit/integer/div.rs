@@ -1,6 +1,6 @@
+use super::AssignedCondition;
 use super::IntegerChip;
 use super::IntegerInstructions;
-use super::AssignedCondition;
 use crate::circuit::AssignedInteger;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;

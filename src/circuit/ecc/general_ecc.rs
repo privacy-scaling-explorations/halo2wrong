@@ -4,10 +4,10 @@ use crate::circuit::main_gate::{MainGate, MainGateInstructions};
 use crate::circuit::{AssignedCondition, AssignedInteger};
 use crate::rns::{Integer, Rns};
 use halo2::arithmetic::{CurveAffine, Field, FieldExt};
-use halo2::circuit::{Region, Layouter};
+use halo2::circuit::Region;
 use halo2::plonk::Error;
 
-use crate::circuit::ecc::{Point, AssignedPoint};
+use crate::circuit::ecc::{AssignedPoint, Point};
 
 pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
     fn assign_point(&self, region: &mut Region<'_, N>, point: Emulated, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
@@ -32,21 +32,9 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error>;
 
-    fn assert_equal(
-        &self,
-        region: &mut Region<'_, N>,
-        p0: &AssignedPoint<N>,
-        p1: &AssignedPoint<N>,
-        offset: &mut usize,
-    ) -> Result<(), Error>;
+    fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error>;
 
-    fn add(
-        &self,
-        region: &mut Region<'_, N>,
-        p0: &AssignedPoint<N>,
-        p1: &AssignedPoint<N>,
-        offset: &mut usize,
-    ) -> Result<AssignedPoint<N>, Error>;
+    fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
     fn double(&self, region: &mut Region<'_, N>, p: AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
@@ -58,31 +46,21 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error>;
 
-    fn mul_fix(
-        &self,
-        region: &mut Region<'_, N>,
-        p: Point<N>,
-        e: AssignedInteger<Emulated::ScalarExt>,
-        offset: &mut usize,
-    ) -> Result<AssignedPoint<N>, Error>;
+    fn mul_fix(&self, region: &mut Region<'_, N>, p: Point<N>, e: AssignedInteger<Emulated::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 }
 
 pub struct GeneralEccChip<Emulated: CurveAffine, F: FieldExt> {
-    pub (super) config: EccConfig,
-    pub (super) rns_base_field: Rns<Emulated::Base, F>,
-    pub (super) rns_scalar_field: Rns<Emulated::Scalar, F>,
+    pub(super) config: EccConfig,
+    pub(super) rns_base_field: Rns<Emulated::Base, F>,
+    pub(super) rns_scalar_field: Rns<Emulated::Scalar, F>,
 }
 
 // Ecc operation mods
 mod add;
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
-    pub (super) fn new(
-        config: EccConfig,
-        rns_base_field: Rns<Emulated::Base, N>,
-        rns_scalar_field: Rns<Emulated::ScalarExt, N>
-    ) -> Result<Self, Error> {
-        Ok (Self {
+    pub(super) fn new(config: EccConfig, rns_base_field: Rns<Emulated::Base, N>, rns_scalar_field: Rns<Emulated::ScalarExt, N>) -> Result<Self, Error> {
+        Ok(Self {
             config,
             rns_base_field,
             rns_scalar_field,
@@ -146,13 +124,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         Ok(AssignedPoint::new(x, y, z))
     }
 
-    fn assert_equal(
-        &self,
-        region: &mut Region<'_, N>,
-        p0: &AssignedPoint<N>,
-        p1: &AssignedPoint<N>,
-        offset: &mut usize,
-    ) -> Result<(), Error> {
+    fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let integer_chip = self.base_field_chip();
         integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
@@ -196,13 +168,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         Ok(AssignedPoint::new(x, y, c))
     }
 
-    fn add(
-        &self,
-        region: &mut Region<'_, N>,
-        p0: &AssignedPoint<N>,
-        p1: &AssignedPoint<N>,
-        offset: &mut usize,
-    ) -> Result<AssignedPoint<N>, Error> {
+    fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         self._add(region, p0, p1, offset)
     }
 
@@ -220,30 +186,24 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         unimplemented!();
     }
 
-    fn mul_fix(
-        &self,
-        region: &mut Region<'_, N>,
-        p: Point<N>,
-        e: AssignedInteger<Emulated::ScalarExt>,
-        offset: &mut usize,
-    ) -> Result<AssignedPoint<N>, Error> {
+    fn mul_fix(&self, region: &mut Region<'_, N>, p: Point<N>, e: AssignedInteger<Emulated::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         unimplemented!();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use halo2::arithmetic::{CurveAffine, FieldExt, Field};
+    use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
+    use crate::circuit::ecc::{AssignedPoint, EccConfig, Point};
     use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
-    use crate::circuit::range::{RangeChip, RangeInstructions, RangeConfig};
-    use crate::circuit::ecc::{Point, EccConfig, AssignedPoint};
-    use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
+    use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
     use crate::rns::{Integer, Limb, Rns};
+    use group::{prime::PrimeCurveAffine, Curve};
+    use halo2::arithmetic::{CurveAffine, Field, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
-    use group::{Curve, prime::PrimeCurveAffine};
 
     // Testing EpAffine over Fq
     use halo2::pasta::EpAffine as C;
@@ -287,7 +247,7 @@ mod tests {
             let integer_chip_config = IntegerChip::<C::Base, N>::configure(meta, &range_config, &main_gate_config);
             let ecc_chip_config = EccConfig {
                 main_gate_config: main_gate_config.clone(),
-                integer_chip_config: integer_chip_config.clone()
+                integer_chip_config: integer_chip_config.clone(),
             };
             TestCircuitConfig {
                 range_config,
@@ -298,11 +258,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let ecc_chip = GeneralEccChip::<C, N>::new(
-                config.ecc_chip_config,
-                self.rns_base.clone(),
-                self.rns_scalar.clone()
-            )?;
+            let ecc_chip = GeneralEccChip::<C, N>::new(config.ecc_chip_config, self.rns_base.clone(), self.rns_scalar.clone())?;
             let offset = &mut 0;
             let main_gate = ecc_chip.main_gate();
             let base_chip = ecc_chip.base_field_chip();
@@ -331,7 +287,6 @@ mod tests {
                 },
             )?;
 
-
             let range_chip = RangeChip::<N>::new(config.range_config, self.rns_base.bit_len_lookup);
             #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(&mut layouter)?;
@@ -342,15 +297,15 @@ mod tests {
         }
     }
 
-    fn create_point(a: Option<u64>) -> Option<C>{
+    fn create_point(a: Option<u64>) -> Option<C> {
         a.map(|a| {
-            let ma = <C as CurveAffine>::ScalarExt::from_raw([a,0,0,0]);
-            let generator = <C as PrimeCurveAffine> :: generator();
+            let ma = <C as CurveAffine>::ScalarExt::from_raw([a, 0, 0, 0]);
+            let generator = <C as PrimeCurveAffine>::generator();
             (generator * ma).into()
         })
     }
 
-    fn test_ecc_add_circuit(a:Option<u64>, b:Option<u64>, c:Option<u64>) {
+    fn test_ecc_add_circuit(a: Option<u64>, b: Option<u64>, c: Option<u64>) {
         let bit_len_limb = 64;
 
         let rns_base = Rns::<<C as CurveAffine>::Base, Native>::construct(bit_len_limb);
@@ -381,19 +336,18 @@ mod tests {
         assert_eq!(prover.verify(), Ok(()));
     }
 
-
     #[test]
-    fn test_ecc_add_circuit_eq () {
-      test_ecc_add_circuit(Some(2), Some(2), Some(4));
+    fn test_ecc_add_circuit_eq() {
+        test_ecc_add_circuit(Some(2), Some(2), Some(4));
     }
 
     #[test]
-    fn test_ecc_add_circuit_neq () {
-      test_ecc_add_circuit(Some(2), Some(3), Some(5));
+    fn test_ecc_add_circuit_neq() {
+        test_ecc_add_circuit(Some(2), Some(3), Some(5));
     }
 
     #[test]
-    fn test_ecc_add_circuit_zero_left () {
-      test_ecc_add_circuit(None, Some(3), Some(3));
+    fn test_ecc_add_circuit_zero_left() {
+        test_ecc_add_circuit(None, Some(3), Some(3));
     }
 }

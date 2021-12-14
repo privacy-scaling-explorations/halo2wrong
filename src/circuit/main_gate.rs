@@ -126,12 +126,7 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedCondition<F>, Error>;
 
-    fn cond_not(
-        &self,
-        region: &mut Region<'_, F>,
-        c: &AssignedCondition<F>,
-        offset: &mut usize,
-    ) -> Result<AssignedCondition<F>, Error>;
+    fn cond_not(&self, region: &mut Region<'_, F>, c: &AssignedCondition<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error>;
 
     fn cond_select(
         &self,
@@ -646,12 +641,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         Ok(AssignedCondition::new(cell, c))
     }
 
-    fn cond_not(
-        &self,
-        region: &mut Region<'_, F>,
-        c: &AssignedCondition<F>,
-        offset: &mut usize,
-    ) -> Result<AssignedCondition<F>, Error> {
+    fn cond_not(&self, region: &mut Region<'_, F>, c: &AssignedCondition<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
         let one = F::one();
 
         let not_c = match c.value() {

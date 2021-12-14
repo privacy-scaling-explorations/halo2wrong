@@ -1,8 +1,8 @@
 use super::integer::IntegerConfig;
 use super::main_gate::MainGateConfig;
 use crate::circuit::{AssignedCondition, AssignedInteger};
-use halo2::arithmetic::{FieldExt};
-use crate::rns::{Integer};
+use crate::rns::Integer;
+use halo2::arithmetic::FieldExt;
 
 #[derive(Default, Clone, Debug)]
 pub struct Point<N: FieldExt> {
@@ -23,7 +23,7 @@ pub struct AssignedPoint<N: FieldExt> {
 
 impl<F: FieldExt> AssignedPoint<F> {
     pub fn new(x: AssignedInteger<F>, y: AssignedInteger<F>, z: AssignedCondition<F>) -> AssignedPoint<F> {
-        AssignedPoint { x, y, z,}
+        AssignedPoint { x, y, z }
     }
 
     pub fn is_identity(&self) -> AssignedCondition<F> {
@@ -39,5 +39,3 @@ pub struct EccConfig {
     integer_chip_config: IntegerConfig,
     main_gate_config: MainGateConfig,
 }
-
-
