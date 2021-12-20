@@ -1,4 +1,4 @@
-use super::{IntegerChip, IntegerInstructions};
+use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
@@ -11,21 +11,11 @@ use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn mul_v0_range_tune(&self) -> usize {
-        self.rns.bit_len_limb + 2
+        self.rns.bit_len_limb + self.rns.mul_v0_overflow
     }
 
     pub(crate) fn mul_v1_range_tune(&self) -> usize {
-        self.rns.bit_len_limb + 3
-    }
-
-    pub(crate) fn mul_quotient_range_tune(&self) -> usize {
-        // TODO
-        self.rns.bit_len_limb
-    }
-
-    pub(crate) fn mul_result_range_tune(&self) -> usize {
-        // TODO
-        self.rns.bit_len_limb
+        self.rns.bit_len_limb + self.rns.mul_v1_overflow
     }
 
     pub(crate) fn _mul(
@@ -38,10 +28,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| {
-            let b_integer = b.integer().unwrap();
+        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| {
+            let b_integer = b.integer(self.rns.bit_len_limb).unwrap();
             self.rns.mul(&integer_a, &b_integer)
         });
 
@@ -63,8 +53,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
 
         let range_chip = self.range_chip();
-        let quotient = &self.range_assign_integer(region, quotient.into(), self.mul_quotient_range_tune(), offset)?;
-        let result = &self.range_assign_integer(region, result.into(), self.mul_result_range_tune(), offset)?;
+        let quotient = &self.range_assign_integer(region, quotient.into(), Range::MulQuotient, offset)?;
+        let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
         let v_0 = &range_chip.range_value(region, &v_0.into(), self.mul_v0_range_tune(), offset)?;
         let v_1 = &range_chip.range_value(region, &v_1.into(), self.mul_v1_range_tune(), offset)?;
 

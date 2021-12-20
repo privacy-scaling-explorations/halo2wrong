@@ -194,13 +194,13 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
 #[cfg(test)]
 mod tests {
     use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
-    use crate::circuit::ecc::{AssignedPoint, EccConfig, Point};
+    use crate::circuit::ecc::{AssignedPoint, EccConfig};
     use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
     use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
-    use crate::rns::{Integer, Limb, Rns};
-    use group::{prime::PrimeCurveAffine, Curve};
-    use halo2::arithmetic::{CurveAffine, Field, FieldExt};
+    use crate::rns::Rns;
+    use group::prime::PrimeCurveAffine;
+    use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
@@ -306,7 +306,7 @@ mod tests {
     }
 
     fn test_ecc_add_circuit(a: Option<u64>, b: Option<u64>, c: Option<u64>) {
-        let bit_len_limb = 64;
+        let bit_len_limb = 68;
 
         let rns_base = Rns::<<C as CurveAffine>::Base, Native>::construct(bit_len_limb);
         let rns_scalar = Rns::<<C as CurveAffine>::ScalarExt, Native>::construct(bit_len_limb);

@@ -1,4 +1,4 @@
-use super::{IntegerChip, IntegerInstructions};
+use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::{AssignedInteger, AssignedValue};
 use halo2::arithmetic::FieldExt;
@@ -6,11 +6,6 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    fn range_tune_assert_in_field_result(&self) -> usize {
-        // TODO:
-        self.rns.bit_len_limb
-    }
-
     pub(crate) fn _assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         // Constraints:
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
@@ -32,13 +27,13 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let modulus_minus_one = &self.rns.wrong_modulus_minus_one.clone();
 
         // result containts borrows must be bits and subtraaction result must be in range
-        let comparision_result = input.integer().map(|input| {
+        let comparision_result = input.integer(self.rns.bit_len_limb).map(|input| {
             let comparision_result = self.rns.compare_to_modulus(&input);
             comparision_result
         });
 
         let result = comparision_result.as_ref().map(|r| r.result.clone());
-        let result = &self.range_assign_integer(region, result.into(), self.range_tune_assert_in_field_result(), offset)?;
+        let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
 
         // assert borrow values are bits
         let borrow = comparision_result.as_ref().map(|r| r.borrow.clone());

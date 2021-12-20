@@ -33,6 +33,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let c_native = main_gate.sub_with_constant(region, a.native(), b.native(), aux_native, offset)?;
 
-        Ok(AssignedInteger::new(c_limbs, c_native))
+        Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 }

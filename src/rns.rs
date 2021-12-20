@@ -1,4 +1,4 @@
-use crate::{BIT_LEN_LIMB, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
@@ -25,7 +25,7 @@ pub fn decompose<F: FieldExt>(e: big_uint, number_of_limbs: usize, bit_len: usiz
     limbs
 }
 
-fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
+pub fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
     let mut e = big_uint::zero();
     for (i, limb) in input.iter().enumerate() {
         e += limb << (bit_len * i)
@@ -103,23 +103,44 @@ pub(crate) struct ComparisionResult<N: FieldExt> {
 
 #[derive(Debug, Clone, Default)]
 pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
+    pub bit_len_limb: usize,
+    pub bit_len_lookup: usize,
+
+    pub wrong_modulus: big_uint,
+    pub native_modulus: big_uint,
+    pub binary_modulus: big_uint,
+    pub crt_modulus: big_uint,
+
     pub right_shifter_r: Native,
     pub right_shifter_2r: Native,
     pub left_shifter_r: Native,
     pub left_shifter_2r: Native,
     pub left_shifter_3r: Native,
+
     pub aux: Integer<Native>,
-    pub negative_wrong_modulus: Vec<Native>,
+
+    pub negative_wrong_modulus_decomposed: Vec<Native>,
     pub wrong_modulus_decomposed: Vec<Native>,
     pub wrong_modulus_minus_one: Integer<Native>,
     pub wrong_modulus_in_native_modulus: Native,
-    pub bit_len_prenormalized: usize,
-    pub bit_len_limb: usize,
-    pub bit_len_lookup: usize,
-    pub wrong_modulus: big_uint,
-    pub limb_max_val: big_uint,
-    pub most_significant_limb_max_val: big_uint,
-    pub native_modulus: big_uint,
+
+    pub max_reduced_limb: big_uint,
+    pub max_unreduced_limb: big_uint,
+    pub max_remainder: big_uint,
+    pub max_operand: big_uint,
+    pub max_mul_quotient: big_uint,
+
+    pub max_most_significant_reduced_limb: big_uint,
+    pub max_most_significant_operand_limb: big_uint,
+    pub max_most_significant_unreduced_limb: big_uint,
+    pub max_most_significant_mul_quotient_limb: big_uint,
+
+    pub mul_v0_overflow: usize,
+    pub mul_v1_overflow: usize,
+
+    pub red_v0_overflow: usize,
+    pub red_v1_overflow: usize,
+
     two_limb_mask: big_uint,
     _marker_wrong: PhantomData<Wrong>,
 }
@@ -157,14 +178,24 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let aux = Integer {
             limbs: aux.iter().map(|aux_limb| Limb::from_big(aux_limb.clone())).collect(),
+            bit_len_limb,
         };
 
         aux
     }
 
     pub(crate) fn construct(bit_len_limb: usize) -> Self {
-        let bit_len_crt_modulus = bit_len_limb * NUMBER_OF_LIMBS;
-        let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
+        let one = &big_uint::one();
+
+        let binary_modulus_bit_len = bit_len_limb * NUMBER_OF_LIMBS;
+        let binary_modulus = &(one << binary_modulus_bit_len);
+        let wrong_modulus = &modulus::<W>();
+        let native_modulus = &modulus::<N>();
+
+        assert!(binary_modulus > wrong_modulus);
+        assert!(binary_modulus > native_modulus);
+        assert!(binary_modulus * native_modulus > wrong_modulus * wrong_modulus);
+
         let two = N::from_u64(2);
         let two_inv = two.invert().unwrap();
         let right_shifter_r = two_inv.pow(&[bit_len_limb as u64, 0, 0, 0]);
@@ -172,42 +203,161 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let left_shifter_r = two.pow(&[bit_len_limb as u64, 0, 0, 0]);
         let left_shifter_2r = two.pow(&[2 * bit_len_limb as u64, 0, 0, 0]);
         let left_shifter_3r = two.pow(&[3 * bit_len_limb as u64, 0, 0, 0]);
-        let wrong_modulus = modulus::<W>();
-        let native_modulus = modulus::<N>();
-        let wrong_modulus_in_native_modulus: N = big_to_fe(wrong_modulus.clone() % native_modulus.clone());
-        let t = big_uint::one() << bit_len_crt_modulus;
-        let negative_wrong_modulus = decompose(t - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
-        let wrong_modulus_decomposed = decompose(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
 
+        let wrong_modulus_in_native_modulus: N = big_to_fe(wrong_modulus.clone() % native_modulus.clone());
+
+        let negative_wrong_modulus_decomposed: Vec<N> = decompose(binary_modulus - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let wrong_modulus_decomposed: Vec<N> = decompose(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
         let wrong_modulus_minus_one = Integer::<N>::from_big(wrong_modulus.clone() - 1usize, NUMBER_OF_LIMBS, bit_len_limb);
 
-        let two_limb_mask = (big_uint::one() << (bit_len_limb * 2)) - 1usize;
+        let two_limb_mask = (one << (bit_len_limb * 2)) - 1usize;
         let aux = Self::aux(bit_len_limb);
 
-        let limb_max_val = (big_uint::one() << bit_len_limb) - 1usize;
-        let bit_len_prenormalized = wrong_modulus.bits() as usize;
-        let most_significant_limb_bit_len = bit_len_prenormalized - (bit_len_limb * (NUMBER_OF_LIMBS - 1));
-        let most_significant_limb_max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
+        let crt_modulus = &(binary_modulus * native_modulus);
+        let crt_modulus_bit_len = crt_modulus.bits();
+
+        // n * T > a' * a'
+        let pre_max_operand_bit_len = (crt_modulus_bit_len / 2) - 1;
+        let pre_max_operand = &((one << pre_max_operand_bit_len) - one);
+
+        // n * T > q * w + r
+        let wrong_modulus_len = wrong_modulus.bits();
+        let max_remainder = &((one << wrong_modulus_len) - one);
+
+        let pre_max_mul_quotient: &big_uint = &((crt_modulus - max_remainder) / wrong_modulus);
+        let max_mul_quotient = &((one << (pre_max_mul_quotient.bits() - 1)) - big_uint::one());
+
+        let max_operand_bit_len = (max_mul_quotient * wrong_modulus + max_remainder).bits() / 2 - 1;
+        let max_operand = &((one << max_operand_bit_len) - one);
+
+        let max_reduced_limb = &(one << bit_len_limb) - one;
+        // TODO: this is for now just a placeholder not so accurate
+        let max_unreduced_limb = &(one << (bit_len_limb + bit_len_limb / 2)) - one;
+
+        assert!(*crt_modulus > pre_max_operand * pre_max_operand);
+        assert!(pre_max_operand > wrong_modulus);
+        assert!(*crt_modulus > (max_mul_quotient * wrong_modulus) + max_remainder);
+        assert!(max_mul_quotient > wrong_modulus);
+        assert!(max_operand <= pre_max_operand);
+        assert!(max_operand > wrong_modulus);
+        assert!(*crt_modulus > max_operand * max_operand);
+        assert!(max_mul_quotient * wrong_modulus + max_remainder > max_operand * max_operand);
+
+        let max_most_significant_reduced_limb = &(max_remainder >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
+        let max_most_significant_operand_limb = &(max_operand >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
+        // TODO: this is for now just a placeholder not so accurate
+        let max_most_significant_unreduced_limb = &(max_unreduced_limb.clone());
+        let max_most_significant_mul_quotient_limb = &(max_mul_quotient >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
+
+        assert!((max_most_significant_reduced_limb.bits() as usize) < bit_len_limb);
+        assert!((max_most_significant_operand_limb.bits() as usize) < bit_len_limb);
+        assert!((max_most_significant_mul_quotient_limb.bits() as usize) <= bit_len_limb);
+
+        // emulate multiplication to find out max residue overflows
+        let (mul_v0_max, mul_v1_max) = {
+            let a = vec![
+                max_reduced_limb.clone(),
+                max_reduced_limb.clone(),
+                max_reduced_limb.clone(),
+                max_most_significant_operand_limb.clone(),
+            ];
+            let p: Vec<big_uint> = negative_wrong_modulus_decomposed.iter().map(|e| fe_to_big(*e)).collect();
+            let q = vec![
+                max_reduced_limb.clone(),
+                max_reduced_limb.clone(),
+                max_reduced_limb.clone(),
+                max_most_significant_mul_quotient_limb.clone(),
+            ];
+
+            let mut t = vec![big_uint::zero(); 2 * NUMBER_OF_LIMBS - 1];
+            for i in 0..NUMBER_OF_LIMBS {
+                for j in 0..NUMBER_OF_LIMBS {
+                    t[i + j] = &t[i + j] + &a[i] * &a[j] + &p[i] * &q[j];
+                }
+            }
+
+            let u0 = &t[0] + (&t[1] << bit_len_limb);
+            let u1 = &t[2] + (&t[3] << bit_len_limb);
+            let u1 = u1 + (u0.clone() >> (2 * bit_len_limb));
+
+            let v0 = u0.clone() >> (2 * bit_len_limb);
+            let v1 = u1.clone() >> (2 * bit_len_limb);
+
+            (v0, v1)
+        };
+        let mul_v0_overflow = mul_v0_max.bits() as usize - bit_len_limb;
+        let mul_v1_overflow = mul_v1_max.bits() as usize - bit_len_limb;
+
+        // emulate reduction to find out max residue overflows
+        let (red_v0_max, red_v1_max) = {
+            let a = vec![
+                max_unreduced_limb.clone(),
+                max_unreduced_limb.clone(),
+                max_unreduced_limb.clone(),
+                max_unreduced_limb.clone(),
+            ];
+            let a_value = compose(a.clone(), bit_len_limb);
+            let q_max = a_value / wrong_modulus;
+            assert!(q_max < (one << bit_len_limb));
+
+            let p: Vec<big_uint> = negative_wrong_modulus_decomposed.iter().map(|e| fe_to_big(*e)).collect();
+            let q = &max_reduced_limb.clone();
+            let t: Vec<big_uint> = a.iter().zip(p.iter()).map(|(a, p)| a + q * p).collect();
+
+            let u0 = &t[0] + (&t[1] << bit_len_limb);
+            let u1 = &t[2] + (&t[3] << bit_len_limb);
+            let u1 = u1 + (u0.clone() >> (2 * bit_len_limb));
+
+            let v0 = u0.clone() >> (2 * bit_len_limb);
+            let v1 = u1.clone() >> (2 * bit_len_limb);
+
+            (v0, v1)
+        };
+        let red_v0_overflow = red_v0_max.bits() as usize - bit_len_limb;
+        let red_v1_overflow = red_v1_max.bits() as usize - bit_len_limb;
+
+        let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
+        assert!(bit_len_lookup * NUMBER_OF_LOOKUP_LIMBS == bit_len_limb);
 
         Rns {
+            bit_len_limb,
+            bit_len_lookup,
+
             right_shifter_r,
             right_shifter_2r,
             left_shifter_r,
             left_shifter_2r,
             left_shifter_3r,
-            wrong_modulus,
-            native_modulus,
-            negative_wrong_modulus,
+
+            wrong_modulus: wrong_modulus.clone(),
+            native_modulus: native_modulus.clone(),
+            binary_modulus: binary_modulus.clone(),
+            crt_modulus: crt_modulus.clone(),
+
+            aux,
+
+            negative_wrong_modulus_decomposed,
             wrong_modulus_decomposed,
             wrong_modulus_minus_one,
             wrong_modulus_in_native_modulus,
-            aux,
+
+            max_reduced_limb,
+            max_unreduced_limb,
+            max_remainder: max_remainder.clone(),
+            max_operand: max_operand.clone(),
+            max_mul_quotient: max_mul_quotient.clone(),
+
+            max_most_significant_reduced_limb: max_most_significant_reduced_limb.clone(),
+            max_most_significant_operand_limb: max_most_significant_operand_limb.clone(),
+            max_most_significant_unreduced_limb: max_most_significant_unreduced_limb.clone(),
+            max_most_significant_mul_quotient_limb: max_most_significant_mul_quotient_limb.clone(),
+
+            mul_v0_overflow,
+            mul_v1_overflow,
+            red_v0_overflow,
+            red_v1_overflow,
+
             two_limb_mask,
-            bit_len_limb,
-            bit_len_lookup,
-            bit_len_prenormalized,
-            limb_max_val,
-            most_significant_limb_max_val,
             _marker_wrong: PhantomData,
         }
     }
@@ -222,7 +372,11 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
     pub(crate) fn new_from_limbs(&self, limbs: Vec<N>) -> Integer<N> {
         let limbs = limbs.iter().map(|limb| Limb::<N>::new(*limb)).collect();
-        Integer { limbs }
+
+        Integer {
+            limbs,
+            bit_len_limb: self.bit_len_limb,
+        }
     }
 
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
@@ -231,33 +385,46 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     }
 
     #[cfg(test)]
-    pub(crate) fn rand_normalized(&self) -> Integer<N> {
+    pub(crate) fn rand_in_field(&self) -> Integer<N> {
         self.new_from_big(fe_to_big(W::rand()))
     }
 
     #[cfg(test)]
-    pub(crate) fn rand_prenormalized(&self) -> Integer<N> {
+    pub(crate) fn rand_in_remainder_range(&self) -> Integer<N> {
         use num_bigint::RandBigInt;
         use rand::thread_rng;
         let mut rng = thread_rng();
-        let el = rng.gen_biguint(self.bit_len_prenormalized as u64);
+        let el = rng.gen_biguint(self.max_remainder.bits() as u64);
         self.new_from_big(el)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rand_in_operand_range(&self) -> Integer<N> {
+        use num_bigint::RandBigInt;
+        use rand::thread_rng;
+        let mut rng = thread_rng();
+        let el = rng.gen_biguint(self.max_operand.bits() as u64);
+        self.new_from_big(el)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rand_in_unreduced(&self) -> Integer<N> {
+        self.rand_with_limb_bit_size(self.max_unreduced_limb.bits() as usize)
     }
 
     #[cfg(test)]
     pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<N> {
         use num_bigint::RandBigInt;
         use rand::thread_rng;
-        let limbs: Vec<Limb<N>> = (0..NUMBER_OF_LIMBS)
+        let limbs: Vec<N> = (0..NUMBER_OF_LIMBS)
             .map(|_| {
                 let mut rng = thread_rng();
                 let el = rng.gen_biguint(bit_len as u64);
-                let limb: Limb<N> = el.into();
-                limb
+                big_to_fe(el)
             })
             .collect();
 
-        Integer { limbs }
+        self.new_from_limbs(limbs)
     }
 
     pub(crate) fn value(&self, a: &Integer<N>) -> big_uint {
@@ -294,7 +461,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
     pub(crate) fn mul(&self, integer_0: &Integer<N>, integer_1: &Integer<N>) -> ReductionContext<N> {
         let modulus = self.wrong_modulus.clone();
-        let negative_modulus = self.negative_wrong_modulus.clone();
+        let negative_modulus = self.negative_wrong_modulus_decomposed.clone();
 
         let (quotient, result) = (self.value(integer_0) * self.value(integer_1)).div_rem(&modulus);
 
@@ -327,7 +494,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
     pub(crate) fn reduce(&self, integer: &Integer<N>) -> ReductionContext<N> {
         let modulus = self.wrong_modulus.clone();
-        let negative_modulus = self.negative_wrong_modulus.clone();
+        let negative_modulus = self.negative_wrong_modulus_decomposed.clone();
 
         let (quotient, result) = self.value(integer).div_rem(&modulus);
         assert!(quotient < big_uint::one() << self.bit_len_limb);
@@ -399,6 +566,21 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             self.new_from_big(a_mul_b)
         })
     }
+
+    pub(crate) fn overflow_lengths(&self) -> Vec<usize> {
+        let max_most_significant_mul_quotient_limb_size = self.max_most_significant_mul_quotient_limb.bits() as usize % self.bit_len_lookup;
+        let max_most_significant_operand_limb_size = self.max_most_significant_operand_limb.bits() as usize % self.bit_len_lookup;
+        let max_most_significant_reduced_limb_size = self.max_most_significant_reduced_limb.bits() as usize % self.bit_len_lookup;
+        vec![
+            self.mul_v0_overflow,
+            self.mul_v1_overflow,
+            self.red_v0_overflow,
+            self.red_v1_overflow,
+            max_most_significant_mul_quotient_limb_size,
+            max_most_significant_operand_limb_size,
+            max_most_significant_reduced_limb_size,
+        ]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -445,6 +627,7 @@ impl<F: FieldExt> Limb<F> {
 #[derive(Clone, Default)]
 pub struct Integer<F: FieldExt> {
     limbs: Vec<Limb<F>>,
+    bit_len_limb: usize,
 }
 
 impl<F: FieldExt> fmt::Debug for Integer<F> {
@@ -464,20 +647,20 @@ impl<F: FieldExt> fmt::Debug for Integer<F> {
 impl<N: FieldExt> Common<N> for Integer<N> {
     fn value(&self) -> big_uint {
         let limb_values = self.limbs.iter().map(|limb| limb.value()).collect();
-        compose(limb_values, BIT_LEN_LIMB)
+        compose(limb_values, self.bit_len_limb)
     }
 }
 
 impl<F: FieldExt> Integer<F> {
-    pub fn new(limbs: Vec<Limb<F>>) -> Self {
+    pub fn new(limbs: Vec<Limb<F>>, bit_len_limb: usize) -> Self {
         assert!(limbs.len() == NUMBER_OF_LIMBS);
-        Self { limbs }
+        Self { limbs, bit_len_limb }
     }
 
-    pub fn from_big(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Self {
-        let limbs = decompose::<F>(e, number_of_limbs, bit_len);
+    pub fn from_big(e: big_uint, number_of_limbs: usize, bit_len_limb: usize) -> Self {
+        let limbs = decompose::<F>(e, number_of_limbs, bit_len_limb);
         let limbs = limbs.iter().map(|e| Limb::<F>::new(*e)).collect();
-        Self { limbs }
+        Self { limbs, bit_len_limb }
     }
 
     pub fn from_bytes_le(e: &[u8], number_of_limbs: usize, bit_len: usize) -> Self {
@@ -513,11 +696,18 @@ mod tests {
     use crate::NUMBER_OF_LIMBS;
     use halo2::arithmetic::FieldExt;
     use halo2::pasta::Fp;
+    use halo2::pasta::Fp as Wrong;
     use halo2::pasta::Fq;
+    use halo2::pasta::Fq as Native;
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::{One, Zero};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+
+    fn rns() -> Rns<Wrong, Native> {
+        let bit_len_limb = 68;
+        Rns::<Wrong, Native>::construct(bit_len_limb)
+    }
 
     #[test]
     fn test_decomposing() {
@@ -532,12 +722,7 @@ mod tests {
 
     #[test]
     fn test_rns_constants() {
-        use halo2::pasta::Fp as Wrong;
-        use halo2::pasta::Fq as Native;
-
-        let bit_len_limb = 64;
-
-        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+        let rns = rns();
 
         let wrong_modulus = rns.wrong_modulus.clone();
         let native_modulus = modulus::<Native>();
@@ -577,17 +762,14 @@ mod tests {
 
     #[test]
     fn test_integer() {
-        use halo2::pasta::Fp as Wrong;
-        use halo2::pasta::Fq as Native;
-        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
-        let bit_len_limb = 64;
+        let rns = rns();
 
-        let rns = Rns::<Wrong, Native>::construct(bit_len_limb);
+        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
 
         let wrong_modulus = rns.wrong_modulus.clone();
 
         // conversion
-        let el_0 = rng.gen_biguint((bit_len_limb * NUMBER_OF_LIMBS) as u64);
+        let el_0 = rng.gen_biguint((rns.bit_len_limb * NUMBER_OF_LIMBS) as u64);
         let el = rns.new_from_big(el_0.clone());
         let el_1 = el.value();
         assert_eq!(el_0, el_1);
@@ -606,8 +788,8 @@ mod tests {
 
         // mul
         for _ in 0..10000 {
-            let el_0 = &rns.rand_prenormalized();
-            let el_1 = &rns.rand_prenormalized();
+            let el_0 = &rns.rand_in_remainder_range();
+            let el_1 = &rns.rand_in_remainder_range();
             let result_0 = (el_0.value() * el_1.value()) % wrong_modulus.clone();
             let reduction_context = rns.mul(&el_0, &el_1);
             let result_1 = reduction_context.result;
@@ -616,7 +798,7 @@ mod tests {
 
         // inv
         for _ in 0..10000 {
-            let el = &rns.rand_prenormalized();
+            let el = &rns.rand_in_remainder_range();
             let result = rns.invert(&el);
             let result = result.map(|inv| (inv.value() * el.value()) % wrong_modulus.clone());
 
@@ -635,8 +817,8 @@ mod tests {
 
         // div
         for _ in 0..10000 {
-            let el_0 = &rns.rand_prenormalized();
-            let el_1 = &rns.rand_prenormalized();
+            let el_0 = &rns.rand_in_remainder_range();
+            let el_1 = &rns.rand_in_remainder_range();
             let result_0 = rns.div(el_0, el_1);
             let result = result_0.map(|result_0| (result_0.value() * el_1.value() - el_0.value()) % wrong_modulus.clone());
 
@@ -648,7 +830,7 @@ mod tests {
 
         // div 0
         {
-            let el_0 = &rns.rand_prenormalized();
+            let el_0 = &rns.rand_in_remainder_range();
             let el_1 = &rns.new_from_big(0u32.into());
             let result = rns.div(el_0, el_1);
             assert_eq!(result.map(|_| {}), None);

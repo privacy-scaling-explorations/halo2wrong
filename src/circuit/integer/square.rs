@@ -1,4 +1,4 @@
-use super::{IntegerChip, IntegerInstructions};
+use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
@@ -14,9 +14,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| self.rns.mul(&integer_a, &integer_a));
+        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| self.rns.mul(&integer_a, &integer_a));
 
         let quotient = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
@@ -36,8 +36,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
 
         let range_chip = self.range_chip();
-        let quotient = &self.range_assign_integer(region, quotient.into(), self.mul_quotient_range_tune(), offset)?;
-        let result = &self.range_assign_integer(region, result.into(), self.mul_result_range_tune(), offset)?;
+        let quotient = &self.range_assign_integer(region, quotient.into(), Range::MulQuotient, offset)?;
+        let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
         let v_0 = &range_chip.range_value(region, &v_0.into(), self.mul_v0_range_tune(), offset)?;
         let v_1 = &range_chip.range_value(region, &v_1.into(), self.mul_v1_range_tune(), offset)?;
 
@@ -94,9 +94,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 } else {
                     CombinationOption::CombineToNextMul(one)
                 };
-
-                let mut a_j = a.limb(j);
-                let mut a_k = a.limb(k);
 
                 let (_, _, _, t_i_cell) = main_gate.combine(
                     region,

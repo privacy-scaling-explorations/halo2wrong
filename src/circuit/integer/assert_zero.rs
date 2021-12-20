@@ -28,9 +28,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
-        let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus.clone();
+        let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| {
+        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| {
             let reduction_result = self.rns.reduce(&integer_a);
 
             assert_eq!(reduction_result.result.value(), big_uint::zero());

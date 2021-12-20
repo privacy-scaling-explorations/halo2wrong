@@ -29,7 +29,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         }
         let c_native = main_gate.add(region, a.native(), b.native(), offset)?;
 
-        Ok(AssignedInteger::new(c_limbs, c_native))
+        Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
     pub(crate) fn _add_constant(
@@ -53,6 +53,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         }
         let c_native = main_gate.add_constant(region, a.native(), b.native(), offset)?;
 
-        Ok(AssignedInteger::new(c_limbs, c_native))
+        Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 }
