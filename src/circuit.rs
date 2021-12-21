@@ -5,7 +5,6 @@ use halo2::{
     circuit::{Cell, Region},
 };
 use num_bigint::BigUint as big_uint;
-use num_traits::Zero;
 use std::marker::PhantomData;
 
 mod ecc;

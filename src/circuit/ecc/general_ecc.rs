@@ -1,10 +1,10 @@
 use super::EccConfig;
-use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
+use crate::circuit::integer::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::main_gate::{MainGate, MainGateInstructions};
 use crate::circuit::{AssignedCondition, AssignedInteger};
 use crate::rns::{Integer, Rns};
-use halo2::arithmetic::{CurveAffine, CurveExt, Field, FieldExt};
-use halo2::circuit::{Layouter, Region};
+use halo2::arithmetic::{CurveAffine, Field, FieldExt};
+use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 use crate::circuit::ecc::{AssignedPoint, Point};
