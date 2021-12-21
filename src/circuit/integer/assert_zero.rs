@@ -2,12 +2,10 @@ use super::IntegerChip;
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::range::RangeInstructions;
 use crate::circuit::{AssignedInteger, AssignedValue};
-use crate::rns::{Common, Quotient};
+use crate::rns::Quotient;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
-use num_bigint::BigUint as big_uint;
-use num_traits::Zero;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     fn assert_zero_v0_range_tune(&self) -> usize {
