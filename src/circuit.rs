@@ -136,10 +136,10 @@ impl<F: FieldExt> AssignedInteger<F> {
         }
     }
 
-    pub fn integer(&self, bit_len_limb: usize) -> Option<Integer<F>> {
+    pub fn integer(&self) -> Option<Integer<F>> {
         self.limbs[0].value.as_ref().map(|_| {
             let limbs = self.limbs.iter().map(|limb| limb.value.clone().unwrap()).collect();
-            Integer::new(limbs, bit_len_limb)
+            Integer::new(limbs, self.bit_len_limb)
         })
     }
 

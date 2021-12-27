@@ -12,7 +12,7 @@ use num_bigint::BigUint as big_uint;
 use num_traits::One;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _range_assign_integer(
+    pub(super) fn _range_assign_integer(
         &self,
         region: &mut Region<'_, N>,
         integer: UnassignedInteger<N>,
@@ -76,7 +76,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
     }
 
-    pub(crate) fn _assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
 
         let (zero, one) = (N::zero(), N::one());

@@ -8,7 +8,7 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _sub(
+    pub(super) fn _sub(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,

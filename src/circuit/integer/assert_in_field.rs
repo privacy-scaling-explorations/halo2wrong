@@ -6,7 +6,7 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+    pub(super) fn _assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         // Constraints:
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
@@ -27,7 +27,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let modulus_minus_one = &self.rns.wrong_modulus_minus_one.clone();
 
         // result containts borrows must be bits and subtraaction result must be in range
-        let comparision_result = input.integer(self.rns.bit_len_limb).map(|input| {
+        let comparision_result = input.integer().map(|input| {
             let comparision_result = self.rns.compare_to_modulus(&input);
             comparision_result
         });

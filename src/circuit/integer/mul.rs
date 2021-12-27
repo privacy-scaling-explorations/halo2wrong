@@ -10,15 +10,15 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn mul_v0_range_tune(&self) -> usize {
+    pub(super) fn mul_v0_range_tune(&self) -> usize {
         self.rns.bit_len_limb + self.rns.mul_v0_overflow
     }
 
-    pub(crate) fn mul_v1_range_tune(&self) -> usize {
+    pub(super) fn mul_v1_range_tune(&self) -> usize {
         self.rns.bit_len_limb + self.rns.mul_v1_overflow
     }
 
-    pub(crate) fn _mul(
+    pub(super) fn _mul(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -30,8 +30,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| {
-            let b_integer = b.integer(self.rns.bit_len_limb).unwrap();
+        let reduction_result = a.integer().map(|integer_a| {
+            let b_integer = b.integer().unwrap();
             self.rns.mul(&integer_a, &b_integer)
         });
 

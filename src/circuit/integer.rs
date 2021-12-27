@@ -34,20 +34,13 @@ pub struct IntegerConfig {
     main_gate_config: MainGateConfig,
 }
 
+#[derive(Clone, Debug)]
 pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
     config: IntegerConfig,
     pub rns: Rns<Wrong, Native>,
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn mul_quotient_range_tune(&self) -> usize {
-        self.rns.max_most_significant_mul_quotient_limb.bits() as usize
-    }
-
-    pub(crate) fn remainder_range_tune(&self) -> usize {
-        self.rns.max_most_significant_reduced_limb.bits() as usize
-    }
-
     pub(crate) fn new_assigned_integer(&self, limbs: Vec<AssignedLimb<N>>, native_value: AssignedValue<N>) -> AssignedInteger<N> {
         AssignedInteger::new(limbs, native_value, self.rns.bit_len_limb)
     }

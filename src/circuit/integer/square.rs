@@ -10,13 +10,13 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| self.rns.mul(&integer_a, &integer_a));
+        let reduction_result = a.integer().map(|integer_a| self.rns.mul(&integer_a, &integer_a));
 
         let quotient = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {

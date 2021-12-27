@@ -8,7 +8,7 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _add(
+    pub(super) fn _add(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -32,7 +32,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(crate) fn _add_constant(
+    pub(super) fn _add_constant(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,

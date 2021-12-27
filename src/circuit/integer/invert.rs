@@ -7,7 +7,7 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-    pub(crate) fn _invert(
+    pub(super) fn _invert(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -18,7 +18,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let one = N::one();
         let integer_one = self.rns.new_from_big(1u32.into());
 
-        let inv_or_one = match a.integer(self.rns.bit_len_limb) {
+        let inv_or_one = match a.integer() {
             Some(a) => match self.rns.invert(&a) {
                 Some(a) => Some(a),
                 None => Some(integer_one),
