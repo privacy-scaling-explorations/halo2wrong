@@ -20,8 +20,6 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let (curvature, icond) = {
             let numerator = base_chip.add_constant(region, &xsqm, &self.parameter_a(), offset)?;
             let denominator = base_chip.add(region, &a.y, &a.y, offset)?;
-            let numerator = base_chip.reduce(region, &numerator, offset)?;
-            let denominator = base_chip.reduce(region, &denominator, offset)?;
             base_chip.div(region, &numerator, &denominator, offset)?
         };
         Ok((curvature, icond))
@@ -48,8 +46,6 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let (lambda_neq, lambda_neq_icond, eq_cond) = {
             let numerator = base_chip.sub(region, &a.y, &b.y, offset)?;
             let denominator = base_chip.sub(region, &a.x, &b.x, offset)?;
-            let numerator = base_chip.reduce(region, &numerator, offset)?;
-            let denominator = base_chip.reduce(region, &denominator, offset)?;
             let (tangent, eqx_cond) = base_chip.div(region, &numerator, &denominator, offset)?;
 
             let (_, eqy_cond) = base_chip.invert(region, &numerator, offset)?;
@@ -73,7 +69,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
      * Thus coordinate z in point is used as an indicator of whether the point is
      * identity(infinity) or not.
      */
-    pub(crate) fn _add(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
+    pub(super) fn _add(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
         let main_gate = self.main_gate();
         let base_chip = self.base_field_chip();
 
@@ -82,16 +78,12 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
         // cx = λ^2 - a.x - b.x
         let sqsub = base_chip.sub(region, &lambda_square, &a.x, offset)?;
-        let sqsub = base_chip.reduce(region, &sqsub, offset)?;
         let cx = base_chip.sub(region, &sqsub, &b.x, offset)?;
-        let cx = base_chip.reduce(region, &cx, offset)?;
 
         // cy = λ(a.x - c.x) - a.y
         let xsub = base_chip.sub(region, &a.x, &cx, offset)?;
-        let xsub = base_chip.reduce(region, &xsub, offset)?;
         let yi = base_chip.mul(region, &lambda, &xsub, offset)?;
         let cy = base_chip.sub(region, &yi, &a.y, offset)?;
-        let cy = base_chip.reduce(region, &cy, offset)?;
         let p = AssignedPoint::new(cx, cy, zero_cond.clone());
 
         /* Now combine the calculation using the following cond table

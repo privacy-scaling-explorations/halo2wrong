@@ -94,40 +94,50 @@ pub trait IntegerInstructions<N: FieldExt> {
         cond: &AssignedCondition<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
-
-    fn reduce_if_necessary(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
-        self.reduce_if_necessary(region, b, offset)?;
+        let (a, b) = (
+            &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_unreduced(region, b, offset)?,
+        );
         self._add(region, a, b, offset)
     }
 
     fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
+        let a = &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?;
         self._add_constant(region, a, b, offset)
     }
 
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
-        self.reduce_if_necessary(region, b, offset)?;
+        let (a, b) = (
+            &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_unreduced(region, b, offset)?,
+        );
         self._sub(region, a, b, offset)
     }
 
     fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let a = &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?;
         self._neg(region, a, offset)
     }
 
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
-        self.reduce_if_necessary(region, b, offset)?;
+        let (a, b) = (
+            &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_reduced(region, b, offset)?,
+        );
+        let (a, b) = (
+            &self.reduce_if_max_operand_value_exceeds(region, a, offset)?,
+            &self.reduce_if_max_operand_value_exceeds(region, b, offset)?,
+        );
         self._mul(region, a, b, offset)
     }
 
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
+        let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._square(region, a, offset)
     }
 
@@ -138,13 +148,20 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         b: &AssignedInteger<N>,
         offset: &mut usize,
     ) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
-        self.reduce_if_necessary(region, a, offset)?;
-        self.reduce_if_necessary(region, b, offset)?;
+        let (a, b) = (
+            &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_reduced(region, b, offset)?,
+        );
+        let (a, b) = (
+            &self.reduce_if_max_operand_value_exceeds(region, a, offset)?,
+            &self.reduce_if_max_operand_value_exceeds(region, b, offset)?,
+        );
         self._div(region, a, b, offset)
     }
 
     fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
-        self.reduce_if_necessary(region, a, offset)?;
+        let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._invert(region, a, offset)
     }
 
@@ -163,12 +180,12 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self._assign_integer(region, integer, offset)
+        self._assign_integer(region, integer, offset, true)
     }
 
     fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let c = &self.sub(region, a, b, offset)?;
-        self._assert_zero(region, c, offset)?;
+        self.assert_zero(region, c, offset)?;
         Ok(())
     }
 
@@ -197,12 +214,14 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     }
 
     fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
-        self.reduce_if_necessary(region, a, offset)?;
+        let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._assert_not_zero(region, a, offset)?;
         Ok(())
     }
 
     fn assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._assert_zero(region, a, offset)
     }
 
@@ -214,9 +233,6 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         cond: &AssignedCondition<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
-        self.reduce_if_necessary(region, b, offset)?;
-
         let main_gate = self.main_gate();
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
@@ -245,8 +261,6 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         cond: &AssignedCondition<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
-        self.reduce_if_necessary(region, a, offset)?;
-
         let main_gate = self.main_gate();
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
@@ -265,21 +279,10 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         Ok(self.new_assigned_integer(limbs, native_value))
     }
 
-    fn assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
-        self.reduce_if_necessary(region, input, offset)?;
-        self._assert_in_field(region, input, offset)
-    }
-
-    fn reduce_if_necessary(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        let exceeds_max_limb_value = a.limbs.iter().fold(false, |a, b| a | (b.max_val() > self.rns.max_unreduced_limb));
-        let exceeds_max_value = a.max_val() > self.rns.max_operand;
-
-        if exceeds_max_limb_value | exceeds_max_value {
-            let a = self.reduce(region, a, offset)?;
-            Ok(a.clone())
-        } else {
-            Ok(a.clone())
-        }
+    fn assert_in_field(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
+        self._assert_in_field(region, a, offset)
     }
 }
 
@@ -311,15 +314,21 @@ mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::circuit::main_gate::{MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
     use crate::circuit::range::{RangeChip, RangeInstructions};
-    use crate::circuit::{AssignedCondition, UnassignedInteger, UnassignedValue};
+    use crate::circuit::{AssignedCondition, AssignedInteger, UnassignedValue};
     use crate::rns::{Common, Integer, Limb, Rns};
     use halo2::arithmetic::FieldExt;
-    use halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
 
     use halo2::pasta::Fp as Wrong;
     use halo2::pasta::Fq as Native;
+
+    impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+        fn assign_integer_no_check(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+            self._assign_integer(region, integer, offset, false)
+        }
+    }
 
     fn rns<W: FieldExt, N: FieldExt>() -> Rns<W, N> {
         let bit_len_limb = 68;
@@ -473,7 +482,7 @@ mod tests {
                     let overflows = rns.rand_with_limb_bit_size(rns.bit_len_limb + 5);
                     let reduced = rns.reduce(&overflows).result;
 
-                    let overflows = &integer_chip.assign_integer(&mut region, Some(overflows), offset)?;
+                    let overflows = &integer_chip.assign_integer_no_check(&mut region, Some(overflows), offset)?;
                     let reduced_0 = &integer_chip.range_assign_integer(&mut region, Some(reduced).into(), Range::Remainder, offset)?;
                     let reduced_1 = &integer_chip.reduce(&mut region, overflows, offset)?;
                     assert_eq!(reduced_1.max_val(), rns.max_remainder);
@@ -542,6 +551,20 @@ mod tests {
                     integer_chip.assert_equal(&mut region, c_0, c_1, offset)?;
                     integer_chip.assert_strict_equal(&mut region, c_0, c_1, offset)?;
 
+                    let a = rns.rand_in_unreduced_range();
+                    let b = rns.rand_in_unreduced_range();
+                    let c = (a.value() * b.value()) % &rns.wrong_modulus;
+                    let c = rns.new_from_big(c);
+
+                    let a = &integer_chip.assign_integer_no_check(&mut region, Some(a).into(), offset)?.clone();
+                    let b = &integer_chip.assign_integer_no_check(&mut region, Some(b).into(), offset)?.clone();
+                    let c_0 = &integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
+                    let c_1 = &integer_chip.mul(&mut region, a, b, offset)?;
+                    assert_eq!(c_1.max_val(), rns.max_remainder);
+
+                    integer_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, c_0, c_1, offset)?;
+
                     Ok(())
                 },
             )?;
@@ -594,6 +617,18 @@ mod tests {
                     let c = rns.new_from_big(c);
 
                     let a = &integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Operand, offset)?;
+                    let c_0 = &integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
+                    let c_1 = &integer_chip.square(&mut region, a, offset)?;
+                    assert_eq!(c_1.max_val(), rns.max_remainder);
+
+                    integer_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, c_0, c_1, offset)?;
+
+                    let a = rns.rand_in_unreduced_range();
+                    let c = (a.value() * a.value()) % &rns.wrong_modulus;
+                    let c = rns.new_from_big(c);
+
+                    let a = &integer_chip.assign_integer_no_check(&mut region, Some(a).into(), offset)?;
                     let c_0 = &integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
                     let c_1 = &integer_chip.square(&mut region, a, offset)?;
                     assert_eq!(c_1.max_val(), rns.max_remainder);
@@ -974,11 +1009,6 @@ mod tests {
     fn test_invert_zero_assert_not_zero() {
         let (rns, k) = setup();
 
-        #[cfg(not(feature = "no_lookup"))]
-        let k: u32 = (rns.bit_len_lookup + 1) as u32;
-        #[cfg(feature = "no_lookup")]
-        let k: u32 = 8;
-
         let integer_a = rns.new_from_big(0u32.into());
 
         let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
@@ -1039,58 +1069,168 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
 
-                    let a = rns.rand_in_remainder_range();
-                    let b = rns.rand_in_remainder_range();
-                    let c = a.value() + b.value();
-                    let c = rns.new_from_big(c);
+                    {
+                        // addition in remainder range
+                        let a = rns.rand_in_remainder_range();
+                        let b = rns.rand_in_remainder_range();
 
-                    let a_int = integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
-                    let b_int = integer_chip.range_assign_integer(&mut region, Some(b.clone()).into(), Range::Remainder, offset)?;
-                    let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Operand, offset)?;
-                    let c_0 = &integer_chip.add(&mut region, &a_int, &b_int, offset)?;
-                    assert_eq!(a_int.max_val() + b_int.max_val(), c_0.max_val());
-                    integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                        let c = a.value() + b.value();
+                        let c = rns.new_from_big(c);
+                        let c_in_field = (a.value() + b.value()) % &self.rns.wrong_modulus;
+                        let c_in_field = rns.new_from_big(c_in_field);
 
-                    let c = (a.value() + b.value()) % &self.rns.wrong_modulus;
-                    let c = rns.new_from_big(c);
-                    let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Operand, offset)?;
-                    let c_0 = integer_chip.reduce(&mut region, c_0, offset)?;
-                    integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                        let a = integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                        let b = integer_chip.range_assign_integer(&mut region, Some(b.clone()).into(), Range::Remainder, offset)?;
 
-                    let a = rns.rand_in_remainder_range();
-                    let b = rns.rand_in_remainder_range();
-                    let c = a.value() + b.value();
-                    let c = rns.new_from_big(c);
+                        let c_0 = &integer_chip.add(&mut region, &a, &b, offset)?;
+                        let c_1 = integer_chip.assign_integer_no_check(&mut region, Some(c).into(), offset)?;
+                        assert_eq!(a.max_val() + b.max_val(), c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
 
-                    let a_int = integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
-                    let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Operand, offset)?;
-                    let c_0 = &integer_chip.add_constant(&mut region, &a_int, &b, offset)?;
-                    assert_eq!(a_int.max_val() + b.value(), c_0.max_val());
-                    integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                        // reduce and enfoce strict equality
+                        let c_0 = integer_chip.reduce(&mut region, c_0, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c_in_field).into(), Range::Remainder, offset)?;
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                        integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
 
-                    let c = (a.value() + b.value()) % &self.rns.wrong_modulus;
-                    let c = rns.new_from_big(c);
-                    let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Operand, offset)?;
-                    let c_0 = integer_chip.reduce(&mut region, c_0, offset)?;
-                    integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                    {
+                        // constant addition in remainder range
+                        let a = rns.rand_in_remainder_range();
+                        let b = rns.rand_in_remainder_range();
 
-                    let a = rns.rand_in_field();
-                    let b = rns.rand_in_field();
-                    let c = ((&self.rns.wrong_modulus + a.value()) - b.value()) % &self.rns.wrong_modulus;
-                    let c = rns.new_from_big(c);
+                        let c = a.value() + b.value();
+                        let c = rns.new_from_big(c);
+                        let c_in_field = (a.value() + b.value()) % &self.rns.wrong_modulus;
+                        let c_in_field = rns.new_from_big(c_in_field);
 
-                    let a_int = integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
-                    let b_int = integer_chip.range_assign_integer(&mut region, Some(b.clone()).into(), Range::Remainder, offset)?;
-                    let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Operand, offset)?;
-                    let c_0 = &integer_chip.sub(&mut region, &a_int, &b_int, offset)?;
-                    assert_eq!(a_int.max_val() + rns.aux.value(), c_0.max_val());
-                    integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                        let a = integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
 
-                    let c_0 = integer_chip.reduce(&mut region, c_0, offset)?;
-                    integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                        let c_0 = &integer_chip.add_constant(&mut region, &a, &b, offset)?;
+                        let c_1 = integer_chip.assign_integer_no_check(&mut region, Some(c).into(), offset)?;
+                        assert_eq!(a.max_val() + b.value(), c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+
+                        // reduce and enfoce strict equality
+                        let c_0 = integer_chip.reduce(&mut region, c_0, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c_in_field).into(), Range::Remainder, offset)?;
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                        integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
+
+                    {
+                        // go beyond unreduced range
+                        let a = rns.rand_in_remainder_range();
+                        let mut a = integer_chip.assign_integer(&mut region, Some(a.clone()).into(), offset)?;
+
+                        for _ in 0..100 {
+                            let c = (a.integer().unwrap().value() * 2usize) % &self.rns.wrong_modulus;
+                            let c = rns.new_from_big(c);
+                            a = integer_chip.add(&mut region, &a, &a, offset)?;
+                            let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
+                            let c_0 = integer_chip.reduce(&mut region, &a, offset)?;
+                            integer_chip.assert_equal(&mut region, &a, &c_1, offset)?;
+                            integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                            integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                        }
+                    }
+
+                    {
+                        // addition in unreduced range
+                        for _ in 0..100 {
+                            let a = rns.rand_in_unreduced_range();
+                            let b = rns.rand_in_unreduced_range();
+                            let c = (a.value() + b.value()) % rns.wrong_modulus.clone();
+                            let c = rns.new_from_big(c);
+
+                            let a = integer_chip.assign_integer_no_check(&mut region, Some(a.clone()).into(), offset)?;
+                            let b = integer_chip.assign_integer_no_check(&mut region, Some(b.clone()).into(), offset)?;
+                            let c_0 = &integer_chip.add(&mut region, &a, &b, offset)?;
+                            let c_1 = integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
+                            assert_eq!(a.max_val() + b.max_val(), c_0.max_val());
+                            integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+
+                            // reduce and enfoce strict equality
+                            let c_0 = integer_chip.reduce(&mut region, c_0, offset)?;
+                            integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                            integer_chip.assert_strict_equal(&mut region, &c_0, &c_1, offset)?;
+                        }
+                    }
+
+                    {
+                        // subtraction in remainder range
+                        let a = rns.rand_in_remainder_range();
+                        let b = rns.rand_in_remainder_range();
+
+                        let a_norm = (a.value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
+                        let b_norm = b.value() % rns.wrong_modulus.clone();
+                        let c = a_norm - b_norm;
+                        let c = rns.new_from_big(c);
+
+                        let a = integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                        let b = integer_chip.range_assign_integer(&mut region, Some(b.clone()).into(), Range::Remainder, offset)?;
+
+                        let c_0 = &integer_chip.sub(&mut region, &a, &b, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                        assert_eq!(a.max_val() + rns.make_aux(b.max_vals()).value(), c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
+
+                    {
+                        // subtraction in unreduced range
+                        let a = rns.rand_in_unreduced_range();
+                        let b = rns.rand_in_unreduced_range();
+
+                        let a_norm = (a.value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
+                        let b_norm = b.value() % rns.wrong_modulus.clone();
+                        let c = a_norm - b_norm;
+                        let c = rns.new_from_big(c);
+
+                        let a = integer_chip.assign_integer_no_check(&mut region, Some(a.clone()).into(), offset)?;
+                        let b = integer_chip.assign_integer_no_check(&mut region, Some(b.clone()).into(), offset)?;
+
+                        let c_0 = &integer_chip.sub(&mut region, &a, &b, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                        assert_eq!(a.max_val() + rns.make_aux(b.max_vals()).value(), c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
+
+                    {
+                        // go beyond unreduced range
+                        let a = rns.rand_in_remainder_range();
+                        let mut a = integer_chip.assign_integer(&mut region, Some(a.clone()).into(), offset)?;
+
+                        for _ in 0..100 {
+                            let b = rns.rand_in_unreduced_range();
+
+                            let a_norm = (a.integer().unwrap().value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
+                            let b_norm = b.value() % rns.wrong_modulus.clone();
+                            let c = a_norm - b_norm;
+                            let c = rns.new_from_big(c);
+
+                            let b = integer_chip.assign_integer_no_check(&mut region, Some(b.clone()).into(), offset)?;
+
+                            let c_0 = &integer_chip.sub(&mut region, &a, &b, offset)?;
+                            let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                            integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                            a = c_0.clone();
+                        }
+                    }
+
+                    {
+                        // negation in unreduced range
+                        let a = rns.rand_in_unreduced_range();
+                        let a_norm = a.value() % rns.wrong_modulus.clone();
+                        let c = rns.wrong_modulus.clone() - a_norm;
+                        let c = rns.new_from_big(c);
+
+                        let a = integer_chip.assign_integer_no_check(&mut region, Some(a.clone()).into(), offset)?;
+
+                        let c_0 = &integer_chip.neg(&mut region, &a, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                        assert_eq!(rns.make_aux(a.max_vals()).value(), c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
 
                     Ok(())
                 },

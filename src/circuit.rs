@@ -5,7 +5,6 @@ use halo2::{
     circuit::{Cell, Region},
 };
 use num_bigint::BigUint as big_uint;
-use num_traits::Zero;
 use std::marker::PhantomData;
 
 mod ecc;
@@ -144,8 +143,11 @@ impl<F: FieldExt> AssignedInteger<F> {
     }
 
     pub fn max_val(&self) -> big_uint {
-        // self.limbs.iter().fold(big_uint::zero(), |a, b| a + &b.max_val)
-        compose(self.limbs.iter().map(|limb| limb.max_val()).collect(), self.bit_len_limb)
+        compose(self.max_vals(), self.bit_len_limb)
+    }
+
+    pub fn max_vals(&self) -> Vec<big_uint> {
+        self.limbs.iter().map(|limb| limb.max_val()).collect()
     }
 
     pub fn limb_value(&self, idx: usize) -> Result<F, Error> {

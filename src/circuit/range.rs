@@ -350,7 +350,7 @@ impl<F: FieldExt> RangeChip<F> {
 mod tests {
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
-    use crate::circuit::main_gate::{MainGate, MainGateConfig};
+    use crate::circuit::main_gate::MainGate;
     use crate::circuit::UnassignedValue;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
     use halo2::arithmetic::FieldExt;
@@ -361,7 +361,6 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
-        main_gate_config: MainGateConfig,
         range_config: RangeConfig,
     }
 
@@ -392,10 +391,7 @@ mod tests {
             let main_gate_config = MainGate::<F>::configure(meta);
             let fine_tune_bit_lengths = Self::fine_tune_bit_lengths();
             let range_config = RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bit_lengths);
-            TestCircuitConfig {
-                main_gate_config,
-                range_config,
-            }
+            TestCircuitConfig { range_config }
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {

@@ -76,8 +76,21 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
     }
 
-    pub(super) fn _assign_integer(&self, region: &mut Region<'_, N>, integer: Option<Integer<N>>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _assign_integer(
+        &self,
+        region: &mut Region<'_, N>,
+        integer: Option<Integer<N>>,
+        offset: &mut usize,
+        should_be_in_remainder_range: bool,
+    ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
+        if should_be_in_remainder_range {
+            integer.as_ref().map(|integer| assert!(integer.value() <= self.rns.max_remainder));
+        } else {
+            integer
+                .as_ref()
+                .map(|integer| assert!(integer.value() <= self.rns.max_with_max_unreduced_limbs));
+        }
 
         let (zero, one) = (N::zero(), N::one());
         let r = self.rns.left_shifter_r;
@@ -114,11 +127,18 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             .iter()
             .enumerate()
             .map(|(i, cell)| {
-                let max_val = if i == NUMBER_OF_LIMBS - 1 {
-                    self.rns.max_most_significant_reduced_limb.clone()
+                let max_val = if should_be_in_remainder_range {
+                    let max_val = if i == NUMBER_OF_LIMBS - 1 {
+                        self.rns.max_most_significant_reduced_limb.clone()
+                    } else {
+                        self.rns.max_reduced_limb.clone()
+                    };
+
+                    max_val
                 } else {
-                    self.rns.max_reduced_limb.clone()
+                    self.rns.max_unreduced_limb.clone()
                 };
+
                 AssignedLimb {
                     value: integer.as_ref().map(|integer| integer.limb(i)),
                     cell: *cell,

@@ -5,7 +5,7 @@ use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use std::fmt;
 use std::marker::PhantomData;
-use std::ops::{Div, Shl};
+use std::ops::Shl;
 
 pub fn decompose_fe<F: FieldExt>(e: F, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
     decompose(fe_to_big(e), number_of_limbs, bit_len)
@@ -89,7 +89,6 @@ pub(crate) struct ReductionContext<N: FieldExt> {
     pub result: Integer<N>,
     pub quotient: Quotient<N>,
     pub t: Vec<N>,
-    pub negative_modulus: Vec<N>,
     pub u_0: N,
     pub u_1: N,
     pub v_0: N,
@@ -117,7 +116,7 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub left_shifter_2r: Native,
     pub left_shifter_3r: Native,
 
-    pub aux: Integer<Native>,
+    pub base_aux: Integer<Native>,
 
     pub negative_wrong_modulus_decomposed: Vec<Native>,
     pub wrong_modulus_decomposed: Vec<Native>,
@@ -129,6 +128,9 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub max_remainder: big_uint,
     pub max_operand: big_uint,
     pub max_mul_quotient: big_uint,
+    pub max_reducible_value: big_uint,
+    pub max_with_max_unreduced_limbs: big_uint,
+    pub max_dense_value: big_uint,
 
     pub max_most_significant_reduced_limb: big_uint,
     pub max_most_significant_operand_limb: big_uint,
@@ -146,42 +148,31 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 }
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
-    fn aux(bit_len_limb: usize) -> Integer<N> {
+    fn calculate_base_aux(bit_len_limb: usize) -> Integer<N> {
         let two = N::from_u64(2);
         let r = &fe_to_big(two.pow(&[bit_len_limb as u64, 0, 0, 0]));
         let wrong_modulus = modulus::<W>();
         let wrong_modulus_decomposed = Integer::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
-        let wrong_modulus_top = wrong_modulus_decomposed.limb(NUMBER_OF_LIMBS - 1).value();
-        let range_correct_factor: big_uint = r.div(wrong_modulus_top) + 1usize;
 
-        let mut aux: Vec<big_uint> = wrong_modulus_decomposed
-            .limbs()
-            .iter()
-            .map(|limb| fe_to_big(*limb) * range_correct_factor.clone())
-            .collect();
+        // base aux = 2 * w
+        let mut base_aux: Vec<big_uint> = wrong_modulus_decomposed.limbs().into_iter().map(|limb| fe_to_big(limb) << 1).collect();
 
-        if aux[1] < r.clone() - 1usize {
-            if aux[2] == big_uint::zero() {
-                aux[1] += r.clone();
-                aux[2] = r.clone() - 1usize;
-                aux[3] -= 1usize;
-            } else {
-                aux[1] += r.clone();
-                aux[2] -= 1usize;
+        for i in 0..NUMBER_OF_LIMBS - 1 {
+            let hidx = NUMBER_OF_LIMBS - i - 1;
+            let lidx = hidx - 1;
+
+            if (base_aux[lidx].bits() as usize) < (bit_len_limb + 1) {
+                base_aux[hidx] = base_aux[hidx].clone() - 1usize;
+                base_aux[lidx] = base_aux[lidx].clone() + r;
             }
         }
 
-        if aux[2] < r.clone() - 1usize {
-            aux[2] += r.clone();
-            aux[3] -= 1usize;
-        }
-
-        let aux = Integer {
-            limbs: aux.iter().map(|aux_limb| Limb::from_big(aux_limb.clone())).collect(),
+        let base_aux = Integer {
+            limbs: base_aux.iter().map(|limb| Limb::from_big(limb.clone())).collect(),
             bit_len_limb,
         };
 
-        aux
+        base_aux
     }
 
     pub(crate) fn construct(bit_len_limb: usize) -> Self {
@@ -211,7 +202,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let wrong_modulus_minus_one = Integer::<N>::from_big(wrong_modulus.clone() - 1usize, NUMBER_OF_LIMBS, bit_len_limb);
 
         let two_limb_mask = (one << (bit_len_limb * 2)) - 1usize;
-        let aux = Self::aux(bit_len_limb);
 
         let crt_modulus = &(binary_modulus * native_modulus);
         let crt_modulus_bit_len = crt_modulus.bits();
@@ -231,7 +221,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let max_operand = &((one << max_operand_bit_len) - one);
 
         let max_reduced_limb = &(one << bit_len_limb) - one;
-        // TODO: this is for now just a placeholder not so accurate
+        // TODO: this is for now just much lower than actual
         let max_unreduced_limb = &(one << (bit_len_limb + bit_len_limb / 2)) - one;
 
         assert!(*crt_modulus > pre_max_operand * pre_max_operand);
@@ -245,13 +235,20 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let max_most_significant_reduced_limb = &(max_remainder >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
         let max_most_significant_operand_limb = &(max_operand >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
-        // TODO: this is for now just a placeholder not so accurate
+        // TODO: this is for now just much lower than actual
         let max_most_significant_unreduced_limb = &(max_unreduced_limb.clone());
         let max_most_significant_mul_quotient_limb = &(max_mul_quotient >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
 
         assert!((max_most_significant_reduced_limb.bits() as usize) < bit_len_limb);
         assert!((max_most_significant_operand_limb.bits() as usize) < bit_len_limb);
         assert!((max_most_significant_mul_quotient_limb.bits() as usize) <= bit_len_limb);
+
+        // limit reduction quotient by single limb
+        let max_reduction_quotient = &max_reduced_limb.clone();
+        let max_reducible_value = max_reduction_quotient * wrong_modulus.clone() + max_remainder;
+        let max_with_max_unreduced_limbs = compose(vec![max_unreduced_limb.clone(); 4], bit_len_limb);
+        assert!(max_reducible_value > max_with_max_unreduced_limbs);
+        let max_dense_value = compose(vec![max_reduced_limb.clone(); 4], bit_len_limb);
 
         // emulate multiplication to find out max residue overflows
         let (mul_v0_max, mul_v1_max) = {
@@ -319,7 +316,21 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
         assert!(bit_len_lookup * NUMBER_OF_LOOKUP_LIMBS == bit_len_limb);
 
-        Rns {
+        let base_aux = Self::calculate_base_aux(bit_len_limb);
+        assert!(base_aux.value() % wrong_modulus == big_uint::zero());
+        assert!(&base_aux.value() > max_remainder);
+
+        for i in 0..NUMBER_OF_LIMBS {
+            let is_last_limb = i == NUMBER_OF_LIMBS - 1;
+            let target = if is_last_limb {
+                max_most_significant_reduced_limb.clone()
+            } else {
+                max_reduced_limb.clone()
+            };
+            assert!(base_aux.limb(i).value() >= target);
+        }
+
+        let rns = Rns {
             bit_len_limb,
             bit_len_lookup,
 
@@ -334,18 +345,21 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             binary_modulus: binary_modulus.clone(),
             crt_modulus: crt_modulus.clone(),
 
-            aux,
+            base_aux,
 
             negative_wrong_modulus_decomposed,
             wrong_modulus_decomposed,
             wrong_modulus_minus_one,
             wrong_modulus_in_native_modulus,
 
-            max_reduced_limb,
-            max_unreduced_limb,
+            max_reduced_limb: max_reduced_limb.clone(),
+            max_unreduced_limb: max_unreduced_limb.clone(),
             max_remainder: max_remainder.clone(),
             max_operand: max_operand.clone(),
             max_mul_quotient: max_mul_quotient.clone(),
+            max_reducible_value,
+            max_with_max_unreduced_limbs,
+            max_dense_value,
 
             max_most_significant_reduced_limb: max_most_significant_reduced_limb.clone(),
             max_most_significant_operand_limb: max_most_significant_operand_limb.clone(),
@@ -359,7 +373,19 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
             two_limb_mask,
             _marker_wrong: PhantomData,
-        }
+        };
+
+        let max_with_max_unreduced_limbs = vec![big_to_fe(max_unreduced_limb.clone()); 4];
+        let max_with_max_unreduced_limbs = rns.new_from_limbs(max_with_max_unreduced_limbs);
+        let reduction_result = rns.reduce(&max_with_max_unreduced_limbs);
+        let quotient = match reduction_result.quotient.clone() {
+            Quotient::Short(quotient) => quotient,
+            _ => panic!("short quotient is expected"),
+        };
+        let quotient = fe_to_big(quotient);
+        assert!(quotient < max_reduced_limb);
+
+        rns
     }
 
     pub(crate) fn new(&self, fe: W) -> Integer<N> {
@@ -380,50 +406,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     }
 
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
+        assert!(e <= self.max_dense_value);
         let limbs = decompose::<N>(e, NUMBER_OF_LIMBS, self.bit_len_limb);
-        self.new_from_limbs(limbs)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn rand_in_field(&self) -> Integer<N> {
-        self.new_from_big(fe_to_big(W::rand()))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn rand_in_remainder_range(&self) -> Integer<N> {
-        use num_bigint::RandBigInt;
-        use rand::thread_rng;
-        let mut rng = thread_rng();
-        let el = rng.gen_biguint(self.max_remainder.bits() as u64);
-        self.new_from_big(el)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn rand_in_operand_range(&self) -> Integer<N> {
-        use num_bigint::RandBigInt;
-        use rand::thread_rng;
-        let mut rng = thread_rng();
-        let el = rng.gen_biguint(self.max_operand.bits() as u64);
-        self.new_from_big(el)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn rand_in_unreduced(&self) -> Integer<N> {
-        self.rand_with_limb_bit_size(self.max_unreduced_limb.bits() as usize)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<N> {
-        use num_bigint::RandBigInt;
-        use rand::thread_rng;
-        let limbs: Vec<N> = (0..NUMBER_OF_LIMBS)
-            .map(|_| {
-                let mut rng = thread_rng();
-                let el = rng.gen_biguint(bit_len as u64);
-                big_to_fe(el)
-            })
-            .collect();
-
         self.new_from_limbs(limbs)
     }
 
@@ -484,7 +468,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             result,
             quotient,
             t,
-            negative_modulus,
             u_0,
             u_1,
             v_0,
@@ -521,7 +504,6 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             result,
             quotient,
             t,
-            negative_modulus,
             u_0,
             u_1,
             v_0,
@@ -565,6 +547,23 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
             let a_mul_b = (a.value() * b_inv.value()) % modulus;
             self.new_from_big(a_mul_b)
         })
+    }
+
+    pub(crate) fn make_aux(&self, max_vals: Vec<big_uint>) -> Integer<N> {
+        let mut max_shift = 0usize;
+        let base_aux: Vec<big_uint> = self.base_aux.limbs().into_iter().map(|aux_limb| fe_to_big(aux_limb)).collect();
+
+        for i in 0..NUMBER_OF_LIMBS {
+            let (max_val, mut aux) = (max_vals[i].clone(), base_aux[i].clone());
+            let mut shift = 1;
+            while max_val > aux {
+                aux = aux << 1usize;
+                max_shift = std::cmp::max(shift, max_shift);
+                shift += 1;
+            }
+        }
+        let aux_limbs = base_aux.iter().map(|aux_limb| big_to_fe(aux_limb << max_shift)).collect();
+        self.new_from_limbs(aux_limbs)
     }
 
     pub(crate) fn overflow_lengths(&self) -> Vec<usize> {
@@ -689,6 +688,56 @@ impl<F: FieldExt> Integer<F> {
 
 #[cfg(test)]
 mod tests {
+    #[allow(dead_code)]
+
+    impl<W: FieldExt, N: FieldExt> Rns<W, N> {
+        pub(crate) fn rand_in_field(&self) -> Integer<N> {
+            self.new_from_big(fe_to_big(W::rand()))
+        }
+
+        pub(crate) fn rand_in_remainder_range(&self) -> Integer<N> {
+            use rand::thread_rng;
+            let mut rng = thread_rng();
+            let el = rng.gen_biguint(self.max_remainder.bits() as u64);
+            self.new_from_big(el)
+        }
+
+        pub(crate) fn rand_in_operand_range(&self) -> Integer<N> {
+            use rand::thread_rng;
+            let mut rng = thread_rng();
+            let el = rng.gen_biguint(self.max_operand.bits() as u64);
+            self.new_from_big(el)
+        }
+
+        pub(crate) fn rand_in_unreduced_range(&self) -> Integer<N> {
+            self.rand_with_limb_bit_size(self.max_unreduced_limb.bits() as usize)
+        }
+
+        pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<N> {
+            use rand::thread_rng;
+            let limbs: Vec<N> = (0..NUMBER_OF_LIMBS)
+                .map(|_| {
+                    let mut rng = thread_rng();
+                    let el = rng.gen_biguint(bit_len as u64);
+                    big_to_fe(el)
+                })
+                .collect();
+
+            self.new_from_limbs(limbs)
+        }
+
+        pub(crate) fn max_in_remainder_range(&self) -> Integer<N> {
+            self.new_from_big(self.max_remainder.clone())
+        }
+
+        pub(crate) fn max_in_operand_range(&self) -> Integer<N> {
+            self.new_from_big(self.max_operand.clone())
+        }
+
+        pub(crate) fn max_in_unreduced_range(&self) -> Integer<N> {
+            self.new_from_limbs(vec![big_to_fe(self.max_unreduced_limb.clone()); 4])
+        }
+    }
 
     use super::{big_to_fe, fe_to_big, modulus, Rns};
     use crate::rns::Common;
@@ -751,10 +800,9 @@ mod tests {
         let el_1 = shifted * rns.right_shifter_2r;
         assert_eq!(el_0, el_1);
 
-        // range correction aux
         let el_0 = Wrong::rand();
         let el = fe_to_big(el_0);
-        let aux = rns.aux.value();
+        let aux = rns.base_aux.value();
         let el = (aux + el) % wrong_modulus.clone();
         let el_1: Fp = big_to_fe(el);
         assert_eq!(el_0, el_1)
@@ -783,8 +831,7 @@ mod tests {
         assert_eq!(result_1.value(), result_0);
 
         // aux
-
-        assert_eq!(rns.aux.value() % &wrong_modulus, big_uint::zero());
+        assert_eq!(rns.base_aux.value() % &wrong_modulus, big_uint::zero());
 
         // mul
         for _ in 0..10000 {

@@ -8,6 +8,57 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+    pub(super) fn reduce_if_limb_values_exceeds_unreduced(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let exceeds_max_limb_value = a
+            .limbs
+            .iter()
+            .fold(false, |must_reduce, limb| must_reduce | (limb.max_val() > self.rns.max_unreduced_limb));
+        assert!(a.max_val() < self.rns.max_reducible_value);
+        if exceeds_max_limb_value {
+            self.reduce(region, a, offset)
+        } else {
+            Ok(a.clone())
+        }
+    }
+
+    pub(super) fn reduce_if_limb_values_exceeds_reduced(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let exceeds_max_limb_value = a
+            .limbs
+            .iter()
+            .fold(false, |must_reduce, limb| must_reduce | (limb.max_val() > self.rns.max_reduced_limb));
+
+        if exceeds_max_limb_value {
+            self.reduce(region, a, offset)
+        } else {
+            Ok(a.clone())
+        }
+    }
+
+    pub(super) fn reduce_if_max_operand_value_exceeds(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let exceeds_max_value = a.max_val() > self.rns.max_operand;
+
+        if exceeds_max_value {
+            self.reduce(region, a, offset)
+        } else {
+            Ok(a.clone())
+        }
+    }
+
     fn red_v0_range_tune(&self) -> usize {
         self.rns.bit_len_limb + self.rns.red_v0_overflow
     }
@@ -16,12 +67,12 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         self.rns.bit_len_limb + self.rns.red_v1_overflow
     }
 
-    pub(crate) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer(self.rns.bit_len_limb).map(|integer_a| self.rns.reduce(&integer_a));
+        let reduction_result = a.integer().map(|integer_a| self.rns.reduce(&integer_a));
 
         let quotient = reduction_result.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
@@ -109,7 +160,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
 
-        // result.cycle_cell(region, 1, r_1_new_cell)?;
+        // u_0 = t_0 + (t_1 * R) - r_0 - (r_1 * R)
+        // u_0 = v_0 * R^2
 
         // | A   | B   | C   | D     |
         // | --- | --- | --- | ----- |
