@@ -95,6 +95,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         if number_of_dense_limbs != 0 {
             // Enable dense decomposion range check.
             // Notice that fine tune limb will be in the dense limb set.
+            #[cfg(not(feature = "no_lookup"))]
             self.config.s_dense_limb_range.enable(region, *offset)?;
         }
 
@@ -107,6 +108,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
             // Open small table selector if this value is in small table
             if number_of_dense_limbs == 0 {
+                #[cfg(not(feature = "no_lookup"))]
                 self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
             }
 
@@ -121,6 +123,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
             // Enable table selector for last limb ie fine tuning limb.
             if first_row_with_fine_tune {
+                #[cfg(not(feature = "no_lookup"))]
                 self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
             }
 
@@ -183,6 +186,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             let _ = main_gate.combine(region, term_0, term_1, term_2, term_3, zero, offset, combination_option)?;
 
             if has_overflow {
+                #[cfg(not(feature = "no_lookup"))]
                 self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
                 // make first combination witness values
                 let coeffs = limbs.as_ref().map(|limbs| {
