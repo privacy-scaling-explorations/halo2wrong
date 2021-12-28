@@ -81,6 +81,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
             rns: g.rns_base_field,
         }
     }
+
     fn as_general(&self) -> GeneralEccChip<C, C::ScalarExt> {
         GeneralEccChip {
             config: self.config.clone(),
@@ -88,6 +89,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
             rns_scalar_field: Rns::<C::ScalarExt, C::ScalarExt>::construct(self.rns.bit_len_limb),
         }
     }
+
     fn new(config: EccConfig, rns: Rns<C::Base, C::ScalarExt>) -> Result<Self, Error> {
         let rns_ext = Rns::<C::ScalarExt, C::ScalarExt>::construct(rns.bit_len_limb);
         let general_chip = GeneralEccChip::new(config, rns, rns_ext)?;

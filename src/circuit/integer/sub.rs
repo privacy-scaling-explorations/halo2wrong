@@ -1,6 +1,6 @@
 use super::IntegerChip;
 use crate::circuit::main_gate::MainGateInstructions;
-use crate::circuit::{Assigned, AssignedInteger, AssignedLimb};
+use crate::circuit::{AssignedInteger, AssignedLimb};
 use crate::rns::Common;
 use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
