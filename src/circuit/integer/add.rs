@@ -32,7 +32,41 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(super) fn _add_constant(
+    pub(crate) fn _mul2(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let main_gate = self.main_gate();
+
+        let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
+
+        for idx in 0..NUMBER_OF_LIMBS {
+            let a_limb = a.limb(idx);
+            let c_max = a_limb.mul2();
+            let c_limb = main_gate.mul2(region, a_limb, offset)?;
+
+            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+        }
+        let c_native = main_gate.mul2(region, a.native(), offset)?;
+
+        Ok(self.new_assigned_integer(c_limbs, c_native))
+    }
+
+    pub(crate) fn _mul3(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let main_gate = self.main_gate();
+
+        let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
+
+        for idx in 0..NUMBER_OF_LIMBS {
+            let a_limb = a.limb(idx);
+            let c_max = a_limb.mul3();
+            let c_limb = main_gate.mul3(region, a_limb, offset)?;
+
+            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+        }
+        let c_native = main_gate.mul3(region, a.native(), offset)?;
+
+        Ok(self.new_assigned_integer(c_limbs, c_native))
+    }
+
+    pub(crate) fn _add_constant(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,

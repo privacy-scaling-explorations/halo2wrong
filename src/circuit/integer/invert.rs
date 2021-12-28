@@ -1,7 +1,6 @@
 use super::{AssignedCondition, IntegerChip, IntegerInstructions, MainGateInstructions, Range};
 use crate::circuit::main_gate::{CombinationOption, Term};
 use crate::circuit::{Assigned, AssignedInteger};
-use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -31,16 +30,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // 2. call normalize here.
         // 3. add wrong field range check on inv.
         let inv_or_one = self.range_assign_integer(region, inv_or_one.into(), Range::Remainder, offset)?;
-        let a_mul_inv = self.mul(region, &a, &inv_or_one, offset)?;
+        let a_mul_inv = &self.mul(region, &a, &inv_or_one, offset)?;
 
         // We believe the mul result is strictly less than wrong modulus, so we add strict constraints here.
         // The limbs[1..NUMBER_OF_LIMBS] of a_mul_inv should be 0.
-        for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(region, a_mul_inv.limbs[i].clone(), offset)?;
-        }
-
-        // The limbs[0] of a_mul_inv should be 0 or 1, i.e. limbs[0] * limbs[0] - limbs[0] = 0.
-        main_gate.assert_bit(region, a_mul_inv.limb(0), offset)?;
+        self.assert_strict_bit(region, a_mul_inv, offset)?;
 
         // If a_mul_inv is 0 (i.e. not 1), then inv_or_one must be 1.
         // inv_or_one = 1 <-> inv_or_one[0] = 1 /\ inv_or_one.natvie = 1.
@@ -64,5 +58,26 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         )?;
 
         Ok((inv_or_one, AssignedCondition::new(cond_cell, cond)))
+    }
+
+    pub(crate) fn _invert_incomplete(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let inv = match a.integer() {
+            Some(a) => match self.rns.invert(&a) {
+                Some(a) => Some(a),
+                None => {
+                    // any number will fail it if a is zero
+                    // no assertion here for now since we might want to fail in tests
+                    Some(self.rns.new_from_big(666u32.into()))
+                }
+            },
+            None => None,
+        };
+
+        let inv = self.range_assign_integer(region, inv.into(), Range::Remainder, offset)?;
+        // let must_be_one = &self.mul(region, &a, &inv, offset)?;
+        // self.assert_strict_one(region, must_be_one, offset)?;
+        self._mul_into_one(region, &a, &inv, offset)?;
+
+        Ok(inv)
     }
 }

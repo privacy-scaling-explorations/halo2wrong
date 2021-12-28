@@ -1,5 +1,6 @@
 use super::AssignedPoint;
 use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
+use crate::circuit::ecc::AssignedIncompletePoint;
 use crate::circuit::integer::IntegerInstructions;
 use crate::circuit::main_gate::MainGateInstructions;
 use crate::circuit::{Assigned, AssignedCondition, AssignedInteger};
@@ -98,5 +99,37 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let p = self.select(region, &a.is_identity(), &b, &p, offset)?;
 
         Ok(p)
+    }
+
+    pub(crate) fn _add_incomplete_unsafe(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedIncompletePoint<F>,
+        b: &AssignedIncompletePoint<F>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<F>, Error> {
+        let integer_chip = self.base_field_chip();
+
+        let numerator = &integer_chip.sub(region, &b.y, &a.y, offset)?;
+        let denominator = &integer_chip.sub(region, &b.x, &a.x, offset)?;
+        let lambda = &integer_chip.div_incomplete(region, numerator, denominator, offset)?;
+
+        let lambda_square = &integer_chip.square(region, lambda, offset)?;
+        let t = &integer_chip.add(region, &a.x, &b.x, offset)?;
+        let x = &integer_chip.sub(region, lambda_square, t, offset)?;
+
+        let t = &integer_chip.sub(region, &a.x, x, offset)?;
+        let t = &integer_chip.mul(region, t, lambda, offset)?;
+        let y = integer_chip.sub(region, t, &a.y, offset)?;
+        let p_0 = AssignedIncompletePoint::new(x.clone(), y);
+
+        // should this function make safe but still incomplete
+        // let t = &integer_chip.sub(region, &b.x, x, offset)?;
+        // let t = &integer_chip.mul(region, t, lambda, offset)?;
+        // let _y = integer_chip.sub(region, t, &b.y, offset)?;
+        // let p_1 = AssignedIncompletePoint::new(x.clone(), _y);
+        // self.assert_equal_incomplete(region, &p_0, &p_1, offset)?;
+
+        Ok(p_0)
     }
 }

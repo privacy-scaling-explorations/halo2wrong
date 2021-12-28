@@ -89,6 +89,14 @@ impl<F: FieldExt> AssignedLimb<F> {
         self.max_val.clone() + other.max_val.clone()
     }
 
+    fn mul2(&self) -> big_uint {
+        self.max_val.clone() + self.max_val.clone()
+    }
+
+    fn mul3(&self) -> big_uint {
+        self.max_val.clone() + self.max_val.clone() + self.max_val.clone()
+    }
+
     fn add_big(&self, other: big_uint) -> big_uint {
         self.max_val.clone() + other
     }

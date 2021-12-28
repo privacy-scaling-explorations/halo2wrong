@@ -63,13 +63,19 @@ pub trait IntegerInstructions<N: FieldExt> {
         range: Range,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
+
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn mul2(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn mul3(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn mul_into_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+
     fn div(
         &self,
         region: &mut Region<'_, N>,
@@ -77,15 +83,30 @@ pub trait IntegerInstructions<N: FieldExt> {
         b: &AssignedInteger<N>,
         offset: &mut usize,
     ) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error>;
+    fn div_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error>;
+
     fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error>;
+    fn invert_incomplete(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+
     fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+
     fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
-    fn is_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+
+    fn assert_strict_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+    fn assert_strict_bit(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+
     fn assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
+
     fn cond_select(
         &self,
         region: &mut Region<'_, N>,
@@ -119,6 +140,14 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._add_constant(region, a, b, offset)
     }
 
+    fn mul2(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._mul2(region, a, offset)
+    }
+
+    fn mul3(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._mul3(region, a, offset)
+    }
+
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
@@ -150,6 +179,18 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._mul_constant(region, a, b, offset)
     }
 
+    fn mul_into_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let (a, b) = (
+            &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_reduced(region, b, offset)?,
+        );
+        let (a, b) = (
+            &self.reduce_if_max_operand_value_exceeds(region, a, offset)?,
+            &self.reduce_if_max_operand_value_exceeds(region, b, offset)?,
+        );
+        self._mul_into_one(region, a, b, offset)
+    }
+
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
         let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
@@ -174,10 +215,34 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._div(region, a, b, offset)
     }
 
+    fn div_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let (a, b) = (
+            &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_reduced(region, b, offset)?,
+        );
+        let (a, b) = (
+            &self.reduce_if_max_operand_value_exceeds(region, a, offset)?,
+            &self.reduce_if_max_operand_value_exceeds(region, b, offset)?,
+        );
+        self._div_incomplete(region, a, b, offset)
+    }
+
     fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
         let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._invert(region, a, offset)
+    }
+
+    fn invert_incomplete(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
+        let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
+        self._invert_incomplete(region, a, offset)
     }
 
     fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
@@ -218,16 +283,6 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         Ok(())
     }
 
-    fn is_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
-        self.assert_in_field(region, a, offset)?;
-        self.assert_in_field(region, b, offset)?;
-        let main_gate = self.main_gate();
-        for idx in 0..NUMBER_OF_LIMBS {
-            main_gate.is_equal(region, a.limb(idx), b.limb(idx), offset)?;
-        }
-        Ok(())
-    }
-
     fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
         let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
@@ -238,6 +293,22 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     fn assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._assert_zero(region, a, offset)
+    }
+
+    fn assert_strict_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        for i in 1..NUMBER_OF_LIMBS {
+            main_gate.assert_zero(region, a.limb(i), offset)?;
+        }
+        main_gate.assert_one(region, a.limb(0), offset)
+    }
+
+    fn assert_strict_bit(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        for i in 1..NUMBER_OF_LIMBS {
+            main_gate.assert_zero(region, a.limb(i), offset)?;
+        }
+        main_gate.assert_bit(region, a.limb(0), offset)
     }
 
     fn cond_select(
@@ -323,7 +394,7 @@ mod tests {
     use crate::circuit::main_gate::{MainGate, MainGateColumn, MainGateConfig, MainGateInstructions};
     use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
     use crate::circuit::{AssignedCondition, AssignedInteger, UnassignedValue};
-    use crate::rns::{Common, Integer, Limb, Rns};
+    use crate::rns::{fe_to_big, Common, Integer, Limb, Rns};
     use crate::NUMBER_OF_LOOKUP_LIMBS;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
@@ -349,7 +420,7 @@ mod tests {
         #[cfg(not(feature = "no_lookup"))]
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
         #[cfg(feature = "no_lookup")]
-        let k: u32 = 8;
+        let k: u32 = 14;
         (rns, k)
     }
 
@@ -392,13 +463,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitEquality<W: FieldExt, N: FieldExt> {
-        integer_0: Option<Integer<N>>,
-        integer_1: Option<Integer<N>>,
+    struct TestCircuitRange<W: FieldExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitEquality<W, N> {
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitRange<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -412,19 +481,27 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
+            let rns = self.rns.clone();
 
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-                    let integer_0 = &integer_chip.assign_integer(&mut region, self.integer_0.clone(), offset)?;
-                    let integer_1 = &integer_chip.assign_integer(&mut region, self.integer_1.clone(), offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_0, integer_1, offset)?;
-                    let integer_0 = &integer_chip.assign_integer(&mut region, self.integer_0.clone(), offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_0, integer_1, offset)?;
-                    let integer_1 = &integer_chip.assign_integer(&mut region, self.integer_0.clone(), offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_0, integer_1, offset)?;
-                    integer_chip.assert_equal(&mut region, integer_0, integer_1, offset)?;
+
+                    let a = rns.new_from_big(rns.max_remainder.clone());
+                    integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Remainder, offset)?;
+
+                    // should fail
+                    // let a = rns.new_from_big(rns.max_remainder.clone() + 1usize);
+                    // integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Remainder, offset)?;
+
+                    let a = rns.new_from_big(rns.max_operand.clone());
+                    integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Operand, offset)?;
+
+                    // should fail
+                    // let a = rns.new_from_big(rns.max_operand.clone() + 1usize);
+                    // integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Operand, offset)?;
+
                     Ok(())
                 },
             )?;
@@ -436,39 +513,14 @@ mod tests {
     }
 
     #[test]
-    fn test_equality_circuit() {
+    fn test_xxx() {
         let (rns, k) = setup();
-
-        let integer_0 = rns.rand_in_remainder_range();
-        let integer_1 = integer_0.clone();
-
-        let circuit = TestCircuitEquality::<Wrong, Native> {
-            integer_0: Some(integer_0),
-            integer_1: Some(integer_1),
-            rns: rns.clone(),
-        };
-
+        let circuit = TestCircuitRange::<Wrong, Native> { rns };
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-
         assert_eq!(prover.verify(), Ok(()));
-
-        let integer_0 = rns.rand_in_remainder_range();
-        let integer_1 = rns.rand_in_remainder_range();
-
-        let circuit = TestCircuitEquality::<Wrong, Native> {
-            integer_0: Some(integer_0),
-            integer_1: Some(integer_1),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_ne!(prover.verify(), Ok(()));
     }
 
     #[derive(Default, Clone, Debug)]
@@ -530,6 +582,61 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
+    struct TestCircuitEquality<W: FieldExt, N: FieldExt> {
+        rns: Rns<W, N>,
+    }
+
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitEquality<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            TestCircuitConfig::new::<W, N>(meta)
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
+            let rns = self.rns.clone();
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+
+                    let a = rns.rand_in_operand_range();
+                    let b = rns.rand_in_operand_range();
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Operand, offset)?.clone();
+                    let b = &integer_chip.range_assign_integer(&mut region, Some(b).into(), Range::Operand, offset)?.clone();
+                    integer_chip.assert_not_equal(&mut region, a, b, offset)?;
+                    integer_chip.assert_equal(&mut region, a, a, offset)?;
+                    integer_chip.assert_not_zero(&mut region, a, offset)?;
+
+                    Ok(())
+                },
+            )?;
+
+            config.config_range(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_equality_circuit() {
+        let (rns, k) = setup();
+        let circuit = TestCircuitReduction::<Wrong, Native> { rns };
+        let prover = match MockProver::run(k, &circuit, vec![]) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
     struct TestCircuitMultiplication<W: FieldExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
@@ -574,14 +681,42 @@ mod tests {
                     let c = (a.value() * b.value()) % &rns.wrong_modulus;
                     let c = rns.new_from_big(c);
 
-                    let a = &integer_chip.assign_integer_no_check(&mut region, Some(a).into(), offset)?.clone();
-                    let b = &integer_chip.assign_integer_no_check(&mut region, Some(b).into(), offset)?.clone();
+                    let a = &integer_chip.assign_integer_no_check(&mut region, Some(a).into(), offset)?;
+                    let b = &integer_chip.assign_integer_no_check(&mut region, Some(b).into(), offset)?;
                     let c_0 = &integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
                     let c_1 = &integer_chip.mul(&mut region, a, b, offset)?;
                     assert_eq!(c_1.max_val(), rns.max_remainder);
 
                     integer_chip.assert_equal(&mut region, c_0, c_1, offset)?;
                     integer_chip.assert_strict_equal(&mut region, c_0, c_1, offset)?;
+
+                    let a = rns.rand_in_unreduced_range();
+                    let b = rns.rand_in_field();
+                    let c = (a.value() * b.value()) % &rns.wrong_modulus;
+                    let c = rns.new_from_big(c);
+
+                    let a = &integer_chip.assign_integer_no_check(&mut region, Some(a).into(), offset)?;
+                    let c_0 = &integer_chip.range_assign_integer(&mut region, Some(c).into(), Range::Remainder, offset)?;
+                    let c_1 = &integer_chip.mul_constant(&mut region, a, &b, offset)?;
+                    assert_eq!(c_1.max_val(), rns.max_remainder);
+
+                    integer_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+                    integer_chip.assert_strict_equal(&mut region, c_0, c_1, offset)?;
+
+                    let a = W::rand();
+                    let inv = a.invert().unwrap();
+
+                    // will fail
+                    // let inv = W::rand();
+
+                    let a = fe_to_big(a);
+                    let inv = fe_to_big(inv);
+                    let a = rns.new_from_big(a);
+                    let inv = rns.new_from_big(inv);
+
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a).into(), Range::Remainder, offset)?;
+                    let inv = &integer_chip.range_assign_integer(&mut region, Some(inv).into(), Range::Remainder, offset)?;
+                    integer_chip.mul_into_one(&mut region, a, inv, offset)?;
 
                     Ok(())
                 },
@@ -677,7 +812,6 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestCircuitInField<W: FieldExt, N: FieldExt> {
-        input: Option<Integer<N>>,
         rns: Rns<W, N>,
     }
 
@@ -695,13 +829,20 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
+            let rns = self.rns.clone();
 
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-                    let integer = &integer_chip.assign_integer(&mut region, self.input.clone(), offset)?;
-                    integer_chip.assert_in_field(&mut region, integer, offset)?;
+                    let a = rns.rand_in_field();
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                    integer_chip.assert_in_field(&mut region, a, offset)?;
+
+                    // must fail
+                    // let a = rns.new_from_big(rns.wrong_modulus.clone());
+                    // let a = &integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                    // integer_chip.assert_in_field(&mut region, a, offset)?;
 
                     Ok(())
                 },
@@ -716,54 +857,20 @@ mod tests {
     #[test]
     fn test_assert_in_field_circuit() {
         let (rns, k) = setup();
-
-        for i in 0..2 {
-            let integer_in_field = if i == 0 {
-                rns.wrong_modulus_minus_one.clone().into()
-            } else {
-                rns.rand_in_field()
-            };
-
-            let circuit = TestCircuitInField::<Wrong, Native> {
-                input: Some(integer_in_field),
-                rns: rns.clone(),
-            };
-
-            let prover = match MockProver::run(k, &circuit, vec![]) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-
-            assert_eq!(prover.verify(), Ok(()));
-        }
-
-        let integer_not_in_field = Integer::new(
-            rns.wrong_modulus_decomposed.iter().map(|limb| Limb::<Native>::new(*limb)).collect(),
-            rns.bit_len_limb,
-        );
-
-        let circuit = TestCircuitInField::<Wrong, Native> {
-            input: Some(integer_not_in_field),
-            rns: rns.clone(),
-        };
-
+        let circuit = TestCircuitInField::<Wrong, Native> { rns };
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-
-        assert_ne!(prover.verify(), Ok(()));
+        assert_eq!(prover.verify(), Ok(()));
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitInvert<W: FieldExt, N: FieldExt> {
-        integer_a: Option<Integer<N>>,
-        integer_b: Option<Integer<N>>,
-        cond: Option<N>,
+    struct TestCircuitNonDeterministic<W: FieldExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitInvert<W, N> {
+    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitNonDeterministic<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -777,19 +884,80 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
+            let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
+            let rns = self.rns.clone();
 
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-                    let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
-                    let integer_b_0 = &integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
-                    let cond_0 = integer_chip.main_gate().assign_bit(&mut region, self.cond.clone(), offset)?.clone();
-                    let integer_a_1 = &integer_a_0.clone();
-                    let (integer_b_1, cond_1) = &integer_chip.invert(&mut region, integer_a_0, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
-                    integer_chip.main_gate().assert_equal(&mut region, cond_0, cond_1.clone(), offset)?;
+                    let a = rns.rand_in_remainder_range();
+                    let inv = rns.invert(&a).unwrap();
+
+                    // 1 / a
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                    let inv_0 = &integer_chip.range_assign_integer(&mut region, Some(inv.clone()).into(), Range::Remainder, offset)?;
+                    let (inv_1, cond) = integer_chip.invert(&mut region, a, offset)?;
+                    integer_chip.assert_equal(&mut region, inv_0, &inv_1, offset)?;
+                    main_gate.assert_zero(&mut region, cond, offset)?;
+
+                    // 1 / 0
+                    let zero = integer_chip.assign_integer(&mut region, Some(rns.zero()), offset)?;
+                    let (must_be_one, cond) = integer_chip.invert(&mut region, &zero, offset)?;
+                    integer_chip.assert_strict_one(&mut region, &must_be_one, offset)?;
+                    main_gate.assert_one(&mut region, cond, offset)?;
+
+                    // 1 / p
+                    let wrong_modulus = rns.new_from_limbs(rns.wrong_modulus_decomposed.clone());
+                    let modulus = integer_chip.assign_integer(&mut region, Some(wrong_modulus), offset)?;
+                    let (must_be_one, cond) = integer_chip.invert(&mut region, &modulus, offset)?;
+                    integer_chip.assert_strict_one(&mut region, &must_be_one, offset)?;
+                    main_gate.assert_one(&mut region, cond, offset)?;
+
+                    // 1 / a
+                    let inv_1 = integer_chip.invert_incomplete(&mut region, a, offset)?;
+                    integer_chip.assert_equal(&mut region, inv_0, &inv_1, offset)?;
+
+                    // must be failing
+                    // integer_chip.invert_incomplete(&mut region, &zero, offset)?;
+
+                    // a / b
+                    let a = rns.rand_in_remainder_range();
+                    let b = rns.rand_in_remainder_range();
+                    let c = rns.div(&a, &b).unwrap();
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                    let b = &integer_chip.range_assign_integer(&mut region, Some(b.clone()).into(), Range::Remainder, offset)?;
+                    let c_0 = &integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                    let (c_1, cond) = integer_chip.div(&mut region, a, b, offset)?;
+                    integer_chip.assert_equal(&mut region, c_0, &c_1, offset)?;
+                    main_gate.assert_zero(&mut region, cond, offset)?;
+
+                    // 0 / b
+                    let (c_1, cond) = integer_chip.div(&mut region, &zero, b, offset)?;
+                    integer_chip.assert_zero(&mut region, &c_1, offset)?;
+                    main_gate.assert_zero(&mut region, cond, offset)?;
+
+                    // p / b
+                    let (c_1, cond) = integer_chip.div(&mut region, &modulus, b, offset)?;
+                    integer_chip.assert_zero(&mut region, &c_1, offset)?;
+                    main_gate.assert_zero(&mut region, cond, offset)?;
+
+                    // a / 0
+                    let (must_be_self, cond) = integer_chip.div(&mut region, a, &zero, offset)?;
+                    integer_chip.assert_equal(&mut region, &must_be_self, a, offset)?;
+                    main_gate.assert_one(&mut region, cond, offset)?;
+
+                    // a / p
+                    let (must_be_self, cond) = integer_chip.div(&mut region, a, &modulus, offset)?;
+                    integer_chip.assert_equal(&mut region, &must_be_self, a, offset)?;
+                    main_gate.assert_one(&mut region, cond, offset)?;
+
+                    // a / b
+                    let c_1 = integer_chip.div_incomplete(&mut region, a, b, offset)?;
+                    integer_chip.assert_equal(&mut region, c_0, &c_1, offset)?;
+
+                    // must be failing
+                    // integer_chip.div_incomplete(&mut region, a, &zero, offset)?;
 
                     Ok(())
                 },
@@ -802,159 +970,14 @@ mod tests {
     }
 
     #[test]
-    fn test_invert_circuit() {
+    fn test_non_deterministic_circuit() {
         let (rns, k) = setup();
-
-        let integer_a_cand = rns.rand_in_remainder_range();
-        let integer_a = if rns.value(&integer_a_cand) % &rns.wrong_modulus == 0u32.into() {
-            rns.new_from_big(1u32.into())
-        } else {
-            integer_a_cand
-        };
-        let integer_b = rns.invert(&integer_a);
-
-        let circuit = TestCircuitInvert::<Wrong, Native> {
-            integer_a: Some(integer_a),
-            integer_b: integer_b,
-            cond: Some(Native::zero()),
-            rns: rns.clone(),
-        };
+        let circuit = TestCircuitNonDeterministic::<Wrong, Native> { rns };
 
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
-
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[test]
-    fn test_zero_invert_circuit() {
-        let rns = rns();
-
-        #[cfg(not(feature = "no_lookup"))]
-        let k: u32 = (rns.bit_len_lookup + 1) as u32;
-        #[cfg(feature = "no_lookup")]
-        let k: u32 = 8;
-
-        let integer_a = rns.new_from_big(0u32.into());
-        let integer_b = rns.new_from_big(1u32.into());
-
-        let circuit = TestCircuitInvert::<Wrong, Native> {
-            integer_a: Some(integer_a),
-            integer_b: Some(integer_b),
-            cond: Some(Native::one()),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitDivision<W: FieldExt, N: FieldExt> {
-        integer_a: Option<Integer<N>>,
-        integer_b: Option<Integer<N>>,
-        integer_c: Option<Integer<N>>,
-        cond: Option<N>,
-        rns: Rns<W, N>,
-    }
-
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitDivision<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
-
-            layouter.assign_region(
-                || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let integer_a_0 = &integer_chip.assign_integer(&mut region, self.integer_a.clone(), offset)?.clone();
-                    let integer_b_0 = &integer_chip.assign_integer(&mut region, self.integer_b.clone(), offset)?.clone();
-                    let integer_c_0 = &integer_chip.assign_integer(&mut region, self.integer_c.clone(), offset)?.clone();
-                    let cond_0 = integer_chip.main_gate().assign_bit(&mut region, self.cond.clone(), offset)?.clone();
-                    let integer_a_1 = &integer_a_0.clone();
-                    let integer_b_1 = &integer_b_0.clone();
-                    let (integer_c_1, cond_1) = &integer_chip.div(&mut region, integer_a_0, integer_b_0, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_a_0, integer_a_1, offset)?;
-                    integer_chip.assert_strict_equal(&mut region, integer_b_0, integer_b_1, offset)?;
-                    integer_chip.assert_equal(&mut region, integer_c_0, integer_c_1, offset)?;
-                    integer_chip.main_gate().assert_equal(&mut region, cond_0, cond_1.clone(), offset)?;
-
-                    Ok(())
-                },
-            )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn test_division_circuit() {
-        let (rns, k) = setup();
-
-        let integer_a = rns.rand_in_remainder_range();
-        let integer_b_cand = rns.rand_in_remainder_range();
-        let integer_b = if rns.value(&integer_b_cand) % &rns.wrong_modulus == 0u32.into() {
-            rns.new_from_big(1u32.into())
-        } else {
-            integer_b_cand
-        };
-        let integer_c = rns.div(&integer_a, &integer_b);
-
-        let circuit = TestCircuitDivision::<Wrong, Native> {
-            integer_a: Some(integer_a.clone()),
-            integer_b: Some(integer_b),
-            integer_c: integer_c,
-            cond: Some(Native::zero()),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[test]
-    fn test_zero_division_circuit() {
-        let (rns, k) = setup();
-
-        let integer_a = rns.rand_in_remainder_range();
-        let integer_b = rns.new_from_big(0u32.into());
-        let integer_c = integer_a.clone();
-
-        let circuit = TestCircuitDivision::<Wrong, Native> {
-            integer_a: Some(integer_a),
-            integer_b: Some(integer_b),
-            integer_c: Some(integer_c),
-            cond: Some(Native::one()),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
         assert_eq!(prover.verify(), Ok(()));
     }
 
@@ -994,67 +1017,6 @@ mod tests {
 
             Ok(())
         }
-    }
-
-    #[test]
-    fn test_invert_assert_not_zero() {
-        let (rns, k) = setup();
-
-        let integer_a = rns.rand_in_remainder_range();
-
-        let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
-            integer_a: Some(integer_a.clone()),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        if rns.value(&integer_a) % rns.wrong_modulus == 0u32.into() {
-            assert_ne!(prover.verify(), Ok(()));
-        } else {
-            assert_eq!(prover.verify(), Ok(()));
-        }
-    }
-
-    #[test]
-    fn test_invert_zero_assert_not_zero() {
-        let (rns, k) = setup();
-
-        let integer_a = rns.new_from_big(0u32.into());
-
-        let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
-            integer_a: Some(integer_a.clone()),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_ne!(prover.verify(), Ok(()));
-    }
-
-    #[test]
-    fn test_invert_wrong_modulus_assert_not_zero() {
-        let (rns, k) = setup();
-
-        let integer_a = rns.new_from_limbs(rns.wrong_modulus_decomposed.clone());
-
-        let circuit = TestCircuitAssertNotZero::<Wrong, Native> {
-            integer_a: Some(integer_a.clone()),
-            rns: rns.clone(),
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_ne!(prover.verify(), Ok(()));
     }
 
     #[derive(Default, Clone, Debug)]
@@ -1111,7 +1073,7 @@ mod tests {
                     {
                         // constant addition in remainder range
                         let a = rns.rand_in_remainder_range();
-                        let b = rns.rand_in_remainder_range();
+                        let b = rns.rand_in_field();
 
                         let c = a.value() + b.value();
                         let c = rns.new_from_big(c);
@@ -1137,7 +1099,7 @@ mod tests {
                         let a = rns.rand_in_remainder_range();
                         let mut a = integer_chip.assign_integer(&mut region, Some(a.clone()).into(), offset)?;
 
-                        for _ in 0..100 {
+                        for _ in 0..10 {
                             let c = (a.integer().unwrap().value() * 2usize) % &self.rns.wrong_modulus;
                             let c = rns.new_from_big(c);
                             a = integer_chip.add(&mut region, &a, &a, offset)?;
@@ -1151,7 +1113,7 @@ mod tests {
 
                     {
                         // addition in unreduced range
-                        for _ in 0..100 {
+                        for _ in 0..10 {
                             let a = rns.rand_in_unreduced_range();
                             let b = rns.rand_in_unreduced_range();
                             let c = (a.value() + b.value()) % rns.wrong_modulus.clone();
@@ -1214,7 +1176,7 @@ mod tests {
                         let a = rns.rand_in_remainder_range();
                         let mut a = integer_chip.assign_integer(&mut region, Some(a.clone()).into(), offset)?;
 
-                        for _ in 0..100 {
+                        for _ in 0..10 {
                             let b = rns.rand_in_unreduced_range();
 
                             let a_norm = (a.integer().unwrap().value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
@@ -1243,6 +1205,33 @@ mod tests {
                         let c_0 = &integer_chip.neg(&mut region, &a, offset)?;
                         let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
                         assert_eq!(rns.make_aux(a.max_vals()).value(), c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
+
+                    {
+                        // mul2 in unreduced range
+                        let a = rns.rand_in_unreduced_range();
+                        let c = (a.value() * 2usize) % rns.wrong_modulus.clone();
+                        let c = rns.new_from_big(c);
+
+                        let a = integer_chip.assign_integer_no_check(&mut region, Some(a.clone()).into(), offset)?;
+
+                        let c_0 = &integer_chip.mul2(&mut region, &a, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                        assert_eq!(a.max_val() * 2usize, c_0.max_val());
+                        integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
+                    }
+
+                    {
+                        // mul3 in unreduced range
+                        let a = rns.rand_in_unreduced_range();
+                        let c = (a.value() * 3usize) % rns.wrong_modulus.clone();
+                        let c = rns.new_from_big(c);
+
+                        let a = integer_chip.assign_integer_no_check(&mut region, Some(a.clone()).into(), offset)?;
+                        let c_0 = &integer_chip.mul3(&mut region, &a, offset)?;
+                        let c_1 = integer_chip.range_assign_integer(&mut region, Some(c.clone()).into(), Range::Remainder, offset)?;
+                        assert_eq!(a.max_val() * 3usize, c_0.max_val());
                         integer_chip.assert_equal(&mut region, &c_0, &c_1, offset)?;
                     }
 

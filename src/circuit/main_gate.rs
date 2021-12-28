@@ -160,12 +160,17 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn invert_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
     fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
 
+    fn assert_equal_to_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: F, offset: &mut usize) -> Result<(), Error>;
+
     fn assert_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
     fn is_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error>;
+
     fn assert_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
     fn is_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error>;
+
+    fn assert_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error>;
 
     fn add(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
     fn add_with_constant(
@@ -190,6 +195,8 @@ pub trait MainGateInstructions<F: FieldExt> {
     ) -> Result<AssignedValue<F>, Error>;
 
     fn neg_with_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, aux: F, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn mul2(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn mul3(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
     fn mul(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
 
@@ -312,6 +319,46 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             Term::Unassigned(c, -one),
             Term::Zero,
             aux,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn mul2(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        let c = match a.value() {
+            Some(a) => Some(a + a),
+            _ => None,
+        };
+
+        let (_, _, cell, _) = self.combine(
+            region,
+            Term::assigned_to_add(&a),
+            Term::assigned_to_add(&a),
+            Term::unassigned_to_sub(c),
+            Term::Zero,
+            F::zero(),
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn mul3(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+        let c = match a.value() {
+            Some(a) => Some(a + a + a),
+            _ => None,
+        };
+
+        let (_, _, _, cell) = self.combine(
+            region,
+            Term::assigned_to_add(&a),
+            Term::assigned_to_add(&a),
+            Term::assigned_to_add(&a),
+            Term::unassigned_to_sub(c),
+            F::zero(),
             offset,
             CombinationOption::SingleLinerAdd,
         )?;
@@ -562,20 +609,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     }
 
     fn assert_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
-        let (one, zero) = (F::one(), F::zero());
-
-        self.combine(
-            region,
-            Term::Assigned(&a, one),
-            Term::Zero,
-            Term::Zero,
-            Term::Zero,
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        Ok(())
+        self.assert_equal_to_constant(region, a, F::zero(), offset)
     }
 
     fn assert_not_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
@@ -608,6 +642,25 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn is_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
         let (_, is_zero) = self.invert(region, a, offset)?;
         Ok(is_zero)
+    }
+
+    fn assert_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+        self.assert_equal_to_constant(region, a, F::one(), offset)
+    }
+
+    fn assert_equal_to_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: F, offset: &mut usize) -> Result<(), Error> {
+        self.combine(
+            region,
+            Term::assigned_to_add(&a),
+            Term::Zero,
+            Term::Zero,
+            Term::Zero,
+            -b,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(())
     }
 
     fn cond_or(

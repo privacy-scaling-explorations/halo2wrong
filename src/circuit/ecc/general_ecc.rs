@@ -1,4 +1,4 @@
-use super::EccConfig;
+use super::{AssignedIncompletePoint, EccConfig};
 use crate::circuit::integer::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::main_gate::{MainGate, MainGateInstructions};
 use crate::circuit::{AssignedCondition, AssignedInteger, UnassignedInteger};
@@ -12,7 +12,11 @@ use crate::circuit::ecc::{AssignedPoint, Point};
 pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
     fn assign_point(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
+    fn assign_point_incomplete(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error>;
+
     fn assert_is_on_curve(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error>;
+
+    fn assert_is_on_curve_incomplete(&self, region: &mut Region<'_, N>, point: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<(), Error>;
 
     fn select(
         &self,
@@ -23,6 +27,15 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error>;
 
+    fn select_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        c: &AssignedCondition<N>,
+        p1: &AssignedIncompletePoint<N>,
+        p2: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error>;
+
     fn select_or_assign(
         &self,
         region: &mut Region<'_, N>,
@@ -32,13 +45,42 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error>;
 
+    fn select_or_assign_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        c: &AssignedCondition<N>,
+        p1: &AssignedIncompletePoint<N>,
+        p2: Emulated,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error>;
+
     fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error>;
+
+    fn assert_equal_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedIncompletePoint<N>,
+        p1: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<(), Error>;
 
     fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
+    fn add_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedIncompletePoint<N>,
+        p1: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error>;
+
     fn double(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
+    fn double_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error>;
+
     fn neg(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
+
+    fn neg_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error>;
 
     fn mul_var(&self, region: &mut Region<'_, N>, p: AssignedPoint<N>, e: AssignedInteger<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
@@ -53,6 +95,7 @@ pub struct GeneralEccChip<Emulated: CurveAffine, F: FieldExt> {
 
 // Ecc operation mods
 mod add;
+mod double;
 mod mul;
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
@@ -109,6 +152,13 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for GeneralEccChip<Emulated, N> {
     fn assert_is_on_curve(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        let is_infinity = point.z.clone();
+        self.assert_is_on_curve_incomplete(region, &point.into(), offset)?;
+        main_gate.assert_zero(region, is_infinity, offset)
+    }
+
+    fn assert_is_on_curve_incomplete(&self, region: &mut Region<'_, N>, point: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
 
         let y_square = &integer_chip.square(region, &point.y, offset)?;
@@ -127,6 +177,13 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
     }
 
     fn assign_point(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+        let point = self.assign_point_incomplete(region, point, offset)?;
+        let z = &self.main_gate().assign_bit(region, Some(N::zero()), offset)?;
+        let point = AssignedPoint::from_impcomplete(&point, z);
+        Ok(point)
+    }
+
+    fn assign_point_incomplete(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error> {
         let integer_chip = self.base_field_chip();
 
         let point = point.map(|point| self.into_rns_point(point));
@@ -137,19 +194,29 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
 
         let x = integer_chip.range_assign_integer(region, x, Range::Remainder, offset)?;
         let y = integer_chip.range_assign_integer(region, y, Range::Remainder, offset)?;
-        let z = self.main_gate().assign_bit(region, Some(N::zero()), offset)?;
-        let point = AssignedPoint::new(x, y, z);
-        self.assert_is_on_curve(region, &point, offset)?;
+
+        let point = AssignedIncompletePoint { x, y };
+        self.assert_is_on_curve_incomplete(region, &point, offset)?;
+
         Ok(point)
     }
 
     fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
-        let main_gate = self.main_gate();
+        self.assert_equal_incomplete(region, &p0.into(), &p1.into(), offset)?;
+        // self.main_gate().assert_equal(region, p0.z.clone(), p1.z.clone(), offset)?;
+        Ok(())
+    }
+
+    fn assert_equal_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedIncompletePoint<N>,
+        p1: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
         integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
-        integer_chip.assert_equal(region, &p0.y, &p1.y, offset)?;
-        main_gate.assert_equal(region, p0.z.clone(), p1.z.clone(), offset)?;
-        Ok(())
+        integer_chip.assert_equal(region, &p0.y, &p1.y, offset)
     }
 
     fn select(
@@ -160,12 +227,23 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         p2: &AssignedPoint<N>,
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error> {
-        let main_gate = self.main_gate();
+        let point = &self.select_incomplete(region, c, &p1.into(), &p2.into(), offset)?;
+        let c = self.main_gate().cond_select(region, p1.z.clone(), p2.z.clone(), c, offset)?.into();
+        Ok(AssignedPoint::from_impcomplete(point, &c))
+    }
+
+    fn select_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        c: &AssignedCondition<N>,
+        p1: &AssignedIncompletePoint<N>,
+        p2: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error> {
         let integer_chip = self.base_field_chip();
         let x = integer_chip.cond_select(region, &p1.x, &p2.x, c, offset)?;
         let y = integer_chip.cond_select(region, &p1.y, &p2.y, c, offset)?;
-        let c: AssignedCondition<N> = main_gate.cond_select(region, p1.z.clone(), p2.z.clone(), c, offset)?.into();
-        Ok(AssignedPoint::new(x, y, c))
+        Ok(AssignedIncompletePoint::new(x, y))
     }
 
     fn select_or_assign(
@@ -176,30 +254,62 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         p2: Emulated,
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error> {
-        let main_gate = self.main_gate();
+        let point = &self.select_or_assign_incomplete(region, c, &p1.into(), p2, offset)?;
+        let c: AssignedCondition<N> = self
+            .main_gate()
+            .cond_select_or_assign(region, p1.z.clone(), if bool::from(p2.is_identity()) { N::one() } else { N::zero() }, c, offset)?
+            .into();
+        Ok(AssignedPoint::from_impcomplete(point, &c))
+    }
+
+    fn select_or_assign_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        c: &AssignedCondition<N>,
+        p1: &AssignedIncompletePoint<N>,
+        p2: Emulated,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error> {
         let integer_chip = self.base_field_chip();
         let p2 = self.into_rns_point(p2);
         let x = integer_chip.cond_select_or_assign(region, &p1.x, &p2.x, c, offset)?;
         let y = integer_chip.cond_select_or_assign(region, &p1.y, &p2.y, c, offset)?;
-        let c: AssignedCondition<N> = main_gate
-            .cond_select_or_assign(region, p1.z.clone(), if p2.is_identity { N::one() } else { N::zero() }, c, offset)?
-            .into();
-        Ok(AssignedPoint::new(x, y, c))
+        Ok(AssignedIncompletePoint::new(x, y))
     }
 
     fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         self._add(region, p0, p1, offset)
     }
 
+    fn add_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedIncompletePoint<N>,
+        p1: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error> {
+        self._add_incomplete_unsafe(region, p0, p1, offset)
+    }
+
     fn double(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
-        self._add(region, p, p, offset)
+        // self._add(region, p, p, offset)
+        self._double(region, p, offset)
+    }
+
+    fn double_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error> {
+        // self._add(region, p, p, offset)
+        self._double_incomplete(region, p, offset)
     }
 
     fn neg(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+        let incomplete = self.neg_incomplete(region, &p.into(), offset)?;
+        Ok(AssignedPoint::from_impcomplete(&incomplete, &p.z.clone()))
+    }
+
+    fn neg_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error> {
         let integer_chip = self.base_field_chip();
         let y_neg = integer_chip.neg(region, &p.y, offset)?;
-        let y_neg = integer_chip.reduce(region, &y_neg, offset)?;
-        Ok(AssignedPoint::new(p.x.clone(), y_neg, p.z.clone()))
+        Ok(AssignedIncompletePoint::new(p.x.clone(), y_neg))
     }
 
     fn mul_var(&self, region: &mut Region<'_, N>, p: AssignedPoint<N>, e: AssignedInteger<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
@@ -221,7 +331,7 @@ mod tests {
     use crate::rns::Rns;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
     use group::Group;
-    use halo2::arithmetic::{CurveAffine, Field, FieldExt};
+    use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::pasta::EqAffine;
@@ -352,8 +462,6 @@ mod tests {
                     // let point = AssignedPoint { x, y, z };
                     // ecc_chip.assert_is_on_curve(&mut region, &point, offset)?;
 
-                    // test addition
-
                     let a = C::CurveExt::random(&mut rng);
                     let b = C::CurveExt::random(&mut rng);
 
@@ -361,23 +469,45 @@ mod tests {
                     let a = &ecc_chip.assign_point(&mut region, Some(a.into()), offset)?;
                     let b = &ecc_chip.assign_point(&mut region, Some(b.into()), offset)?;
                     let c_0 = &ecc_chip.assign_point(&mut region, Some(c.into()), offset)?;
-
                     let c_1 = &ecc_chip.add(&mut region, a, b, offset)?;
                     ecc_chip.assert_equal(&mut region, c_0, c_1, offset)?;
 
+                    let c_1 = &ecc_chip.add_incomplete(&mut region, &a.into(), &b.into(), offset)?;
+                    ecc_chip.assert_equal_incomplete(&mut region, &c_0.into(), c_1, offset)?;
+
+                    let inf = ecc_chip.assign_infinity(&mut region, offset)?;
+                    let c = &ecc_chip.add(&mut region, a, &inf, offset)?;
+                    ecc_chip.assert_equal(&mut region, c, a, offset)?;
+                    let c = &ecc_chip.add(&mut region, &inf, b, offset)?;
+                    ecc_chip.assert_equal(&mut region, c, b, offset)?;
+                    let c = &ecc_chip.add(&mut region, &inf, &inf, offset)?;
+                    ecc_chip.assert_equal(&mut region, c, &inf, offset)?;
+
                     // test doubling
 
-                    let e = C::CurveExt::random(&mut rng);
-                    let a = e.clone();
-                    let b = e.clone();
+                    let a = C::CurveExt::random(&mut rng);
+                    let b = a.clone();
                     let c = a + b;
 
                     let a = &ecc_chip.assign_point(&mut region, Some(a.into()), offset)?;
                     let b = &ecc_chip.assign_point(&mut region, Some(b.into()), offset)?;
                     let c_0 = &ecc_chip.assign_point(&mut region, Some(c.into()), offset)?;
                     let c_1 = &ecc_chip.add(&mut region, a, b, offset)?;
-
                     ecc_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+
+                    let a = C::CurveExt::random(&mut rng);
+                    let c = a + a;
+
+                    let a = &ecc_chip.assign_point(&mut region, Some(a.into()), offset)?;
+                    let c_0 = &ecc_chip.assign_point(&mut region, Some(c.into()), offset)?;
+                    let c_1 = &ecc_chip.double(&mut region, a, offset)?;
+                    ecc_chip.assert_equal(&mut region, c_0, c_1, offset)?;
+
+                    let c_1 = &ecc_chip.double_incomplete(&mut region, &a.into(), offset)?;
+                    ecc_chip.assert_equal_incomplete(&mut region, &c_0.into(), c_1, offset)?;
+
+                    let c = &ecc_chip.double(&mut region, &inf, offset)?;
+                    ecc_chip.assert_equal(&mut region, c, &inf, offset)?;
 
                     Ok(())
                 },
@@ -482,57 +612,4 @@ mod tests {
 
         assert_eq!(prover.verify(), Ok(()));
     }
-
-    // fn test_ecc_scalar_mul_circuit(
-    //     base: Option<<C as CurveAffine>::ScalarExt>,
-    //     result: Option<<C as CurveAffine>::ScalarExt>,
-    //     s: <C as CurveAffine>::ScalarExt,
-    // ) {
-    //     let bit_len_limb = 68;
-
-    //     let rns_base = Rns::<<C as CurveAffine>::Base, Native>::construct(bit_len_limb);
-    //     let rns_scalar = Rns::<<C as CurveAffine>::ScalarExt, Native>::construct(bit_len_limb);
-
-    //     let k: u32 = 20;
-
-    //     let base = create_point(base);
-    //     let result = create_point(result);
-
-    //     let circuit = TestEccScalarMul::<C, Native> {
-    //         base,
-    //         result,
-    //         s,
-    //         rns_base,
-    //         rns_scalar,
-    //     };
-
-    //     let prover = match MockProver::run(k, &circuit, vec![]) {
-    //         Ok(prover) => prover,
-    //         Err(e) => panic!("{:#?}", e),
-    //     };
-
-    //     assert_eq!(prover.verify(), Ok(()));
-    // }
-
-    // #[test]
-    // fn test_ecc_scalar_mul_zero() {
-    //     type ScalarExt = <C as CurveAffine>::ScalarExt;
-    //     let a = ScalarExt::rand();
-    //     test_ecc_scalar_mul_circuit(Some(a), None, ScalarExt::from(0));
-    // }
-
-    // #[test]
-    // fn test_ecc_scalar_zero_mul() {
-    //     type ScalarExt = <C as CurveAffine>::ScalarExt;
-    //     let a = ScalarExt::rand();
-    //     test_ecc_scalar_mul_circuit(None, None, a);
-    // }
-
-    // #[test]
-    // fn test_ecc_scalar_mul_nonzero() {
-    //     type ScalarExt = <C as CurveAffine>::ScalarExt;
-    //     let a = ScalarExt::rand();
-    //     let b = ScalarExt::rand();
-    //     test_ecc_scalar_mul_circuit(Some(a), Some(a * b), b);
-    // }
 }

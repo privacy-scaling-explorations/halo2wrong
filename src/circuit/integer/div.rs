@@ -14,9 +14,20 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         b: &AssignedInteger<N>,
         offset: &mut usize,
     ) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
-        let (b_inv, cond) = self.invert(region, b, offset)?;
-        let a_mul_b_inv = self.mul(region, a, &b_inv, offset)?;
+        let (b_inv, cond) = self._invert(region, b, offset)?;
+        let a_mul_b_inv = self._mul(region, a, &b_inv, offset)?;
 
         Ok((a_mul_b_inv, cond))
+    }
+
+    pub(crate) fn _div_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let b_inv = self._invert_incomplete(region, b, offset)?;
+        self.mul(region, a, &b_inv, offset)
     }
 }
