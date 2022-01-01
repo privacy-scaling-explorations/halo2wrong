@@ -66,6 +66,14 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
 
     fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
+    fn add_identity_or_neq(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedPoint<N>,
+        p1: &AssignedPoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<N>, Error>;
+
     fn add_incomplete(
         &self,
         region: &mut Region<'_, N>,
@@ -279,6 +287,16 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
 
     fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         self._add(region, p0, p1, offset)
+    }
+
+    fn add_identity_or_neq(
+        &self,
+        region: &mut Region<'_, N>,
+        p0: &AssignedPoint<N>,
+        p1: &AssignedPoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<N>, Error> {
+        self._add_identity_or_neq(region, p0, p1, offset)
     }
 
     fn add_incomplete(

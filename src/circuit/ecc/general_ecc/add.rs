@@ -101,6 +101,46 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         Ok(p)
     }
 
+    /* prerequisite: b.is_identity || a <> b
+     * return: a.is_ideneity ? b : (b.is_identity ? a : add a b with tangent)
+     */
+    pub(super) fn _add_identity_or_neq(
+        &self,
+        region: &mut Region<'_, F>,
+        a: &AssignedPoint<F>,
+        b: &AssignedPoint<F>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<F>, Error> {
+        let main_gate = self.main_gate();
+        let base_chip = self.base_field_chip();
+
+        let (lambda, zero_cond) = {
+            let numerator = base_chip.sub(region, &a.y, &b.y, offset)?;
+            let denominator = base_chip.sub(region, &a.x, &b.x, offset)?;
+            let (tangent, zero_cond) = base_chip.div(region, &numerator, &denominator, offset)?;
+            (tangent, zero_cond)
+        };
+
+        let lambda_square = base_chip.mul(region, &lambda, &lambda, offset)?;
+
+        // cx = λ^2 - a.x - b.x
+        let sqsub = base_chip.sub(region, &lambda_square, &a.x, offset)?;
+        let cx = base_chip.sub(region, &sqsub, &b.x, offset)?;
+
+        // cy = λ(a.x - c.x) - a.y
+        let xsub = base_chip.sub(region, &a.x, &cx, offset)?;
+        let yi = base_chip.mul(region, &lambda, &xsub, offset)?;
+        let cy = base_chip.sub(region, &yi, &a.y, offset)?;
+        let p = AssignedPoint::new(cx, cy, zero_cond.clone());
+
+        let nzero = main_gate.cond_not(region, &zero_cond, offset)?;
+        let p = self.select_or_assign(region, &nzero, &p, Emulated::identity(), offset)?;
+        let p = self.select(region, &b.is_identity(), &a, &p, offset)?;
+        let p = self.select(region, &a.is_identity(), &b, &p, offset)?;
+
+        Ok(p)
+    }
+
     pub(crate) fn _add_incomplete_unsafe(
         &self,
         region: &mut Region<'_, F>,

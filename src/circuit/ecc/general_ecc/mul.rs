@@ -1,4 +1,5 @@
 use super::AssignedPoint;
+use super::IntegerInstructions;
 use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::{Assigned, AssignedCondition, AssignedInteger};
@@ -139,6 +140,8 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         e: AssignedInteger<F>,
         offset: &mut usize,
     ) -> Result<AssignedPoint<F>, Error> {
+        let e = self.scalar_field_chip().reduce(region, &e, offset)?;
+
         let p_neg = self.neg(region, &p, offset)?;
         let p_double = self.double(region, &p, offset)?;
         let (rem, selector) = self.decompose(region, e, offset)?;
@@ -153,7 +156,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
             acc = self.double(region, &acc, offset)?;
             acc = self.double(region, &acc, offset)?;
-            acc = self.add(region, &acc, &a, offset)?;
+            acc = self.add_identity_or_neq(region, &acc, &a, offset)?;
         }
 
         Ok(acc)
