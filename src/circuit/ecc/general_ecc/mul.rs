@@ -1,5 +1,6 @@
 use super::AssignedPoint;
 use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
+use crate::circuit::integer::IntegerInstructions;
 use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
 use crate::circuit::{Assigned, AssignedCondition, AssignedInteger};
 use crate::rns::{big_to_fe, fe_to_big};
@@ -139,21 +140,41 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         e: AssignedInteger<F>,
         offset: &mut usize,
     ) -> Result<AssignedPoint<F>, Error> {
+        let integer_chip = self.base_field_chip();
+        let main_gate = self.main_gate();
+        let rns = integer_chip.rns.clone();
+
+        let one = F::one();
+
         let p_neg = self.neg(region, &p, offset)?;
         let p_double = self.double(region, &p, offset)?;
         let (rem, selector) = self.decompose(region, e, offset)?;
         let mut acc = self.select_or_assign(region, &rem, &p, Emulated::identity(), offset)?;
 
+        let p_curvature = self._curvature(region, &p, offset)?;
+        let p_neg_curvature = self._curvature(region, &p_neg, offset)?;
+        let p_double_curvature = self._curvature(region, &p_double, offset)?;
+
         for di in selector.iter().rev() {
             // 0b01 - p, 0b00 - identity
-            let b0 = self.select_or_assign(region, &di.l, &p, Emulated::identity(), offset)?;
+            let p0 = self.select_or_assign(region, &di.l, &p, Emulated::identity(), offset)?;
             // 0b11 - p_neg, 0b10 - p_double
-            let b1 = self.select(region, &di.l, &p_neg, &p_double, offset)?;
-            let a = self.select(region, &di.h, &b1, &b0, offset)?;
+            let p1 = self.select(region, &di.l, &p_neg, &p_double, offset)?;
+            let p = self.select(region, &di.h, &p1, &p0, offset)?;
+
+            // select curvature
+            let curvaturev0 = integer_chip.cond_select_or_assign(region, &p_curvature.0, &rns.zero(), &di.l, offset)?;
+            let curvaturev1 = integer_chip.cond_select(region, &p_neg_curvature.0, &p_double_curvature.0, &di.l, offset)?;
+            let curvaturev = integer_chip.cond_select(region, &curvaturev1, &curvaturev0, &di.h, offset)?;
+
+            // select curvature infinity bit
+            let curvaturei0 = main_gate.cond_select_or_assign(region, p_curvature.1.clone(), one, &di.l, offset)?;
+            let curvaturei1 = main_gate.cond_select(region, &p_neg_curvature.1, &p_double_curvature.1, &di.l, offset)?;
+            let curvaturei = main_gate.cond_select(region, &curvaturei1, &curvaturei0, &di.h, offset)?;
 
             acc = self.double(region, &acc, offset)?;
             acc = self.double(region, &acc, offset)?;
-            acc = self.add(region, &acc, &a, offset)?;
+            acc = self._add_with_curvature(region, &acc, &p, &(curvaturev, curvaturei.into()), offset)?;
         }
 
         Ok(acc)

@@ -323,7 +323,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
         for i in 0..NUMBER_OF_LIMBS {
-            let res = main_gate.cond_select(region, a.limb(i), b.limb(i), cond, offset)?;
+            let res = main_gate.cond_select(region, &a.limb(i), &b.limb(i), cond, offset)?;
 
             let max_val = if a.limbs[i].max_val > b.limbs[i].max_val {
                 a.limbs[i].max_val.clone()
@@ -334,7 +334,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
             limbs.push(res.to_limb(max_val));
         }
 
-        let native_value = main_gate.cond_select(region, a.native(), b.native(), cond, offset)?;
+        let native_value = main_gate.cond_select(region, &a.native(), &b.native(), cond, offset)?;
 
         Ok(self.new_assigned_integer(limbs, native_value))
     }

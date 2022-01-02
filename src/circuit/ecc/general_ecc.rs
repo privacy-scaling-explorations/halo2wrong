@@ -228,7 +228,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         offset: &mut usize,
     ) -> Result<AssignedPoint<N>, Error> {
         let point = &self.select_incomplete(region, c, &p1.into(), &p2.into(), offset)?;
-        let c = self.main_gate().cond_select(region, p1.z.clone(), p2.z.clone(), c, offset)?.into();
+        let c = self.main_gate().cond_select(region, &p1.z, &p2.z, c, offset)?.into();
         Ok(AssignedPoint::from_impcomplete(point, &c))
     }
 

@@ -9,7 +9,7 @@ use halo2::circuit::Region;
 use halo2::plonk::Error;
 
 impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
-    fn curvature(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, offset: &mut usize) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
+    pub fn _curvature(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, offset: &mut usize) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
         let base_chip = self.base_field_chip();
         // (3 * a.x^2 + self.a) / 2 * a.y
         let xsqm = {
@@ -32,6 +32,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         region: &mut Region<'_, F>,
         a: &AssignedPoint<F>,
         b: &AssignedPoint<F>,
+        curvature: &(AssignedInteger<F>, AssignedCondition<F>),
         offset: &mut usize,
     ) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
         let main_gate = self.main_gate();
@@ -54,27 +55,21 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
             (tangent, eqx_cond, eq_cond)
         };
 
-        let (lambda_eq, lambda_eq_icond) = self.curvature(region, a, offset)?;
+        let (lambda_eq, lambda_eq_icond) = curvature;
 
         // select according to eq_cond
-        let infinity_cond = main_gate.cond_select(region, lambda_eq_icond, lambda_neq_icond, &eq_cond, offset)?;
+        let infinity_cond = main_gate.cond_select(region, lambda_eq_icond, &lambda_neq_icond, &eq_cond, offset)?;
 
         let lambda = base_chip.cond_select(region, &lambda_eq, &lambda_neq, &eq_cond, offset)?;
 
         Ok((lambda, AssignedCondition::new(infinity_cond.cell(), infinity_cond.value())))
     }
 
-    /* We use affine coordinates since invert cost almost the same as mul in
-     * halo circuts gates while projective coordinates involves more multiplication
-     * than affine coordinates.
-     * Thus coordinate z in point is used as an indicator of whether the point is
-     * identity(infinity) or not.
-     */
-    pub(super) fn _add(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
+    pub(super) fn _add_with_curvature(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>, curvature: &(AssignedInteger<F>, AssignedCondition<F>), offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
         let main_gate = self.main_gate();
         let base_chip = self.base_field_chip();
 
-        let (lambda, zero_cond) = self.lambda(region, a, b, offset)?;
+        let (lambda, zero_cond) = self.lambda(region, a, b, curvature, offset)?;
         let lambda_square = base_chip.mul(region, &lambda, &lambda, offset)?;
 
         // cx = λ^2 - a.x - b.x
@@ -98,6 +93,18 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let p = self.select(region, &b.is_identity(), &a, &p, offset)?;
         let p = self.select(region, &a.is_identity(), &b, &p, offset)?;
 
+        Ok(p)
+    }
+
+    /* We use affine coordinates since invert cost almost the same as mul in
+     * halo circuts gates while projective coordinates involves more multiplication
+     * than affine coordinates.
+     * Thus coordinate z in point is used as an indicator of whether the point is
+     * identity(infinity) or not.
+     */
+    pub(super) fn _add(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
+        let curvature = self._curvature(region, a, offset)?;
+        let p = self._add_with_curvature(region, a, b, &curvature, offset)?;
         Ok(p)
     }
 

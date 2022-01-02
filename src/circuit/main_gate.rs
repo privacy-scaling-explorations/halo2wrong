@@ -133,8 +133,8 @@ pub trait MainGateInstructions<F: FieldExt> {
     fn cond_select(
         &self,
         region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: impl Assigned<F>,
+        a: &impl Assigned<F>,
+        b: &impl Assigned<F>,
         cond: &AssignedCondition<F>,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
@@ -745,8 +745,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
     fn cond_select(
         &self,
         region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: impl Assigned<F>,
+        a: &impl Assigned<F>,
+        b: &impl Assigned<F>,
         cond: &AssignedCondition<F>,
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
@@ -771,8 +771,8 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         // a - b - dif = 0
         let (_, _, _, dif_cell) = self.combine(
             region,
-            Term::assigned_to_add(&a),
-            Term::assigned_to_sub(&b),
+            Term::assigned_to_add(a),
+            Term::assigned_to_sub(b),
             Term::Zero,
             Term::unassigned_to_sub(dif),
             F::zero(),
@@ -787,7 +787,7 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             region,
             Term::assigned_to_mul(dif),
             Term::assigned_to_mul(cond),
-            Term::assigned_to_add(&b),
+            Term::assigned_to_add(b),
             Term::unassigned_to_sub(res),
             F::zero(),
             offset,
@@ -1757,7 +1757,7 @@ mod tests {
                     let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
                     let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
                     let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond, super::MainGateColumn::A, &mut offset)?.into();
-                    let selected = main_gate.cond_select(&mut region, a, b.clone(), &cond, &mut offset)?;
+                    let selected = main_gate.cond_select(&mut region, &a, &b, &cond, &mut offset)?;
                     main_gate.assert_equal(&mut region, b, selected, &mut offset)?;
 
                     let a = F::rand();
@@ -1771,7 +1771,7 @@ mod tests {
                     let a = main_gate.assign_value(&mut region, &a, super::MainGateColumn::A, &mut offset)?;
                     let b = main_gate.assign_value(&mut region, &b, super::MainGateColumn::A, &mut offset)?;
                     let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond, super::MainGateColumn::A, &mut offset)?.into();
-                    let selected = main_gate.cond_select(&mut region, a.clone(), b, &cond, &mut offset)?;
+                    let selected = main_gate.cond_select(&mut region, &a, &b, &cond, &mut offset)?;
                     main_gate.assert_equal(&mut region, a, selected, &mut offset)?;
 
                     let a = F::rand();

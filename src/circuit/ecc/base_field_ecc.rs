@@ -177,7 +177,7 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         let integer_chip = self.integer_chip();
         let x = integer_chip.cond_select(region, &p1.x, &p2.x, c, offset)?;
         let y = integer_chip.cond_select(region, &p1.y, &p2.y, c, offset)?;
-        let c: AssignedCondition<C::ScalarExt> = main_gate.cond_select(region, p1.z.clone(), p2.z.clone(), c, offset)?.into();
+        let c: AssignedCondition<C::ScalarExt> = main_gate.cond_select(region, &p1.z, &p2.z, c, offset)?.into();
         Ok(AssignedPoint::new(x, y, c))
     }
 
