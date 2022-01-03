@@ -78,6 +78,14 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
 
     fn double_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error>;
 
+    fn ladder_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        to_double: &AssignedIncompletePoint<N>,
+        to_add: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error>;
+
     fn neg(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
     fn neg_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error>;
@@ -96,6 +104,7 @@ pub struct GeneralEccChip<Emulated: CurveAffine, F: FieldExt> {
 // Ecc operation mods
 mod add;
 mod double;
+mod ladder;
 mod mul;
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
@@ -202,9 +211,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
     }
 
     fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
-        self.assert_equal_incomplete(region, &p0.into(), &p1.into(), offset)?;
-        // self.main_gate().assert_equal(region, p0.z.clone(), p1.z.clone(), offset)?;
-        Ok(())
+        self.assert_equal_incomplete(region, &p0.into(), &p1.into(), offset)
     }
 
     fn assert_equal_incomplete(
@@ -292,13 +299,21 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
     }
 
     fn double(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
-        // self._add(region, p, p, offset)
         self._double(region, p, offset)
     }
 
     fn double_incomplete(&self, region: &mut Region<'_, N>, p: &AssignedIncompletePoint<N>, offset: &mut usize) -> Result<AssignedIncompletePoint<N>, Error> {
-        // self._add(region, p, p, offset)
         self._double_incomplete(region, p, offset)
+    }
+
+    fn ladder_incomplete(
+        &self,
+        region: &mut Region<'_, N>,
+        to_double: &AssignedIncompletePoint<N>,
+        to_add: &AssignedIncompletePoint<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedIncompletePoint<N>, Error> {
+        self._ladder_incomplete(region, to_double, to_add, offset)
     }
 
     fn neg(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
@@ -442,6 +457,7 @@ mod tests {
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
             let ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, self.rns_base.clone(), self.rns_scalar.clone())?;
+            // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -508,6 +524,19 @@ mod tests {
 
                     let c = &ecc_chip.double(&mut region, &inf, offset)?;
                     ecc_chip.assert_equal(&mut region, c, &inf, offset)?;
+
+                    // test ladder
+
+                    let a = C::CurveExt::random(&mut rng);
+                    let b = C::CurveExt::random(&mut rng);
+                    let c = a + b + a;
+
+                    let a = &ecc_chip.assign_point(&mut region, Some(a.into()), offset)?;
+                    let b = &ecc_chip.assign_point(&mut region, Some(b.into()), offset)?;
+                    let c_0 = &ecc_chip.assign_point(&mut region, Some(c.into()), offset)?;
+                    let c_1 = &ecc_chip.ladder_incomplete(&mut region, &a.into(), &b.into(), offset)?;
+
+                    ecc_chip.assert_equal_incomplete(&mut region, &c_0.into(), c_1, offset)?;
 
                     Ok(())
                 },
