@@ -213,6 +213,9 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
         options: CombinationOption<F>,
     ) -> Result<(Cell, Cell, Cell, Cell), Error>;
+
+    #[cfg(test)]
+    fn break_here(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
@@ -1024,6 +1027,22 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
         region.assign_fixed(|| "sd", self.config.sd, *offset, || Ok(F::zero()))?;
         region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
         region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(F::zero()))?;
+        *offset = *offset + 1;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn break_here(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error> {
+        self.combine(
+            region,
+            Term::Zero,
+            Term::Zero,
+            Term::Zero,
+            Term::Zero,
+            F::one(),
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
         *offset = *offset + 1;
         Ok(())
     }
