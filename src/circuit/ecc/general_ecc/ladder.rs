@@ -26,8 +26,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
         // x_3 = lambda_0 * lambda_0 - x_1 - x_2
         let lambda_0_square = &ch.square(region, lambda_0, offset)?;
-        let t = &ch.add(region, &to_add.x, &to_double.x, offset)?;
-        let x_3 = &ch.sub(region, lambda_0_square, t, offset)?;
+        let x_3 = &ch.sub_sub(region, lambda_0_square, &to_add.x, &to_double.x, offset)?;
 
         // lambda_1 = lambda_0 + 2 * y_1 / (x_3 - x_1)
         let numerator = &ch.mul2(region, &to_double.y, offset)?;
@@ -37,8 +36,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
         // x_4 = lambda_1 * lambda_1 - x_1 - x_3
         let lambda_1_square = &ch.square(region, lambda_1, offset)?;
-        let t = &ch.add(region, x_3, &to_double.x, offset)?;
-        let x_4 = &ch.sub(region, lambda_1_square, t, offset)?;
+        let x_4 = &ch.sub_sub(region, lambda_1_square, x_3, &to_double.x, offset)?;
 
         // y_4 = lambda_1 * (x_4 - x_1) - y_1
         let t = &ch.sub(region, &x_4, &to_double.x, offset)?;

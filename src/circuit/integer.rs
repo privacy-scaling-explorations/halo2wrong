@@ -17,10 +17,8 @@ mod assign;
 mod div;
 mod invert;
 mod mul;
-mod neg;
 mod reduce;
 mod square;
-mod sub;
 
 pub enum Range {
     Remainder,
@@ -69,6 +67,14 @@ pub trait IntegerInstructions<N: FieldExt> {
     fn mul2(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul3(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn sub_sub(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b_0: &AssignedInteger<N>,
+        b_1: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error>;
     fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
@@ -154,6 +160,22 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
             &self.reduce_if_limb_values_exceeds_unreduced(region, b, offset)?,
         );
         self._sub(region, a, b, offset)
+    }
+
+    fn sub_sub(
+        &self,
+        region: &mut Region<'_, N>,
+        a: &AssignedInteger<N>,
+        b_0: &AssignedInteger<N>,
+        b_1: &AssignedInteger<N>,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        let (a, b_0, b_1) = (
+            &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
+            &self.reduce_if_limb_values_exceeds_unreduced(region, b_0, offset)?,
+            &self.reduce_if_limb_values_exceeds_unreduced(region, b_1, offset)?,
+        );
+        self._sub_sub(region, a, b_0, b_1, offset)
     }
 
     fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {

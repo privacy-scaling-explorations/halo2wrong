@@ -194,6 +194,16 @@ pub trait MainGateInstructions<F: FieldExt> {
         offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error>;
 
+    fn sub_sub_with_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b_0: impl Assigned<F>,
+        b_1: impl Assigned<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error>;
+
     fn neg_with_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, aux: F, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
     fn mul2(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
     fn mul3(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
@@ -321,6 +331,36 @@ impl<F: FieldExt> MainGateInstructions<F> for MainGate<F> {
             Term::Assigned(&b, -one),
             Term::Unassigned(c, -one),
             Term::Zero,
+            aux,
+            offset,
+            CombinationOption::SingleLinerAdd,
+        )?;
+
+        Ok(AssignedValue::new(cell, c))
+    }
+
+    fn sub_sub_with_constant(
+        &self,
+        region: &mut Region<'_, F>,
+        a: impl Assigned<F>,
+        b_0: impl Assigned<F>,
+        b_1: impl Assigned<F>,
+        aux: F,
+        offset: &mut usize,
+    ) -> Result<AssignedValue<F>, Error> {
+        let c = match (a.value(), b_0.value(), b_1.value()) {
+            (Some(a), Some(b_0), Some(b_1)) => Some(a - b_0 - b_1 + aux),
+            _ => None,
+        };
+
+        let one = F::one();
+
+        let (_, _, _, cell) = self.combine(
+            region,
+            Term::Assigned(&a, one),
+            Term::Assigned(&b_0, -one),
+            Term::Assigned(&b_1, -one),
+            Term::Unassigned(c, -one),
             aux,
             offset,
             CombinationOption::SingleLinerAdd,

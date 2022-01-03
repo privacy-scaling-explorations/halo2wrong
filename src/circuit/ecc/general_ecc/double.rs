@@ -31,8 +31,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let lambda = &integer_chip.div_incomplete(region, numerator, denominator, offset)?;
 
         let lambda_square = &integer_chip.square(region, lambda, offset)?;
-        let two_x_0 = &integer_chip.mul2(region, &point.x, offset)?;
-        let x = &integer_chip.sub(region, lambda_square, two_x_0, offset)?;
+        let x = &integer_chip.sub_sub(region, lambda_square, &point.x, &point.x, offset)?;
         let t = &integer_chip.sub(region, &point.x, x, offset)?;
         let t = &integer_chip.mul(region, lambda, t, offset)?;
         let y = integer_chip.sub(region, t, &point.y, offset)?;
@@ -56,8 +55,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let (lambda, _) = &integer_chip.div(region, numerator, denominator, offset)?;
 
         let lambda_square = &integer_chip.square(region, lambda, offset)?;
-        let two_x = &integer_chip.mul2(region, &point.x, offset)?;
-        let x = &integer_chip.sub(region, lambda_square, two_x, offset)?;
+        let x = &integer_chip.sub_sub(region, lambda_square, &point.x, &point.x, offset)?;
         let t = &integer_chip.sub(region, &point.x, x, offset)?;
         let t = &integer_chip.mul(region, lambda, t, offset)?;
         let y = integer_chip.sub(region, t, &point.y, offset)?;
