@@ -1,13 +1,13 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::circuit::main_gate::{CombinationOption, MainGateColumn, MainGateInstructions, Term};
-use crate::circuit::range::RangeInstructions;
-use crate::circuit::{AssignedInteger, AssignedValue};
+use crate::circuit::AssignedInteger;
 use crate::rns::{Common, Integer, Quotient};
 use crate::NUMBER_OF_LIMBS;
 
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::main_gate::five::range::RangeInstructions;
+use halo2arith::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, Term};
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn mul_v0_range_tune(&self) -> usize {
@@ -100,23 +100,27 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
-            let mut t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
+            let mut intermediate_value = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
 
             for j in 0..=i {
                 let k = i - j;
 
                 let combination_option = if k == 0 {
-                    CombinationOption::SingleLinerMul
+                    CombinationOptionCommon::OneLinerMul
                 } else {
-                    CombinationOption::CombineToNextMul(one)
-                };
+                    CombinationOptionCommon::CombineToNextMul(one)
+                }
+                .into();
 
-                let (_, _, _, t_i_cell) = main_gate.combine(
+                let (_, _, _, _, t) = main_gate.combine(
                     region,
-                    Term::Assigned(&a.limb(j), zero),
-                    Term::Assigned(&b.limb(k), zero),
-                    Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
-                    Term::Unassigned(t, -one),
+                    [
+                        Term::Assigned(&a.limb(j), zero),
+                        Term::Assigned(&b.limb(k), zero),
+                        Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
+                        Term::Zero,
+                        Term::Unassigned(intermediate_value, -one),
+                    ],
                     zero,
                     offset,
                     combination_option,
@@ -124,11 +128,11 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
                 if j == 0 {
                     // first time we see t_j assignment
-                    intermediate_values_cycling.push(AssignedValue::<N>::new(t_i_cell, t));
+                    intermediate_values_cycling.push(t);
                 }
 
                 // update running temp value
-                t = t.map(|t| {
+                intermediate_value = intermediate_value.map(|t| {
                     let a = a.limb_value(j).unwrap();
                     let b = b.limb_value(k).unwrap();
                     let q = quotient.limb_value(k).unwrap();
@@ -149,26 +153,32 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
 
-        let (_, _, _, _) = main_gate.combine(
+        main_gate.combine(
             region,
-            Term::Assigned(&intermediate_values_cycling[0].clone(), one),
-            Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
-            Term::Assigned(&result.limbs[0].clone(), -one),
-            Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+            [
+                Term::Assigned(&intermediate_values_cycling[0].clone(), one),
+                Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
+                Term::Assigned(&result.limbs[0].clone(), -one),
+                Term::Zero,
+                Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Zero,
-            Term::Zero,
-            Term::Assigned(v_0, left_shifter_2r),
-            Term::Unassigned(u_0, -one),
+            [
+                Term::Zero,
+                Term::Zero,
+                Term::Assigned(v_0, left_shifter_2r),
+                Term::Zero,
+                Term::Unassigned(u_0, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
@@ -181,37 +191,46 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(&intermediate_values_cycling[2].clone(), one),
-            Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
-            Term::Assigned(&result.limbs[2].clone(), -one),
-            Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+            [
+                Term::Assigned(&intermediate_values_cycling[2].clone(), one),
+                Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
+                Term::Assigned(&result.limbs[2].clone(), -one),
+                Term::Zero,
+                Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Zero,
-            Term::Assigned(v_1, left_shifter_2r),
-            Term::Assigned(v_0, -one),
-            Term::Unassigned(u_1, -one),
+            [
+                Term::Zero,
+                Term::Assigned(v_1, left_shifter_2r),
+                Term::Assigned(v_0, -one),
+                Term::Zero,
+                Term::Unassigned(u_1, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // update native value
 
         main_gate.combine(
             region,
-            Term::Assigned(&a.native(), zero),
-            Term::Assigned(&b.native(), zero),
-            Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(&result.native(), -one),
+            [
+                Term::Assigned(&a.native(), zero),
+                Term::Assigned(&b.native(), zero),
+                Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+                Term::Zero,
+                Term::Assigned(&result.native(), -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerMul,
+            CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(result.clone())
@@ -281,18 +300,19 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let t_0 = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[0]);
 
-        let (_, _, _, t_0_cell) = main_gate.combine(
+        let (_, _, _, _, t_0) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(0), b[0]),
-            Term::Assigned(&quotient.limb(0), negative_wrong_modulus[0]),
-            Term::Zero,
-            Term::Unassigned(t_0, -one),
+            [
+                Term::Assigned(&a.limb(0), b[0]),
+                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[0]),
+                Term::Zero,
+                Term::Zero,
+                Term::Unassigned(t_0, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-
-        let t_0 = AssignedValue::new(t_0_cell, t_0);
 
         // t1
 
@@ -305,16 +325,19 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(&a.limb(0), b[1]),
-            Term::Assigned(&a.limb(1), b[0]),
-            Term::Assigned(&quotient.limb(0), negative_wrong_modulus[1]),
-            Term::Assigned(&quotient.limb(1), negative_wrong_modulus[0]),
+            [
+                Term::Assigned(&a.limb(0), b[1]),
+                Term::Assigned(&a.limb(1), b[0]),
+                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[1]),
+                Term::Assigned(&quotient.limb(1), negative_wrong_modulus[0]),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
-        let t_1 = main_gate.assign_value(region, &t_1.into(), MainGateColumn::D, offset)?;
+        let t_1 = main_gate.assign_to_acc(region, &t_1.into(), offset)?;
 
         // t2
 
@@ -334,29 +357,33 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             q_0 * p[2] + q_1 * p[1] + q_2 * p[0]
         });
 
-        let (_, _, _, t_2_cell) = main_gate.combine(
+        let (_, _, _, _, t_2) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(0), b[2]),
-            Term::Assigned(&a.limb(1), b[1]),
-            Term::Assigned(&a.limb(2), b[0]),
-            Term::Unassigned(t_2, -one),
+            [
+                Term::Assigned(&a.limb(0), b[2]),
+                Term::Assigned(&a.limb(1), b[1]),
+                Term::Assigned(&a.limb(2), b[0]),
+                Term::Zero,
+                Term::Unassigned(t_2, -one),
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(one),
+            CombinationOptionCommon::CombineToNextAdd(one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Assigned(&quotient.limb(0), negative_wrong_modulus[2]),
-            Term::Assigned(&quotient.limb(1), negative_wrong_modulus[1]),
-            Term::Assigned(&quotient.limb(2), negative_wrong_modulus[0]),
-            Term::Unassigned(tmp, -one),
+            [
+                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[2]),
+                Term::Assigned(&quotient.limb(1), negative_wrong_modulus[1]),
+                Term::Assigned(&quotient.limb(2), negative_wrong_modulus[0]),
+                Term::Zero,
+                Term::Unassigned(tmp, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-
-        let t_2 = AssignedValue::new(t_2_cell, t_2);
 
         // | A   | B   | C   | D     |
         // | --- | --- | --- | ----- |
@@ -375,8 +402,8 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 let a_3 = a.limb_value(3).unwrap();
                 let q_0 = quotient.limb_value(0).unwrap();
                 let q_1 = quotient.limb_value(1).unwrap();
-                let q_2 = quotient.limb_value(2).unwrap();
-                let q_3 = quotient.limb_value(3).unwrap();
+                // let q_2 = quotient.limb_value(2).unwrap();
+                // let q_3 = quotient.limb_value(3).unwrap();
 
                 let tmp_a = t_3 - a_0 * b[3] - a_1 * b[2] - a_2 * b[1];
                 let tmp_b = tmp_a - a_3 * b[0] - q_0 * p[3] - q_1 * p[2];
@@ -385,41 +412,47 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             }
             None => (None, None),
         };
-
-        let (_, _, _, t_3_cell) = main_gate.combine(
+        let (_, _, _, t_3, _) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(0), b[3]),
-            Term::Assigned(&a.limb(1), b[2]),
-            Term::Assigned(&a.limb(2), b[1]),
-            Term::Unassigned(t_3, -one),
+            [
+                Term::Assigned(&a.limb(0), b[3]),
+                Term::Assigned(&a.limb(1), b[2]),
+                Term::Assigned(&a.limb(2), b[1]),
+                Term::Unassigned(t_3, -one),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(one),
+            CombinationOptionCommon::CombineToNextAdd(one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Assigned(&a.limb(3), b[0]),
-            Term::Assigned(&quotient.limb(0), negative_wrong_modulus[3]),
-            Term::Assigned(&quotient.limb(1), negative_wrong_modulus[2]),
-            Term::Unassigned(tmp_a, -one),
+            [
+                Term::Assigned(&a.limb(3), b[0]),
+                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[3]),
+                Term::Assigned(&quotient.limb(1), negative_wrong_modulus[2]),
+                Term::Zero,
+                Term::Unassigned(tmp_a, -one),
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(one),
+            CombinationOptionCommon::CombineToNextAdd(one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Assigned(&quotient.limb(2), negative_wrong_modulus[1]),
-            Term::Assigned(&quotient.limb(3), negative_wrong_modulus[0]),
-            Term::Zero,
-            Term::Unassigned(tmp_b, -one),
+            [
+                Term::Assigned(&quotient.limb(2), negative_wrong_modulus[1]),
+                Term::Assigned(&quotient.limb(3), negative_wrong_modulus[0]),
+                Term::Zero,
+                Term::Zero,
+                Term::Unassigned(tmp_b, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-
-        let t_3 = AssignedValue::new(t_3_cell, t_3);
 
         // u_0 = t_0 + (t_1 * R) - r_0 - (r_1 * R)
         // u_0 = v_0 * R^2
@@ -432,26 +465,32 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
 
-        let (_, _, _, _) = main_gate.combine(
+        main_gate.combine(
             region,
-            Term::Assigned(&t_0, one),
-            Term::Assigned(&t_1, left_shifter_r),
-            Term::Assigned(&result.limbs[0].clone(), -one),
-            Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+            [
+                Term::Assigned(&t_0, one),
+                Term::Assigned(&t_1, left_shifter_r),
+                Term::Assigned(&result.limbs[0].clone(), -one),
+                Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Zero,
-            Term::Zero,
-            Term::Assigned(v_0, left_shifter_2r),
-            Term::Unassigned(u_0, -one),
+            [
+                Term::Zero,
+                Term::Zero,
+                Term::Assigned(v_0, left_shifter_2r),
+                Term::Zero,
+                Term::Unassigned(u_0, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
@@ -464,37 +503,46 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(&t_2, one),
-            Term::Assigned(&t_3, left_shifter_r),
-            Term::Assigned(&result.limbs[2].clone(), -one),
-            Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+            [
+                Term::Assigned(&t_2, one),
+                Term::Assigned(&t_3, left_shifter_r),
+                Term::Assigned(&result.limbs[2].clone(), -one),
+                Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Zero,
-            Term::Assigned(v_1, left_shifter_2r),
-            Term::Assigned(v_0, -one),
-            Term::Unassigned(u_1, -one),
+            [
+                Term::Zero,
+                Term::Assigned(v_1, left_shifter_2r),
+                Term::Assigned(v_0, -one),
+                Term::Zero,
+                Term::Unassigned(u_1, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // update native value
 
         main_gate.combine(
             region,
-            Term::Assigned(&a.native(), b_native),
-            Term::Zero,
-            Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(&result.native(), -one),
+            [
+                Term::Assigned(&a.native(), b_native),
+                Term::Zero,
+                Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+                Term::Assigned(&result.native(), -one),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(result.clone())
@@ -579,17 +627,21 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 let k = i - j;
 
                 let combination_option = if k == 0 {
-                    CombinationOption::SingleLinerMul
+                    CombinationOptionCommon::OneLinerMul
                 } else {
-                    CombinationOption::CombineToNextMul(one)
-                };
+                    CombinationOptionCommon::CombineToNextMul(one)
+                }
+                .into();
 
-                let (_, _, _, t_i_cell) = main_gate.combine(
+                let (_, _, _, _, t_i) = main_gate.combine(
                     region,
-                    Term::Assigned(&a.limb(j), zero),
-                    Term::Assigned(&b.limb(k), zero),
-                    Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
-                    Term::Unassigned(t, -one),
+                    [
+                        Term::Assigned(&a.limb(j), zero),
+                        Term::Assigned(&b.limb(k), zero),
+                        Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
+                        Term::Zero,
+                        Term::Unassigned(t, -one),
+                    ],
                     zero,
                     offset,
                     combination_option,
@@ -597,7 +649,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
                 if j == 0 {
                     // first time we see t_j assignment
-                    intermediate_values_cycling.push(AssignedValue::<N>::new(t_i_cell, t));
+                    intermediate_values_cycling.push(t_i);
                 }
 
                 // update running temp value
@@ -616,15 +668,18 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
 
-        let (_, _, _, _) = main_gate.combine(
+        main_gate.combine(
             region,
-            Term::Assigned(&intermediate_values_cycling[0].clone(), one),
-            Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
-            Term::Zero,
-            Term::Assigned(v_0, -left_shifter_2r),
+            [
+                Term::Assigned(&intermediate_values_cycling[0].clone(), one),
+                Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
+                Term::Assigned(v_0, -left_shifter_2r),
+                Term::Zero,
+                Term::Zero,
+            ],
             -one,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
@@ -637,26 +692,32 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(&intermediate_values_cycling[2].clone(), one),
-            Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
-            Term::Assigned(v_0, one),
-            Term::Assigned(v_1, -left_shifter_2r),
+            [
+                Term::Assigned(&intermediate_values_cycling[2].clone(), one),
+                Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
+                Term::Assigned(v_0, one),
+                Term::Assigned(v_1, -left_shifter_2r),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // update native value
 
         main_gate.combine(
             region,
-            Term::Assigned(&a.native(), zero),
-            Term::Assigned(&b.native(), zero),
-            Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
-            Term::Zero,
+            [
+                Term::Assigned(&a.native(), zero),
+                Term::Assigned(&b.native(), zero),
+                Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+                Term::Zero,
+                Term::Zero,
+            ],
             -one,
             offset,
-            CombinationOption::SingleLinerMul,
+            CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(())

@@ -1,11 +1,11 @@
 use super::IntegerChip;
-use crate::circuit::main_gate::MainGateInstructions;
 use crate::circuit::{AssignedInteger, AssignedLimb, Common};
-use crate::rns::{fe_to_big, Integer};
+use crate::rns::Integer;
 use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::{halo2, utils::fe_to_big, MainGateInstructions};
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _add(
@@ -25,7 +25,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let c_max = a_limb.add(&b_limb);
             let c_limb = main_gate.add(region, a_limb, b_limb, offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+            c_limbs.push(AssignedLimb::from(c_limb, c_max))
         }
         let c_native = main_gate.add(region, a.native(), b.native(), offset)?;
 
@@ -54,7 +54,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let c_max = a_limb.add_fe(aux);
             let c_limb = main_gate.sub_with_constant(region, a_limb, b_limb, aux, offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+            c_limbs.push(AssignedLimb::from(c_limb, c_max));
         }
 
         let c_native = main_gate.sub_with_constant(region, a.native(), b.native(), aux_native, offset)?;
@@ -89,7 +89,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let c_max = a_limb.add_fe(aux);
             let c_limb = main_gate.sub_sub_with_constant(region, a_limb, b_0_limb, b_1_limb, aux, offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+            c_limbs.push(AssignedLimb::from(c_limb, c_max));
         }
 
         let c_native = main_gate.sub_sub_with_constant(region, a.native(), b_0.native(), b_1.native(), aux_native, offset)?;
@@ -111,7 +111,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let aux = aux_limbs[idx];
             let c_limb = main_gate.neg_with_constant(region, a_limb, aux, offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, fe_to_big(aux)))
+            c_limbs.push(AssignedLimb::from(c_limb, fe_to_big(aux)));
         }
 
         let c_native = main_gate.neg_with_constant(region, a.native(), aux_native, offset)?;
@@ -129,7 +129,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let c_max = a_limb.mul2();
             let c_limb = main_gate.mul2(region, a_limb, offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+            c_limbs.push(AssignedLimb::from(c_limb, c_max));
         }
         let c_native = main_gate.mul2(region, a.native(), offset)?;
 
@@ -146,7 +146,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let c_max = a_limb.mul3();
             let c_limb = main_gate.mul3(region, a_limb, offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+            c_limbs.push(AssignedLimb::from(c_limb, c_max));
         }
         let c_native = main_gate.mul3(region, a.native(), offset)?;
 
@@ -170,7 +170,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             let c_max = a_limb.add_big(b_limb.value());
             let c_limb = main_gate.add_constant(region, a_limb, b_limb.fe(), offset)?;
 
-            c_limbs.push(AssignedLimb::<N>::new(c_limb.cell, c_limb.value, c_max))
+            c_limbs.push(AssignedLimb::from(c_limb, c_max));
         }
         let c_native = main_gate.add_constant(region, a.native(), b.native(), offset)?;
 

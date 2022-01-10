@@ -1,12 +1,12 @@
 use super::AssignedPoint;
 use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
 use crate::circuit::ecc::AssignedIncompletePoint;
-use crate::circuit::integer::IntegerInstructions;
-use crate::circuit::main_gate::MainGateInstructions;
-use crate::circuit::{Assigned, AssignedCondition, AssignedInteger};
+use crate::circuit::AssignedInteger;
+use crate::circuit::IntegerInstructions;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::{halo2, AssignedCondition, MainGateInstructions};
 
 impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
     fn curvature(&self, region: &mut Region<'_, F>, a: &AssignedPoint<F>, offset: &mut usize) -> Result<(AssignedInteger<F>, AssignedCondition<F>), Error> {
@@ -61,7 +61,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
         let lambda = base_chip.cond_select(region, &lambda_eq, &lambda_neq, &eq_cond, offset)?;
 
-        Ok((lambda, AssignedCondition::new(infinity_cond.cell(), infinity_cond.value())))
+        Ok((lambda, infinity_cond.into()))
     }
 
     /* We use affine coordinates since invert cost almost the same as mul in

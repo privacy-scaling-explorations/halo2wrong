@@ -1,9 +1,9 @@
-use super::{AssignedCondition, IntegerChip, IntegerInstructions, MainGateInstructions, Range};
-use crate::circuit::main_gate::{CombinationOption, Term};
-use crate::circuit::{Assigned, AssignedInteger};
+use super::{IntegerChip, IntegerInstructions, Range};
+use crate::circuit::AssignedInteger;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::{halo2, Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, Term};
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _invert(
@@ -45,19 +45,22 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         main_gate.one_or_one(region, a_mul_inv.limb(0), inv_or_one.limb(0), offset)?;
 
         // Align with main_gain.invert(), cond = 1 - a_mul_inv
-        let cond = a_mul_inv.limbs[0].value().map(|a_mul_inv| one - a_mul_inv);
-        let (_, cond_cell, _, _) = main_gate.combine(
+        let cond = a_mul_inv.limb(0).value().map(|a_mul_inv| one - a_mul_inv);
+        let (_, cond, _, _, _) = main_gate.combine(
             region,
-            Term::Assigned(&a_mul_inv.limbs[0], one),
-            Term::Unassigned(cond, one),
-            Term::Zero,
-            Term::Zero,
+            [
+                Term::Assigned(&a_mul_inv.limbs[0], one),
+                Term::Unassigned(cond, one),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             -one,
             offset,
-            CombinationOption::SingleLinerMul,
+            CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
-        Ok((inv_or_one, AssignedCondition::new(cond_cell, cond)))
+        Ok((inv_or_one, cond.into()))
     }
 
     pub(crate) fn _invert_incomplete(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {

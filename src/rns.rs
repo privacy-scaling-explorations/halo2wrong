@@ -1,37 +1,12 @@
 use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
+use halo2arith::halo2;
+use halo2arith::utils::{big_to_fe, compose, decompose_big, fe_to_big};
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use std::fmt;
 use std::marker::PhantomData;
-use std::ops::Shl;
-
-pub fn decompose_fe<F: FieldExt>(e: F, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
-    decompose(fe_to_big(e), number_of_limbs, bit_len)
-}
-
-pub fn decompose<F: FieldExt>(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
-    let mut e = e;
-    let mask = big_uint::from(1usize).shl(bit_len) - 1usize;
-    let limbs: Vec<F> = (0..number_of_limbs)
-        .map(|_| {
-            let limb = mask.clone() & e.clone();
-            e = e.clone() >> bit_len;
-            big_to_fe(limb)
-        })
-        .collect();
-
-    limbs
-}
-
-pub fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
-    let mut e = big_uint::zero();
-    for (i, limb) in input.iter().enumerate() {
-        e += limb << (bit_len * i)
-    }
-    e
-}
 
 pub trait Common<F: FieldExt> {
     fn value(&self) -> big_uint;
@@ -46,16 +21,8 @@ pub trait Common<F: FieldExt> {
     }
 }
 
-pub fn fe_to_big<F: FieldExt>(fe: F) -> big_uint {
-    big_uint::from_bytes_le(&fe.to_bytes()[..])
-}
-
 fn modulus<F: FieldExt>() -> big_uint {
     big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
-}
-
-pub fn big_to_fe<F: FieldExt>(e: big_uint) -> F {
-    F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
 }
 
 impl<N: FieldExt> From<Integer<N>> for big_uint {
@@ -149,7 +116,7 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 
 impl<W: FieldExt, N: FieldExt> Rns<W, N> {
     fn calculate_base_aux(bit_len_limb: usize) -> Integer<N> {
-        let two = N::from_u64(2);
+        let two = N::from(2);
         let r = &fe_to_big(two.pow(&[bit_len_limb as u64, 0, 0, 0]));
         let wrong_modulus = modulus::<W>();
         let wrong_modulus_decomposed = Integer::<N>::from_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
@@ -187,7 +154,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         assert!(binary_modulus > native_modulus);
         assert!(binary_modulus * native_modulus > wrong_modulus * wrong_modulus);
 
-        let two = N::from_u64(2);
+        let two = N::from(2);
         let two_inv = two.invert().unwrap();
         let right_shifter_r = two_inv.pow(&[bit_len_limb as u64, 0, 0, 0]);
         let right_shifter_2r = two_inv.pow(&[2 * bit_len_limb as u64, 0, 0, 0]);
@@ -197,8 +164,8 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
         let wrong_modulus_in_native_modulus: N = big_to_fe(wrong_modulus.clone() % native_modulus.clone());
 
-        let negative_wrong_modulus_decomposed: Vec<N> = decompose(binary_modulus - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
-        let wrong_modulus_decomposed: Vec<N> = decompose(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let negative_wrong_modulus_decomposed: Vec<N> = decompose_big(binary_modulus - wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
+        let wrong_modulus_decomposed: Vec<N> = decompose_big(wrong_modulus.clone(), NUMBER_OF_LIMBS, bit_len_limb);
         let wrong_modulus_minus_one = Integer::<N>::from_big(wrong_modulus.clone() - 1usize, NUMBER_OF_LIMBS, bit_len_limb);
 
         let two_limb_mask = (one << (bit_len_limb * 2)) - 1usize;
@@ -407,7 +374,7 @@ impl<W: FieldExt, N: FieldExt> Rns<W, N> {
 
     pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<N> {
         assert!(e <= self.max_dense_value);
-        let limbs = decompose::<N>(e, NUMBER_OF_LIMBS, self.bit_len_limb);
+        let limbs = decompose_big::<N>(e, NUMBER_OF_LIMBS, self.bit_len_limb);
         self.new_from_limbs(limbs)
     }
 
@@ -633,11 +600,11 @@ impl<F: FieldExt> fmt::Debug for Integer<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = self.value();
         let value = value.to_str_radix(16);
-        write!(f, "value: {}\n", value)?;
+        writeln!(f, "value: {}", value)?;
         for limb in self.limbs().iter() {
             let value = fe_to_big(*limb);
             let value = value.to_str_radix(16);
-            write!(f, "limb: {}\n", value)?;
+            writeln!(f, "limb: {}", value)?;
         }
         Ok(())
     }
@@ -657,7 +624,7 @@ impl<F: FieldExt> Integer<F> {
     }
 
     pub fn from_big(e: big_uint, number_of_limbs: usize, bit_len_limb: usize) -> Self {
-        let limbs = decompose::<F>(e, number_of_limbs, bit_len_limb);
+        let limbs = decompose_big::<F>(e, number_of_limbs, bit_len_limb);
         let limbs = limbs.iter().map(|e| Limb::<F>::new(*e)).collect();
         Self { limbs, bit_len_limb }
     }
@@ -692,7 +659,9 @@ mod tests {
 
     impl<W: FieldExt, N: FieldExt> Rns<W, N> {
         pub(crate) fn rand_in_field(&self) -> Integer<N> {
-            self.new_from_big(fe_to_big(W::rand()))
+            use rand::thread_rng;
+            let mut rng = thread_rng();
+            self.new_from_big(fe_to_big(W::random(&mut rng)))
         }
 
         pub(crate) fn rand_in_remainder_range(&self) -> Integer<N> {
@@ -743,11 +712,13 @@ mod tests {
     use crate::rns::Common;
     use crate::rns::Integer;
     use crate::NUMBER_OF_LIMBS;
+    use group::ff::Field;
     use halo2::arithmetic::FieldExt;
     use halo2::pasta::Fp;
     use halo2::pasta::Fp as Wrong;
     use halo2::pasta::Fq;
     use halo2::pasta::Fq as Native;
+    use halo2arith::halo2;
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::{One, Zero};
     use rand::SeedableRng;
@@ -771,6 +742,8 @@ mod tests {
 
     #[test]
     fn test_rns_constants() {
+        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+
         let rns = rns();
 
         let wrong_modulus = rns.wrong_modulus.clone();
@@ -778,7 +751,7 @@ mod tests {
 
         // shifters
 
-        let el_0 = Native::rand();
+        let el_0 = Native::random(&mut rng);
         let shifted_0 = el_0 * rns.left_shifter_r;
         let left_shifter_r = big_uint::one() << rns.bit_len_limb;
         let el = fe_to_big(el_0);
@@ -789,7 +762,7 @@ mod tests {
         let el_1 = shifted * rns.right_shifter_r;
         assert_eq!(el_0, el_1);
 
-        let el_0 = Native::rand();
+        let el_0 = Native::random(&mut rng);
         let shifted_0 = el_0 * rns.left_shifter_2r;
         let left_shifter_2r = big_uint::one() << (2 * rns.bit_len_limb);
         let el = fe_to_big(el_0);
@@ -800,7 +773,7 @@ mod tests {
         let el_1 = shifted * rns.right_shifter_2r;
         assert_eq!(el_0, el_1);
 
-        let el_0 = Wrong::rand();
+        let el_0 = Wrong::random(&mut rng);
         let el = fe_to_big(el_0);
         let aux = rns.base_aux.value();
         let el = (aux + el) % wrong_modulus.clone();

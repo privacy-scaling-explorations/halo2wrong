@@ -1,11 +1,12 @@
 use super::{AssignedIncompletePoint, EccConfig};
 use crate::circuit::integer::{IntegerChip, IntegerInstructions, Range};
-use crate::circuit::main_gate::{MainGate, MainGateInstructions};
-use crate::circuit::{AssignedCondition, AssignedInteger, UnassignedInteger};
+use crate::circuit::{AssignedInteger, UnassignedInteger};
 use crate::rns::{Integer, Rns};
 use halo2::arithmetic::{CurveAffine, Field, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::main_gate::five::main_gate::MainGate;
+use halo2arith::{halo2, AssignedCondition, MainGateInstructions};
 
 use crate::circuit::ecc::{AssignedPoint, Point};
 
@@ -187,7 +188,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
 
     fn assign_point(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let point = self.assign_point_incomplete(region, point, offset)?;
-        let z = &self.main_gate().assign_bit(region, Some(N::zero()), offset)?;
+        let z = &self.main_gate().assign_bit(region, &Some(N::zero()).into(), offset)?;
         let point = AssignedPoint::from_impcomplete(&point, z);
         Ok(point)
     }
@@ -331,6 +332,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
         self._mul_var(region, p, e, offset)
     }
 
+    #[allow(unused_variables)]
     fn mul_fix(&self, region: &mut Region<'_, N>, p: Point<N>, e: AssignedInteger<Emulated::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         unimplemented!();
     }
@@ -341,10 +343,9 @@ mod tests {
     use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
     use crate::circuit::ecc::{AssignedPoint, EccConfig};
     use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions};
-    use crate::circuit::main_gate::{MainGate, MainGateConfig, MainGateInstructions};
-    use crate::circuit::range::{RangeChip, RangeConfig, RangeInstructions};
     use crate::rns::Rns;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
+    use group::ff::Field;
     use group::Group;
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
@@ -352,6 +353,9 @@ mod tests {
     use halo2::pasta::EqAffine;
     use halo2::pasta::Fp;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
+    use halo2arith::main_gate::five::main_gate::{MainGate, MainGateConfig};
+    use halo2arith::main_gate::five::range::{RangeChip, RangeConfig, RangeInstructions};
+    use halo2arith::{halo2, MainGateInstructions};
 
     const BIT_LEN_LIMB: usize = 68;
 
@@ -359,9 +363,10 @@ mod tests {
         fn assign_infinity(&self, region: &mut Region<'_, N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
             let integer_chip = self.base_field_chip();
 
-            let x = integer_chip.assign_integer(region, Some(self.rns_base_field.zero()), offset)?;
-            let y = integer_chip.assign_integer(region, Some(self.rns_base_field.zero()), offset)?;
-            let z = self.main_gate().assign_bit(region, Some(N::one()), offset)?;
+            // TODO/FIX: prover can assign anything other than infinity
+            let x = integer_chip.assign_integer(region, Some(self.rns_base_field.zero()).into(), offset)?;
+            let y = integer_chip.assign_integer(region, Some(self.rns_base_field.zero()).into(), offset)?;
+            let z = self.main_gate().assign_bit(region, &Some(N::one()).into(), offset)?;
             let point = AssignedPoint::new(x, y, z);
 
             Ok(point)
@@ -583,6 +588,7 @@ mod tests {
             let ecc_chip_config = config.ecc_chip_config();
             let ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, self.rns_base.clone(), self.rns_scalar.clone())?;
             let scalar_chip = IntegerChip::<C::ScalarExt, N>::new(config.integer_chip_config(), self.rns_scalar.clone());
+            // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
 
             layouter.assign_region(
                 || "region 0",
@@ -594,12 +600,13 @@ mod tests {
 
                     // s * G
                     let base = C::CurveExt::random(&mut rng);
-                    let s = C::ScalarExt::rand();
+                    let s = C::ScalarExt::random(&mut rng);
                     let result = base * s;
                     let s = self.rns_scalar.new(s);
                     let base = ecc_chip.assign_point(&mut region, Some(base.into()), offset)?;
-                    let s = scalar_chip.assign_integer(&mut region, Some(s), offset)?;
+                    let s = scalar_chip.assign_integer(&mut region, Some(s).into(), offset)?;
                     let result_0 = ecc_chip.assign_point(&mut region, Some(result.into()), offset)?;
+                    // main_gate.break_here(&mut region, offset);
                     let result_1 = ecc_chip.mul_var(&mut region, base, s, offset)?;
                     ecc_chip.assert_equal(&mut region, &result_0, &result_1, offset)?;
 

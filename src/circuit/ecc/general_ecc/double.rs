@@ -1,10 +1,10 @@
 use crate::circuit::ecc::general_ecc::GeneralEccChip;
 use crate::circuit::ecc::{AssignedIncompletePoint, AssignedPoint};
-use crate::circuit::integer::IntegerInstructions;
-use crate::circuit::main_gate::MainGateInstructions;
+use crate::circuit::IntegerInstructions;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::{halo2, MainGateInstructions};
 
 use super::GeneralEccInstruction;
 

@@ -5,6 +5,7 @@ use crate::circuit::AssignedInteger;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::halo2;
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _div(

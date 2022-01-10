@@ -1,9 +1,10 @@
 use crate::circuit::ecc::general_ecc::GeneralEccChip;
 use crate::circuit::ecc::AssignedIncompletePoint;
-use crate::circuit::integer::IntegerInstructions;
+use crate::circuit::IntegerInstructions;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::halo2;
 
 impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
     pub(crate) fn _ladder_incomplete(

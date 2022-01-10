@@ -1,8 +1,10 @@
-use super::main_gate::MainGateConfig;
-use super::{integer::IntegerConfig, range::RangeConfig};
-use crate::circuit::{AssignedCondition, AssignedInteger};
+use super::integer::IntegerConfig;
+use crate::circuit::AssignedInteger;
 use crate::rns::Integer;
 use halo2::arithmetic::FieldExt;
+use halo2arith::{halo2, AssignedCondition};
+use halo2arith::main_gate::five::main_gate::MainGateConfig;
+use halo2arith::main_gate::five::range::RangeConfig;
 
 /* Shared structure of curve affine points */
 

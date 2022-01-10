@@ -1,11 +1,11 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::range::RangeInstructions;
-use crate::circuit::{AssignedInteger, AssignedValue};
+use crate::circuit::AssignedInteger;
 use crate::rns::Quotient;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::main_gate::five::range::RangeInstructions;
+use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn reduce_if_limb_values_exceeds_unreduced(
@@ -18,6 +18,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
             .limbs
             .iter()
             .fold(false, |must_reduce, limb| must_reduce | (limb.max_val() > self.rns.max_unreduced_limb));
+
         assert!(a.max_val() < self.rns.max_reducible_value);
         if exceeds_max_limb_value {
             self.reduce(region, a, offset)
@@ -109,53 +110,61 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let t_2 = intermediate_values.as_ref().map(|t| t[2]);
         let t_3 = intermediate_values.as_ref().map(|t| t[3]);
 
-        let (_, _, t_0_cell, _) = main_gate.combine(
+        let (_, _, t_0, _, _) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(0), one),
-            Term::Assigned(quotient, negative_wrong_modulus[0]),
-            Term::Unassigned(t_0, -one),
-            Term::Zero,
+            [
+                Term::Assigned(&a.limb(0), one),
+                Term::Assigned(quotient, negative_wrong_modulus[0]),
+                Term::Unassigned(t_0, -one),
+                Term::Zero,
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-        let t_0 = &AssignedValue::<N>::new(t_0_cell, t_0);
 
-        let (_, _, t_1_cell, _) = main_gate.combine(
+        let (_, _, t_1, _, _) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(1), one),
-            Term::Assigned(quotient, negative_wrong_modulus[1]),
-            Term::Unassigned(t_1, -one),
-            Term::Zero,
+            [
+                Term::Assigned(&a.limb(1), one),
+                Term::Assigned(quotient, negative_wrong_modulus[1]),
+                Term::Unassigned(t_1, -one),
+                Term::Zero,
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-        let t_1 = &AssignedValue::<N>::new(t_1_cell, t_1);
 
-        let (_, _, t_2_cell, _) = main_gate.combine(
+        let (_, _, t_2, _, _) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(2), one),
-            Term::Assigned(quotient, negative_wrong_modulus[2]),
-            Term::Unassigned(t_2, -one),
-            Term::Zero,
+            [
+                Term::Assigned(&a.limb(2), one),
+                Term::Assigned(quotient, negative_wrong_modulus[2]),
+                Term::Unassigned(t_2, -one),
+                Term::Zero,
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-        let t_2 = &AssignedValue::<N>::new(t_2_cell, t_2);
 
-        let (_, _, t_3_cell, _) = main_gate.combine(
+        let (_, _, t_3, _, _) = main_gate.combine(
             region,
-            Term::Assigned(&a.limb(3), one),
-            Term::Assigned(quotient, negative_wrong_modulus[3]),
-            Term::Unassigned(t_3, -one),
-            Term::Zero,
+            [
+                Term::Assigned(&a.limb(3), one),
+                Term::Assigned(quotient, negative_wrong_modulus[3]),
+                Term::Unassigned(t_3, -one),
+                Term::Zero,
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
-        let t_3 = &AssignedValue::<N>::new(t_3_cell, t_3);
 
         let left_shifter_r = self.rns.left_shifter_r;
         let left_shifter_2r = self.rns.left_shifter_2r;
@@ -170,24 +179,30 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(t_0, one),
-            Term::Assigned(t_1, left_shifter_r),
-            Term::Assigned(&result.limbs[0].clone(), -one),
-            Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+            [
+                Term::Assigned(&t_0, one),
+                Term::Assigned(&t_1, left_shifter_r),
+                Term::Assigned(&result.limbs[0].clone(), -one),
+                Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Zero,
-            Term::Zero,
-            Term::Assigned(v_0, left_shifter_2r),
-            Term::Unassigned(u_0, -one),
+            [
+                Term::Zero,
+                Term::Zero,
+                Term::Assigned(v_0, left_shifter_2r),
+                Term::Zero,
+                Term::Unassigned(u_0, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
@@ -200,37 +215,46 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             region,
-            Term::Assigned(t_2, one),
-            Term::Assigned(t_3, left_shifter_r),
-            Term::Assigned(&result.limbs[2].clone(), -one),
-            Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+            [
+                Term::Assigned(&t_2, one),
+                Term::Assigned(&t_3, left_shifter_r),
+                Term::Assigned(&result.limbs[2].clone(), -one),
+                Term::Zero,
+                Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
             region,
-            Term::Zero,
-            Term::Assigned(v_1, left_shifter_2r),
-            Term::Assigned(v_0, -one),
-            Term::Unassigned(u_1, -one),
+            [
+                Term::Zero,
+                Term::Assigned(v_1, left_shifter_2r),
+                Term::Assigned(v_0, -one),
+                Term::Zero,
+                Term::Unassigned(u_1, -one),
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // update native value
 
         main_gate.combine(
             region,
-            Term::Assigned(&a.native(), -one),
-            Term::Zero,
-            Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
-            Term::Assigned(&result.native(), one),
+            [
+                Term::Assigned(&a.native(), -one),
+                Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
+                Term::Assigned(&result.native(), one),
+                Term::Zero,
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::SingleLinerAdd,
+            CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(result.clone())

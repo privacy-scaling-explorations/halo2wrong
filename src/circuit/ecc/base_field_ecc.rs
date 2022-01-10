@@ -1,15 +1,13 @@
+use super::EccConfig;
 use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
+use crate::circuit::ecc::{AssignedPoint, Point};
 use crate::circuit::integer::{IntegerChip, IntegerInstructions};
-use crate::circuit::main_gate::{MainGate, MainGateInstructions};
-use crate::circuit::{AssignedCondition, AssignedValue};
 use crate::rns::{Integer, Rns};
 use halo2::arithmetic::{CurveAffine, Field};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
-
-use super::EccConfig;
-
-use crate::circuit::ecc::{AssignedPoint, Point};
+use halo2arith::main_gate::five::main_gate::MainGate;
+use halo2arith::{halo2, AssignedCondition, AssignedValue, MainGateInstructions};
 
 pub trait BaseFieldEccInstruction<C: CurveAffine> {
     fn assign_point(&self, region: &mut Region<'_, C::ScalarExt>, point: C, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error>;
@@ -140,12 +138,13 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         let point = self.into_rns_point(point);
         // FIX: This won't help for a prover assigns the infinity
         assert!(!point.is_identity);
-        let x = integer_chip.assign_integer(region, Some(point.x), offset)?;
-        let y = integer_chip.assign_integer(region, Some(point.y), offset)?;
-        let z = self.main_gate().assign_bit(region, Some(C::ScalarExt::zero()), offset)?;
+        let x = integer_chip.assign_integer(region, Some(point.x).into(), offset)?;
+        let y = integer_chip.assign_integer(region, Some(point.y).into(), offset)?;
+        let z = self.main_gate().assign_bit(region, &Some(C::ScalarExt::zero()).into(), offset)?;
         Ok(AssignedPoint::new(x, y, z))
     }
 
+    #[allow(unused_variables)]
     fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<(), Error> {
         unimplemented!();
     }
@@ -218,10 +217,12 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         self.as_general().add(region, p0, p1, offset)
     }
 
+    #[allow(unused_variables)]
     fn double(&self, region: &mut Region<'_, C::ScalarExt>, p: AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         unimplemented!();
     }
 
+    #[allow(unused_variables)]
     fn mul_var(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
@@ -232,6 +233,7 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         unimplemented!();
     }
 
+    #[allow(unused_variables)]
     fn mul_fix(
         &self,
         region: &mut Region<'_, C::ScalarExt>,

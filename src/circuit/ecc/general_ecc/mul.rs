@@ -1,12 +1,15 @@
 use super::AssignedPoint;
 use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
-use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::{Assigned, AssignedCondition, AssignedInteger};
-use crate::rns::{big_to_fe, fe_to_big};
+use crate::circuit::AssignedInteger;
 use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::{
+    halo2,
+    utils::{big_to_fe, fe_to_big},
+    Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, Term,
+};
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer;
 
@@ -32,7 +35,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         let main_gate = self.main_gate();
 
         let mut res = Vec::with_capacity(NUMBER_OF_LIMBS * input.bit_len_limb / 2);
-        let mut limb_carry_bits = vec![];
+        let mut limb_carry_bits: Vec<AssignedCondition<F>> = vec![];
 
         // For each two bits,
         // b00: 0
@@ -61,6 +64,7 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         // | 0   | 0   | 0 | d  |
 
         let mut rem = big_uint::from(0u64);
+
         for idx in 0..NUMBER_OF_LIMBS {
             let last_limb_rem = rem.clone();
             rem = match input.limb(idx).value() {
@@ -83,41 +87,30 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
                 let (rem_shifted, b, carry) = shift(rem_shifted, carry);
                 rem = rem_shifted + carry;
 
-                let (cell_a, cell_b, _, cell_d) = main_gate.combine(
+                let (l, h, _, _, limb_carry_bit) = main_gate.combine(
                     region,
-                    Term::Unassigned(Some(a), one),
-                    Term::Unassigned(Some(b), two),
-                    if i == 0 { Term::Assigned(&input.limbs[idx], -one) } else { Term::Zero },
-                    Term::Unassigned(Some(d), -one),
+                    [
+                        Term::Unassigned(Some(a), one),
+                        Term::Unassigned(Some(b), two),
+                        if i == 0 { Term::Assigned(&input.limbs[idx], -one) } else { Term::Zero },
+                        Term::Zero,
+                        Term::Unassigned(Some(d), -one),
+                    ],
                     zero,
                     offset,
-                    CombinationOption::CombineToNextMulN(four, -four),
+                    CombinationOptionCommon::CombineToNextScaleMul(four, -four).into(),
                 )?;
 
-                res.push(ScalarTuple {
-                    h: AssignedCondition::new(cell_b, Some(b)),
-                    l: AssignedCondition::new(cell_a, Some(a)),
-                });
+                res.push(ScalarTuple { h: h.into(), l: l.into() });
 
                 if idx != 0 && i == 0 {
-                    limb_carry_bits.push(AssignedCondition::new(cell_d, Some(d)));
+                    limb_carry_bits.push(limb_carry_bit.into());
                 };
             }
         }
 
-        let d = big_to_fe(rem);
-        let (_, _, _, cell_d) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Zero,
-            Term::Zero,
-            Term::Unassigned(Some(d), zero),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        let rem = AssignedCondition::new(cell_d, Some(d));
+        let rem = big_to_fe(rem);
+        let rem: AssignedCondition<F> = main_gate.assign_to_acc(region, &Some(rem).into(), offset)?.into();
         limb_carry_bits.push(rem.clone());
 
         for limb_carry_bit in limb_carry_bits.iter() {

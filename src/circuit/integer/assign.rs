@@ -1,13 +1,11 @@
 use super::{IntegerChip, Range};
-use crate::circuit::main_gate::{CombinationOption, MainGateInstructions, Term};
-use crate::circuit::range::RangeInstructions;
-use crate::circuit::{AssignedInteger, AssignedLimb, AssignedValue, UnassignedInteger};
-use crate::rns::Common;
-use crate::rns::Integer;
+use crate::circuit::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use crate::NUMBER_OF_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
+use halo2arith::main_gate::five::range::RangeInstructions;
+use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 
@@ -29,17 +27,17 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         };
 
         let assigned = range_chip.range_value(region, &integer.limb(0), self.rns.bit_len_limb, offset)?;
-        let limb_0 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
+        let limb_0 = &mut AssignedLimb::from(assigned, max_val.clone());
 
         let assigned = range_chip.range_value(region, &integer.limb(1), self.rns.bit_len_limb, offset)?;
-        let limb_1 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
+        let limb_1 = &mut AssignedLimb::from(assigned, max_val.clone());
 
         let assigned = range_chip.range_value(region, &integer.limb(2), self.rns.bit_len_limb, offset)?;
-        let limb_2 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val.clone());
+        let limb_2 = &mut AssignedLimb::from(assigned, max_val.clone());
 
         let max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
         let assigned = range_chip.range_value(region, &integer.limb(3), most_significant_limb_bit_len, offset)?;
-        let limb_3 = &mut AssignedLimb::new(assigned.cell, assigned.value, max_val);
+        let limb_3 = &mut AssignedLimb::from(assigned, max_val.clone());
 
         // find the native value
         let main_gate = self.main_gate();
@@ -48,85 +46,66 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let rr = self.rns.left_shifter_2r;
         let rrr = self.rns.left_shifter_3r;
 
-        let (_, _, _, _) = main_gate.combine(
+        main_gate.combine(
             region,
-            Term::Assigned(limb_0, one),
-            Term::Assigned(limb_1, r),
-            Term::Assigned(limb_2, rr),
-            Term::Assigned(limb_3, rrr),
+            [
+                Term::Assigned(limb_0, one),
+                Term::Assigned(limb_1, r),
+                Term::Assigned(limb_2, rr),
+                Term::Assigned(limb_3, rrr),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
-        let native_value = integer.native();
-        let (_, _, _, native_value_cell) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Zero,
-            Term::Zero,
-            Term::Unassigned(native_value.value, zero),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        let native_value = native_value.assign(native_value_cell);
-
+        let native_value = main_gate.assign_to_acc(region, &integer.native(), offset)?;
         Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
     }
 
     pub(super) fn _assign_integer(
         &self,
         region: &mut Region<'_, N>,
-        integer: Option<Integer<N>>,
+        integer: UnassignedInteger<N>,
         offset: &mut usize,
         should_be_in_remainder_range: bool,
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
-        if should_be_in_remainder_range {
-            integer.as_ref().map(|integer| assert!(integer.value() <= self.rns.max_remainder));
-        } else {
-            integer
-                .as_ref()
-                .map(|integer| assert!(integer.value() <= self.rns.max_with_max_unreduced_limbs));
-        }
+        integer.value().map(|value| {
+            if should_be_in_remainder_range {
+                assert!(value <= self.rns.max_remainder)
+            } else {
+                assert!(value <= self.rns.max_with_max_unreduced_limbs);
+            }
+        });
 
         let (zero, one) = (N::zero(), N::one());
         let r = self.rns.left_shifter_r;
         let rr = self.rns.left_shifter_2r;
         let rrr = self.rns.left_shifter_3r;
 
-        let (cell_0, cell_1, cell_2, cell_3) = main_gate.combine(
+        let assigned_values = main_gate.combine(
             region,
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(0)), one),
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(1)), r),
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(2)), rr),
-            Term::Unassigned(integer.as_ref().map(|e| e.limb_value(3)), rrr),
+            [
+                Term::Unassigned(integer.limb(0).into(), one),
+                Term::Unassigned(integer.limb(1).into(), r),
+                Term::Unassigned(integer.limb(2).into(), rr),
+                Term::Unassigned(integer.limb(3).into(), rrr),
+                Term::Zero,
+            ],
             zero,
             offset,
-            CombinationOption::CombineToNextAdd(-one),
+            CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
+        let assigned_values = vec![assigned_values.0, assigned_values.1, assigned_values.2, assigned_values.3];
 
-        let native_value = integer.as_ref().map(|integer| integer.native());
+        let native_value = main_gate.assign_to_acc(region, &integer.native(), offset)?;
 
-        let (_, _, _, native_value_cell) = main_gate.combine(
-            region,
-            Term::Zero,
-            Term::Zero,
-            Term::Zero,
-            Term::Unassigned(native_value, zero),
-            zero,
-            offset,
-            CombinationOption::SingleLinerAdd,
-        )?;
-
-        let cells = vec![cell_0, cell_1, cell_2, cell_3];
-
-        let limbs = cells
-            .iter()
+        let limbs = assigned_values
+            .into_iter()
             .enumerate()
-            .map(|(i, cell)| {
+            .map(|(i, assigned_value)| {
                 let max_val = if should_be_in_remainder_range {
                     let max_val = if i == NUMBER_OF_LIMBS - 1 {
                         self.rns.max_most_significant_reduced_limb.clone()
@@ -139,18 +118,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                     self.rns.max_unreduced_limb.clone()
                 };
 
-                AssignedLimb {
-                    value: integer.as_ref().map(|integer| integer.limb(i)),
-                    cell: *cell,
-                    max_val,
-                }
+                AssignedLimb::from(assigned_value, max_val)
             })
             .collect();
-
-        let native_value = AssignedValue {
-            value: native_value,
-            cell: native_value_cell,
-        };
 
         Ok(self.new_assigned_integer(limbs, native_value))
     }
