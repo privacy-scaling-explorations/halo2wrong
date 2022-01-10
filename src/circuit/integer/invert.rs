@@ -17,8 +17,10 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let one = N::one();
         let integer_one = self.rns.new_from_big(1u32.into());
 
-        let inv_or_one = match a.integer() {
-            Some(a) => match self.rns.invert(&a) {
+        let a_int = self.rns.to_integer(a);
+
+        let inv_or_one = match a_int.as_ref() {
+            Some(a) => match a.invert() {
                 Some(a) => Some(a),
                 None => Some(integer_one),
             },
@@ -64,8 +66,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 
     pub(crate) fn _invert_incomplete(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        let inv = match a.integer() {
-            Some(a) => match self.rns.invert(&a) {
+        let a_int = self.rns.to_integer(a);
+        let inv = match a_int.as_ref() {
+            Some(a) => match a.invert() {
                 Some(a) => Some(a),
                 None => {
                     // any number will fail it if a is zero

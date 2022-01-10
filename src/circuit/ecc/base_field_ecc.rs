@@ -1,5 +1,4 @@
 use super::EccConfig;
-use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
 use crate::circuit::ecc::{AssignedPoint, Point};
 use crate::circuit::integer::{IntegerChip, IntegerInstructions};
 use crate::rns::{Integer, Rns};
@@ -73,25 +72,9 @@ pub struct BaseFieldEccChip<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
-    fn from_general(g: GeneralEccChip<C, C::ScalarExt>) -> Self {
-        Self {
-            config: g.config,
-            rns: g.rns_base_field,
-        }
-    }
-
-    fn as_general(&self) -> GeneralEccChip<C, C::ScalarExt> {
-        GeneralEccChip {
-            config: self.config.clone(),
-            rns_base_field: self.rns.clone(),
-            rns_scalar_field: Rns::<C::ScalarExt, C::ScalarExt>::construct(self.rns.bit_len_limb),
-        }
-    }
-
+    #[allow(unused_variables)]
     fn new(config: EccConfig, rns: Rns<C::Base, C::ScalarExt>) -> Result<Self, Error> {
-        let rns_ext = Rns::<C::ScalarExt, C::ScalarExt>::construct(rns.bit_len_limb);
-        let general_chip = GeneralEccChip::new(config, rns, rns_ext)?;
-        Ok(Self::from_general(general_chip))
+        unimplemented!();
     }
 
     fn integer_chip(&self) -> IntegerChip<C::Base, C::ScalarExt> {
@@ -103,11 +86,11 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         MainGate::<_>::new(self.config.main_gate_config.clone())
     }
 
-    fn parameter_a(&self) -> Integer<C::ScalarExt> {
+    fn parameter_a(&self) -> Integer<C::Base, C::ScalarExt> {
         self.rns.new(C::a())
     }
 
-    fn parameter_b(&self) -> Integer<C::ScalarExt> {
+    fn parameter_b(&self) -> Integer<C::Base, C::ScalarExt> {
         self.rns.new(C::b())
     }
 
@@ -115,7 +98,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         C::a() == C::Base::zero()
     }
 
-    fn into_rns_point(&self, point: C) -> Point<C::ScalarExt> {
+    fn into_rns_point(&self, point: C) -> Point<C::Base, C::ScalarExt> {
         let coords = point.coordinates();
         if coords.is_some().into() {
             let coords = coords.unwrap();
@@ -205,6 +188,7 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y, c))
     }
 
+    #[allow(unused_variables)]
     fn add(
         &self,
         region: &mut Region<'_, C::ScalarExt>,
@@ -212,9 +196,7 @@ impl<C: CurveAffine> BaseFieldEccInstruction<C> for BaseFieldEccChip<C> {
         p1: &AssignedPoint<C::ScalarExt>,
         offset: &mut usize,
     ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
-        // Addition does not involve any scalar operation thus is the same as
-        // it is in generic ecc.
-        self.as_general().add(region, p0, p1, offset)
+        unimplemented!();
     }
 
     #[allow(unused_variables)]

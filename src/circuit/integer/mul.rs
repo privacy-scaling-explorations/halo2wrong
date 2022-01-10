@@ -1,8 +1,7 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::AssignedInteger;
-use crate::rns::{Common, Integer, Quotient};
+use crate::rns::{Common, Integer, MaybeReduced};
 use crate::NUMBER_OF_LIMBS;
-
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -30,28 +29,22 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| {
-            let b_integer = b.integer().unwrap();
-            self.rns.mul(&integer_a, &b_integer)
-        });
+        let a_int = self.rns.to_integer(a);
+        let b_int = self.rns.to_integer(b);
 
-        let quotient = reduction_result.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Long(quotient) => quotient,
-                _ => panic!("long quotient expected"),
-            };
-            quotient
-        });
+        let reduction_witness: MaybeReduced<W, N> = match (a_int, b_int) {
+            (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
+            _ => None,
+        }
+        .into();
 
-        let result = reduction_result.as_ref().map(|u| u.result.clone());
-        let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.clone());
-        let u_0 = reduction_result.as_ref().map(|u| u.u_0);
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
-        let u_1 = reduction_result.as_ref().map(|u| u.u_1);
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
+        let quotient = reduction_witness.long();
+        let result = reduction_witness.result();
+        let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
+        let intermediate_values = vec![t_0, t_1, t_2, t_3];
+        let (u_0, u_1, v_0, v_1) = reduction_witness.residues();
 
         // Apply ranges
-
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(region, quotient.into(), Range::MulQuotient, offset)?;
         let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
@@ -100,7 +93,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
-            let mut intermediate_value = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
+            let mut intermediate_value = intermediate_values[i].clone();
 
             for j in 0..=i {
                 let k = i - j;
@@ -240,7 +233,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
-        b: &Integer<N>,
+        b: &Integer<W, N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
@@ -248,25 +241,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| self.rns.mul(&integer_a, &b));
-
-        let quotient = reduction_result.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Long(quotient) => quotient,
-                _ => panic!("long quotient expected"),
-            };
-            quotient
-        });
-
-        let result = reduction_result.as_ref().map(|u| u.result.clone());
-        let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.clone());
-        let u_0 = reduction_result.as_ref().map(|u| u.u_0);
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
-        let u_1 = reduction_result.as_ref().map(|u| u.u_1);
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
+        let a_int = self.rns.to_integer(a);
+        let reduction_witness: MaybeReduced<W, N> = a_int.map(|a_int| a_int.mul(b)).into();
+        let quotient = reduction_witness.long();
+        let result = reduction_witness.result();
+        let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
+        let (u_0, u_1, v_0, v_1) = reduction_witness.residues();
 
         // Apply ranges
-
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(region, quotient.into(), Range::MulQuotient, offset)?;
         let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
@@ -298,8 +280,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | --- | --- | --- | --- |
         // | a_0 | q_0 | -   | t_0 |
 
-        let t_0 = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[0]);
-
         let (_, _, _, _, t_0) = main_gate.combine(
             region,
             [
@@ -320,8 +300,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | --- | --- | --- | --- |
         // | a_0 | a_1 | q_0 | q_1 |
         // | -   | -   | -   | t_1 |
-
-        let t_1 = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[1]);
 
         main_gate.combine(
             region,
@@ -345,8 +323,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | --- | --- | --- | ---- |
         // | a_0 | a_1 | a_2 | t_2  |
         // | q_0 | q_1 | q_2 | tmp  |
-
-        let t_2 = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[2]);
 
         let tmp = t_2.map(|_| {
             let p = negative_wrong_modulus.clone();
@@ -390,8 +366,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_0 | a_1 | a_2 | t_3   |
         // | a_3 | q_0 | q_1 | tmp_a |
         // | q_2 | q_3 | -   | tmp_b |
-
-        let t_3 = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[3]);
 
         let (tmp_a, tmp_b) = match t_3 {
             Some(t_3) => {
@@ -554,28 +528,25 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| {
-            let b_integer = b.integer().unwrap();
-            self.rns.mul(&integer_a, &b_integer)
-        });
+        let a_int = self.rns.to_integer(a);
+        let b_int = self.rns.to_integer(b);
 
-        let quotient = reduction_result.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Long(quotient) => quotient,
-                _ => panic!("long quotient expected"),
-            };
-            quotient
-        });
+        let reduction_witness: MaybeReduced<W, N> = match (a_int, b_int) {
+            (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
+            _ => None,
+        }
+        .into();
 
-        let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.clone());
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
+        let quotient = reduction_witness.long();
+        // TODO: consider assertion of result equals to 0
+        let _ = reduction_witness.result();
+        let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
+        let intermediate_values = vec![t_0, t_1, t_2, t_3];
+        let (_, _, v_0, v_1) = reduction_witness.residues();
 
         // Apply ranges
-
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(region, quotient.into(), Range::MulQuotient, offset)?;
-        // let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
         let v_0 = &range_chip.range_value(region, &v_0.into(), self.mul_v0_range_tune(), offset)?;
         let v_1 = &range_chip.range_value(region, &v_1.into(), self.mul_v1_range_tune(), offset)?;
 
@@ -621,7 +592,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
-            let mut t = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
+            let mut t = intermediate_values[i].clone();
 
             for j in 0..=i {
                 let k = i - j;

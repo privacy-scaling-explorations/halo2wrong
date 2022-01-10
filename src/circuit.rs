@@ -46,6 +46,10 @@ impl<F: FieldExt> AssignedLimb<F> {
         AssignedLimb { value, cell, max_val }
     }
 
+    pub(super) fn limb(&self) -> Option<Limb<F>> {
+        self.value.clone()
+    }
+
     fn max_val(&self) -> big_uint {
         self.max_val.clone()
     }
@@ -72,15 +76,15 @@ impl<F: FieldExt> AssignedLimb<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnassignedInteger<F: FieldExt>(Option<Integer<F>>);
+pub struct UnassignedInteger<'a, W: FieldExt, F: FieldExt>(Option<Integer<'a, W, F>>);
 
-impl<F: FieldExt> From<Option<Integer<F>>> for UnassignedInteger<F> {
-    fn from(integer: Option<Integer<F>>) -> Self {
+impl<'a, W: FieldExt, F: FieldExt> From<Option<Integer<'a, W, F>>> for UnassignedInteger<'a, W, F> {
+    fn from(integer: Option<Integer<'a, W, F>>) -> Self {
         UnassignedInteger(integer)
     }
 }
 
-impl<F: FieldExt> UnassignedInteger<F> {
+impl<'a, W: FieldExt, F: FieldExt> UnassignedInteger<'a, W, F> {
     fn value(&self) -> Option<big_uint> {
         self.0.as_ref().map(|e| e.value())
     }
@@ -110,13 +114,6 @@ impl<F: FieldExt> AssignedInteger<F> {
         }
     }
 
-    pub fn integer(&self) -> Option<Integer<F>> {
-        self.limbs[0].value.as_ref().map(|_| {
-            let limbs = self.limbs.iter().map(|limb| limb.value.clone().unwrap()).collect();
-            Integer::new(limbs, self.bit_len_limb)
-        })
-    }
-
     pub fn max_val(&self) -> big_uint {
         compose(self.max_vals(), self.bit_len_limb)
     }
@@ -133,7 +130,18 @@ impl<F: FieldExt> AssignedInteger<F> {
         self.limbs[idx].clone()
     }
 
+    pub fn limbs(&self) -> Option<Vec<Limb<F>>> {
+        self.has_value().map(|_| {
+            let limbs = self.limbs.iter().map(|limb| limb.limb().unwrap()).collect();
+            limbs
+        })
+    }
+
     pub fn native(&self) -> AssignedValue<F> {
         self.native_value.clone()
+    }
+
+    fn has_value(&self) -> Option<()> {
+        self.limbs[0].value.clone().map(|_| ())
     }
 }

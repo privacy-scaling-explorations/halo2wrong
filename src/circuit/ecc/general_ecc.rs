@@ -93,13 +93,19 @@ pub trait GeneralEccInstruction<Emulated: CurveAffine, N: FieldExt> {
 
     fn mul_var(&self, region: &mut Region<'_, N>, p: AssignedPoint<N>, e: AssignedInteger<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
 
-    fn mul_fix(&self, region: &mut Region<'_, N>, p: Point<N>, e: AssignedInteger<Emulated::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<N>, Error>;
+    fn mul_fix(
+        &self,
+        region: &mut Region<'_, N>,
+        p: Point<Emulated::Base, N>,
+        e: AssignedInteger<Emulated::ScalarExt>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<N>, Error>;
 }
 
-pub struct GeneralEccChip<Emulated: CurveAffine, F: FieldExt> {
+pub struct GeneralEccChip<Emulated: CurveAffine, N: FieldExt> {
     pub(super) config: EccConfig,
-    pub(super) rns_base_field: Rns<Emulated::Base, F>,
-    pub(super) rns_scalar_field: Rns<Emulated::Scalar, F>,
+    pub(super) rns_base_field: Rns<Emulated::Base, N>,
+    pub(super) rns_scalar_field: Rns<Emulated::Scalar, N>,
 }
 
 // Ecc operation mods
@@ -119,23 +125,23 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
 
     fn scalar_field_chip(&self) -> IntegerChip<Emulated::ScalarExt, N> {
         let integer_chip_config = self.config.integer_chip_config();
-        IntegerChip::<Emulated::ScalarExt, N>::new(integer_chip_config, self.rns_scalar_field.clone())
+        IntegerChip::new(integer_chip_config, self.rns_scalar_field.clone())
     }
 
     fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N> {
         let integer_chip_config = self.config.integer_chip_config();
-        IntegerChip::<Emulated::Base, N>::new(integer_chip_config, self.rns_base_field.clone())
+        IntegerChip::new(integer_chip_config, self.rns_base_field.clone())
     }
 
     fn main_gate(&self) -> MainGate<N> {
         MainGate::<N>::new(self.config.main_gate_config.clone())
     }
 
-    fn parameter_a(&self) -> Integer<N> {
+    fn parameter_a(&self) -> Integer<Emulated::Base, N> {
         self.rns_base_field.new(Emulated::a())
     }
 
-    fn parameter_b(&self) -> Integer<N> {
+    fn parameter_b(&self) -> Integer<Emulated::Base, N> {
         self.rns_base_field.new(Emulated::b())
     }
 
@@ -143,7 +149,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Emulated::a() == Emulated::Base::zero()
     }
 
-    fn into_rns_point(&self, point: Emulated) -> Point<N> {
+    fn into_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
         let coords = point.coordinates();
         if coords.is_some().into() {
             let coords = coords.unwrap();
@@ -333,7 +339,13 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccInstruction<Emulated, N> for 
     }
 
     #[allow(unused_variables)]
-    fn mul_fix(&self, region: &mut Region<'_, N>, p: Point<N>, e: AssignedInteger<Emulated::ScalarExt>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    fn mul_fix(
+        &self,
+        region: &mut Region<'_, N>,
+        p: Point<Emulated::Base, N>,
+        e: AssignedInteger<Emulated::ScalarExt>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<N>, Error> {
         unimplemented!();
     }
 }
@@ -374,8 +386,8 @@ mod tests {
     }
 
     fn rns<C: CurveAffine, N: FieldExt>() -> (Rns<C::Base, N>, Rns<C::ScalarExt, N>) {
-        let rns_base = Rns::<C::Base, N>::construct(BIT_LEN_LIMB);
-        let rns_scalar = Rns::<C::Scalar, N>::construct(BIT_LEN_LIMB);
+        let rns_base = Rns::construct(BIT_LEN_LIMB);
+        let rns_scalar = Rns::construct(BIT_LEN_LIMB);
         (rns_base, rns_scalar)
     }
 

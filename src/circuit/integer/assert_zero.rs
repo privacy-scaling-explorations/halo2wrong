@@ -1,6 +1,6 @@
 use super::IntegerChip;
 use crate::circuit::AssignedInteger;
-use crate::rns::Quotient;
+use crate::rns::MaybeReduced;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -28,27 +28,15 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| {
-            let reduction_result = self.rns.reduce(&integer_a);
-            // assert_eq!(reduction_result.result.value(), big_uint::zero());
-            reduction_result
-        });
-
-        let quotient = reduction_result.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Short(quotient) => quotient,
-                _ => panic!("short quotient expected"),
-            };
-            quotient
-        });
-
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
+        let a_int = self.rns.to_integer(a);
+        let reduction_witness: MaybeReduced<W, N> = a_int.as_ref().map(|a_int| a_int.reduce()).into();
+        let quotient = reduction_witness.short();
+        let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
+        let (_, _, v_0, v_1) = reduction_witness.residues();
 
         // apply ranges
 
         let range_chip = self.range_chip();
-
         let quotient = &range_chip.range_value(region, &quotient.into(), self.assert_zero_quotient_range_tune(), offset)?;
         let v_0 = &range_chip.range_value(region, &v_0.into(), self.assert_zero_v0_range_tune(), offset)?;
         let v_1 = &range_chip.range_value(region, &v_1.into(), self.assert_zero_v1_range_tune(), offset)?;
@@ -59,12 +47,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_1 | q | t_1 | - |
         // | a_2 | q | t_2 | - |
         // | a_3 | q | t_3 | - |
-
-        let intermediate_values = reduction_result.as_ref().map(|u| u.t.clone());
-        let t_0 = intermediate_values.as_ref().map(|t| t[0]);
-        let t_1 = intermediate_values.as_ref().map(|t| t[1]);
-        let t_2 = intermediate_values.as_ref().map(|t| t[2]);
-        let t_3 = intermediate_values.as_ref().map(|t| t[3]);
 
         let (_, _, t_0, _, _) = main_gate.combine(
             region,

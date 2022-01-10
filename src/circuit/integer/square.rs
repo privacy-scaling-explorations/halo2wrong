@@ -1,7 +1,6 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::circuit::AssignedInteger;
-use crate::rns::Quotient;
 use crate::NUMBER_OF_LIMBS;
+use crate::{circuit::AssignedInteger, rns::MaybeReduced};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -14,22 +13,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| self.rns.mul(&integer_a, &integer_a));
+        let a_int = self.rns.to_integer(a);
 
-        let quotient = reduction_result.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Long(quotient) => quotient,
-                _ => panic!("long quotient expected"),
-            };
-            quotient
-        });
-
-        let result = reduction_result.as_ref().map(|u| u.result.clone());
-        let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.clone());
-        let u_0 = reduction_result.as_ref().map(|u| u.u_0);
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
-        let u_1 = reduction_result.as_ref().map(|u| u.u_1);
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
+        let reduction_witness: MaybeReduced<W, N> = a_int.map(|a_int| a_int.square()).into();
+        let quotient = reduction_witness.long();
+        let result = reduction_witness.result();
+        let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
+        let intermediate_values = vec![t_0, t_1, t_2, t_3];
+        let (u_0, u_1, v_0, v_1) = reduction_witness.residues();
 
         // Apply ranges
 
@@ -82,7 +73,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
-            let mut intermediate_value = intermediate_values.as_ref().map(|intermediate_values| intermediate_values[i]);
+            let mut intermediate_value = intermediate_values[i].clone();
 
             for j in 0..=i {
                 let k = i - j;

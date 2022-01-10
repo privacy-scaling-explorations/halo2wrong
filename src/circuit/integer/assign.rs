@@ -13,7 +13,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _range_assign_integer(
         &self,
         region: &mut Region<'_, N>,
-        integer: UnassignedInteger<N>,
+        integer: UnassignedInteger<W, N>,
         range: Range,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
@@ -67,7 +67,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _assign_integer(
         &self,
         region: &mut Region<'_, N>,
-        integer: UnassignedInteger<N>,
+        integer: UnassignedInteger<W, N>,
         offset: &mut usize,
         should_be_in_remainder_range: bool,
     ) -> Result<AssignedInteger<N>, Error> {

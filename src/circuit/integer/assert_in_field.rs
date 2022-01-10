@@ -26,11 +26,9 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // to make a=p case not passing compare with p-1
         let modulus_minus_one = &self.rns.wrong_modulus_minus_one.clone();
 
+        let integer = self.rns.to_integer(input);
         // result containts borrows must be bits and subtraaction result must be in range
-        let comparision_result = input.integer().map(|input| {
-            let comparision_result = self.rns.compare_to_modulus(&input);
-            comparision_result
-        });
+        let comparision_result = integer.as_ref().map(|integer| integer.compare_to_modulus());
 
         let result = comparision_result.as_ref().map(|r| r.result.clone());
         let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
@@ -60,7 +58,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
                 Term::Zero,
             ],
-            modulus_minus_one.limb_value(0),
+            modulus_minus_one[0],
             offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -79,7 +77,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Assigned(b_0, -one),
                 Term::Zero,
             ],
-            modulus_minus_one.limb_value(1),
+            modulus_minus_one[1],
             offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -98,7 +96,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Assigned(b_1, -one),
                 Term::Zero,
             ],
-            modulus_minus_one.limb_value(2),
+            modulus_minus_one[2],
             offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -118,7 +116,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Assigned(b_2, -one),
                 Term::Zero,
             ],
-            modulus_minus_one.limb_value(3),
+            modulus_minus_one[3],
             offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;

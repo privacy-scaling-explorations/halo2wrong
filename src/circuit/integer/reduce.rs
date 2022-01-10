@@ -1,6 +1,6 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::AssignedInteger;
-use crate::rns::Quotient;
+use crate::rns::MaybeReduced;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -73,25 +73,14 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let reduction_result = a.integer().map(|integer_a| self.rns.reduce(&integer_a));
-
-        let quotient = reduction_result.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Short(quotient) => quotient,
-                _ => panic!("short quotient expected"),
-            };
-            quotient
-        });
-
-        let result = reduction_result.as_ref().map(|u| u.result.clone());
-        let intermediate_values: Option<Vec<N>> = reduction_result.as_ref().map(|u| u.t.clone());
-        let u_0 = reduction_result.as_ref().map(|u| u.u_0);
-        let v_0 = reduction_result.as_ref().map(|u| u.v_0);
-        let u_1 = reduction_result.as_ref().map(|u| u.u_1);
-        let v_1 = reduction_result.as_ref().map(|u| u.v_1);
+        let a_int = self.rns.to_integer(a);
+        let reduction_witness: MaybeReduced<W, N> = a_int.as_ref().map(|a_int| a_int.reduce()).into();
+        let quotient = reduction_witness.short();
+        let result = reduction_witness.result();
+        let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
+        let (u_0, u_1, v_0, v_1) = reduction_witness.residues();
 
         // Apply ranges
-
         let range_chip = self.range_chip();
         let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
         let quotient = &range_chip.range_value(region, &quotient.into(), self.rns.bit_len_limb, offset)?;
@@ -104,11 +93,6 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         // | a_1 | q | t_1 | - |
         // | a_2 | q | t_2 | - |
         // | a_3 | q | t_3 | - |
-
-        let t_0 = intermediate_values.as_ref().map(|t| t[0]);
-        let t_1 = intermediate_values.as_ref().map(|t| t[1]);
-        let t_2 = intermediate_values.as_ref().map(|t| t[2]);
-        let t_3 = intermediate_values.as_ref().map(|t| t[3]);
 
         let (_, _, t_0, _, _) = main_gate.combine(
             region,

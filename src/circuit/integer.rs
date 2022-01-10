@@ -40,9 +40,9 @@ impl IntegerConfig {
     }
 }
 
-pub struct IntegerChip<Wrong: FieldExt, Native: FieldExt> {
+pub struct IntegerChip<W: FieldExt, N: FieldExt> {
     config: IntegerConfig,
-    pub rns: Rns<Wrong, Native>,
+    pub rns: Rns<W, N>,
 }
 
 impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
@@ -51,18 +51,18 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
     }
 }
 
-pub trait IntegerInstructions<N: FieldExt> {
-    fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+pub trait IntegerInstructions<W: FieldExt, N: FieldExt> {
+    fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn range_assign_integer(
         &self,
         region: &mut Region<'_, N>,
-        integer: UnassignedInteger<N>,
+        integer: UnassignedInteger<W, N>,
         range: Range,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
 
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-    fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul2(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul3(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn sub(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
@@ -76,7 +76,7 @@ pub trait IntegerInstructions<N: FieldExt> {
     ) -> Result<AssignedInteger<N>, Error>;
     fn neg(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-    fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul_into_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
 
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
@@ -125,13 +125,13 @@ pub trait IntegerInstructions<N: FieldExt> {
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
-        b: &Integer<N>,
+        b: &Integer<W, N>,
         cond: &AssignedCondition<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
 }
 
-impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
+impl<W: FieldExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
@@ -140,7 +140,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._add(region, a, b, offset)
     }
 
-    fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?;
         self._add_constant(region, a, b, offset)
     }
@@ -194,7 +194,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         self._mul(region, a, b, offset)
     }
 
-    fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(region, a, offset)?;
         let a = &self.reduce_if_max_operand_value_exceeds(region, a, offset)?;
         self._mul_constant(region, a, b, offset)
@@ -273,14 +273,14 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
     fn range_assign_integer(
         &self,
         region: &mut Region<'_, N>,
-        integer: UnassignedInteger<N>,
+        integer: UnassignedInteger<W, N>,
         range: Range,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         self._range_assign_integer(region, integer, range, offset)
     }
 
-    fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         self._assign_integer(region, integer, offset, true)
     }
 
@@ -364,7 +364,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<N> for IntegerChip<W, N> {
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
-        b: &Integer<N>,
+        b: &Integer<W, N>,
         cond: &AssignedCondition<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
@@ -427,14 +427,19 @@ mod tests {
     use halo2arith::utils::fe_to_big;
     use halo2arith::{halo2, AssignedCondition};
 
-    impl<F: FieldExt> From<Integer<F>> for UnassignedInteger<F> {
-        fn from(integer: Integer<F>) -> Self {
+    impl<'a, W: FieldExt, N: FieldExt> From<Integer<'a, W, N>> for UnassignedInteger<'a, W, N> {
+        fn from(integer: Integer<'a, W, N>) -> Self {
             UnassignedInteger(Some(integer))
         }
     }
 
     impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
-        fn assign_integer_no_check(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        fn assign_integer_no_check(
+            &self,
+            region: &mut Region<'_, N>,
+            integer: UnassignedInteger<W, N>,
+            offset: &mut usize,
+        ) -> Result<AssignedInteger<N>, Error> {
             self._assign_integer(region, integer, offset, false)
         }
     }
@@ -579,10 +584,12 @@ mod tests {
                     let offset = &mut 0;
 
                     let overflows = rns.rand_with_limb_bit_size(rns.bit_len_limb + 5);
-                    let reduced = rns.reduce(&overflows).result;
+                    let unreduced = overflows.clone();
+                    let reduced = overflows.reduce();
+                    let reduced = reduced.result;
 
-                    let overflows = &integer_chip.assign_integer_no_check(&mut region, overflows.into(), offset)?;
-                    let reduced_0 = &integer_chip.range_assign_integer(&mut region, reduced.into(), Range::Remainder, offset)?;
+                    let overflows = &integer_chip.assign_integer_no_check(&mut region, Some(unreduced).into(), offset)?;
+                    let reduced_0 = &integer_chip.range_assign_integer(&mut region, Some(reduced).into(), Range::Remainder, offset)?;
                     let reduced_1 = &integer_chip.reduce(&mut region, overflows, offset)?;
                     assert_eq!(reduced_1.max_val(), rns.max_remainder);
 
@@ -923,11 +930,11 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let a = rns.rand_in_remainder_range();
-                    let inv = rns.invert(&a).unwrap();
+                    let inv = a.invert().unwrap();
 
                     // 1 / a
-                    let a = &integer_chip.range_assign_integer(&mut region, a.into(), Range::Remainder, offset)?;
-                    let inv_0 = &integer_chip.range_assign_integer(&mut region, inv.into(), Range::Remainder, offset)?;
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                    let inv_0 = &integer_chip.range_assign_integer(&mut region, Some(inv.clone()).into(), Range::Remainder, offset)?;
                     let (inv_1, cond) = integer_chip.invert(&mut region, a, offset)?;
                     integer_chip.assert_equal(&mut region, inv_0, &inv_1, offset)?;
                     main_gate.assert_zero(&mut region, cond, offset)?;
@@ -955,9 +962,9 @@ mod tests {
                     // a / b
                     let a = rns.rand_in_remainder_range();
                     let b = rns.rand_in_remainder_range();
-                    let c = rns.div(&a, &b).unwrap();
-                    let a = &integer_chip.range_assign_integer(&mut region, a.into(), Range::Remainder, offset)?;
-                    let b = &integer_chip.range_assign_integer(&mut region, b.into(), Range::Remainder, offset)?;
+                    let c = a.div(&b).unwrap();
+                    let a = &integer_chip.range_assign_integer(&mut region, Some(a.clone()).into(), Range::Remainder, offset)?;
+                    let b = &integer_chip.range_assign_integer(&mut region, Some(b.clone()).into(), Range::Remainder, offset)?;
                     let c_0 = &integer_chip.range_assign_integer(&mut region, c.into(), Range::Remainder, offset)?;
                     let (c_1, cond) = integer_chip.div(&mut region, a, b, offset)?;
                     integer_chip.assert_equal(&mut region, c_0, &c_1, offset)?;
@@ -1094,7 +1101,7 @@ mod tests {
                         let mut a = integer_chip.assign_integer(&mut region, a.into(), offset)?;
 
                         for _ in 0..10 {
-                            let c = (a.integer().unwrap().value() * 2usize) % &self.rns.wrong_modulus;
+                            let c = (rns.to_integer(&a).unwrap().value() * 2usize) % &self.rns.wrong_modulus;
                             let c = rns.new_from_big(c);
                             a = integer_chip.add(&mut region, &a, &a, offset)?;
                             let c_1 = integer_chip.range_assign_integer(&mut region, c.into(), Range::Remainder, offset)?;
@@ -1173,7 +1180,7 @@ mod tests {
                         for _ in 0..10 {
                             let b = rns.rand_in_unreduced_range();
 
-                            let a_norm = (a.integer().unwrap().value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
+                            let a_norm = (rns.to_integer(&a).unwrap().value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
                             let b_norm = b.value() % rns.wrong_modulus.clone();
                             let c = a_norm - b_norm;
                             let c = rns.new_from_big(c);

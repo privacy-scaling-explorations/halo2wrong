@@ -2,22 +2,22 @@ use super::integer::IntegerConfig;
 use crate::circuit::AssignedInteger;
 use crate::rns::Integer;
 use halo2::arithmetic::FieldExt;
-use halo2arith::{halo2, AssignedCondition};
 use halo2arith::main_gate::five::main_gate::MainGateConfig;
 use halo2arith::main_gate::five::range::RangeConfig;
+use halo2arith::{halo2, AssignedCondition};
 
 /* Shared structure of curve affine points */
 
-#[derive(Default, Clone, Debug)]
-pub struct IncompletePoint<N: FieldExt> {
-    x: Integer<N>,
-    y: Integer<N>,
+#[derive(Clone)]
+pub struct IncompletePoint<'a, W: FieldExt, N: FieldExt> {
+    x: Integer<'a, W, N>,
+    y: Integer<'a, W, N>,
 }
 
-#[derive(Default, Clone, Debug)]
-pub struct Point<N: FieldExt> {
-    x: Integer<N>,
-    y: Integer<N>,
+#[derive(Clone)]
+pub struct Point<'a, W: FieldExt, N: FieldExt> {
+    x: Integer<'a, W, N>,
+    y: Integer<'a, W, N>,
     is_identity: bool,
 }
 

@@ -157,7 +157,7 @@ impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
-        b: &Integer<N>,
+        b: &Integer<W, N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
