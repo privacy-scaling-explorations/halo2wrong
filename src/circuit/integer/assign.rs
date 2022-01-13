@@ -1,6 +1,6 @@
 use super::{IntegerChip, Range};
 use crate::circuit::{AssignedInteger, AssignedLimb, UnassignedInteger};
-use crate::NUMBER_OF_LIMBS;
+use crate::{NUMBER_OF_LIMBS, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -9,7 +9,7 @@ use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _range_assign_integer(
         &self,
         region: &mut Region<'_, N>,

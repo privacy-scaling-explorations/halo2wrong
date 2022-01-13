@@ -1,4 +1,5 @@
 use super::{IntegerChip, IntegerInstructions, Range};
+use crate::WrongExt;
 use crate::circuit::AssignedInteger;
 use crate::rns::MaybeReduced;
 use halo2::arithmetic::FieldExt;
@@ -7,7 +8,7 @@ use halo2::plonk::Error;
 use halo2arith::main_gate::five::range::RangeInstructions;
 use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn reduce_if_limb_values_exceeds_unreduced(
         &self,
         region: &mut Region<'_, N>,

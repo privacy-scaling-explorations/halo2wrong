@@ -1,13 +1,13 @@
 use super::IntegerChip;
 use crate::circuit::{AssignedInteger, AssignedLimb, Common};
 use crate::rns::Integer;
-use crate::NUMBER_OF_LIMBS;
+use crate::{NUMBER_OF_LIMBS, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 use halo2arith::{halo2, utils::fe_to_big, MainGateInstructions};
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _add(
         &self,
         region: &mut Region<'_, N>,

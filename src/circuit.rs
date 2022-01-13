@@ -1,4 +1,5 @@
 use crate::rns::{Common, Integer, Limb};
+use crate::WrongExt;
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Cell};
 use halo2arith::{compose, fe_to_big, halo2, Assigned, AssignedValue, UnassignedValue};
@@ -76,15 +77,15 @@ impl<F: FieldExt> AssignedLimb<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnassignedInteger<'a, W: FieldExt, F: FieldExt>(Option<Integer<'a, W, F>>);
+pub struct UnassignedInteger<'a, W: WrongExt, F: FieldExt>(Option<Integer<'a, W, F>>);
 
-impl<'a, W: FieldExt, F: FieldExt> From<Option<Integer<'a, W, F>>> for UnassignedInteger<'a, W, F> {
+impl<'a, W: WrongExt, F: FieldExt> From<Option<Integer<'a, W, F>>> for UnassignedInteger<'a, W, F> {
     fn from(integer: Option<Integer<'a, W, F>>) -> Self {
         UnassignedInteger(integer)
     }
 }
 
-impl<'a, W: FieldExt, F: FieldExt> UnassignedInteger<'a, W, F> {
+impl<'a, W: WrongExt, F: FieldExt> UnassignedInteger<'a, W, F> {
     fn value(&self) -> Option<big_uint> {
         self.0.as_ref().map(|e| e.value())
     }

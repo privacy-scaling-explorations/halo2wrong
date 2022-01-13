@@ -1,12 +1,12 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::NUMBER_OF_LIMBS;
+use crate::{NUMBER_OF_LIMBS, WrongExt};
 use crate::{circuit::AssignedInteger, rns::MaybeReduced};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 use halo2arith::{halo2, main_gate::five::range::RangeInstructions, AssignedValue, CombinationOptionCommon, MainGateInstructions, Term};
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());

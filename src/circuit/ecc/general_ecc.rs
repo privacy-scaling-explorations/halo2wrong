@@ -137,16 +137,28 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         MainGate::<N>::new(self.config.main_gate_config.clone())
     }
 
+    #[cfg(feature = "zcash")]
     fn parameter_a(&self) -> Integer<Emulated::Base, N> {
         self.rns_base_field.new(Emulated::a())
+    }
+
+    #[cfg(feature = "kzg")]
+    fn parameter_a(&self) -> Integer<Emulated::Base, N> {
+        self.rns_base_field.new(Emulated::Base::zero())
     }
 
     fn parameter_b(&self) -> Integer<Emulated::Base, N> {
         self.rns_base_field.new(Emulated::b())
     }
 
+    #[cfg(feature = "zcash")]
     fn is_a_0(&self) -> bool {
         Emulated::a() == Emulated::Base::zero()
+    }
+
+    #[cfg(feature = "kzg")]
+    fn is_a_0(&self) -> bool {
+        true
     }
 
     fn into_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
@@ -357,17 +369,25 @@ mod tests {
     use crate::circuit::integer::{IntegerChip, IntegerConfig, IntegerInstructions};
     use crate::rns::Rns;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
-    use group::ff::Field;
+    use group::ff::Field as _;
     use group::Group;
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
     use halo2::dev::MockProver;
-    use halo2::pasta::EqAffine;
-    use halo2::pasta::Fp;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use halo2arith::main_gate::five::main_gate::{MainGate, MainGateConfig};
     use halo2arith::main_gate::five::range::{RangeChip, RangeConfig, RangeInstructions};
     use halo2arith::{halo2, MainGateInstructions};
+
+    #[cfg(feature = "kzg")]
+    use halo2::pairing::bn256::Fq as Field;
+    #[cfg(feature = "kzg")]
+    use halo2::pairing::bn256::G1Affine as Curve;
+
+    #[cfg(feature = "zcash")]
+    use halo2::pasta::EqAffine as Curve;
+    #[cfg(feature = "zcash")]
+    use halo2::pasta::Fp as Field;
 
     const BIT_LEN_LIMB: usize = 68;
 
@@ -567,8 +587,8 @@ mod tests {
 
     #[test]
     fn test_general_ecc_addition_circuit() {
-        let (rns_base, rns_scalar, k) = setup::<EqAffine, Fp>(0);
-        let circuit = TestEccAddition::<EqAffine, Fp> { rns_base, rns_scalar };
+        let (rns_base, rns_scalar, k) = setup::<Curve, Field>(0);
+        let circuit = TestEccAddition::<Curve, Field> { rns_base, rns_scalar };
 
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,
@@ -650,8 +670,8 @@ mod tests {
 
     #[test]
     fn test_general_ecc_multiplication_circuit() {
-        let (rns_base, rns_scalar, k) = setup::<EqAffine, Fp>(20);
-        let circuit = TestEccScalarMul::<EqAffine, Fp> { rns_base, rns_scalar };
+        let (rns_base, rns_scalar, k) = setup::<Curve, Field>(20);
+        let circuit = TestEccScalarMul::<Curve, Field> { rns_base, rns_scalar };
 
         let prover = match MockProver::run(k, &circuit, vec![]) {
             Ok(prover) => prover,

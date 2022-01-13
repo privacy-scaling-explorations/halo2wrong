@@ -1,6 +1,6 @@
 use super::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use crate::rns::{Common, Integer, Rns};
-use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -40,18 +40,18 @@ impl IntegerConfig {
     }
 }
 
-pub struct IntegerChip<W: FieldExt, N: FieldExt> {
+pub struct IntegerChip<W: WrongExt, N: FieldExt> {
     config: IntegerConfig,
     pub rns: Rns<W, N>,
 }
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn new_assigned_integer(&self, limbs: Vec<AssignedLimb<N>>, native_value: AssignedValue<N>) -> AssignedInteger<N> {
         AssignedInteger::new(limbs, native_value, self.rns.bit_len_limb)
     }
 }
 
-pub trait IntegerInstructions<W: FieldExt, N: FieldExt> {
+pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
     fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn range_assign_integer(
         &self,
@@ -131,7 +131,7 @@ pub trait IntegerInstructions<W: FieldExt, N: FieldExt> {
     ) -> Result<AssignedInteger<N>, Error>;
 }
 
-impl<W: FieldExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
@@ -393,7 +393,7 @@ impl<W: FieldExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     }
 }
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub fn new(config: IntegerConfig, rns: Rns<W, N>) -> Self {
         IntegerChip { config, rns }
     }
@@ -414,12 +414,10 @@ mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::circuit::{AssignedInteger, UnassignedInteger};
     use crate::rns::{Common, Integer, Rns};
-    use crate::NUMBER_OF_LOOKUP_LIMBS;
+    use crate::{WrongExt, NUMBER_OF_LOOKUP_LIMBS};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, Region, SimpleFloorPlanner};
     use halo2::dev::MockProver;
-    use halo2::pasta::Fp as Wrong;
-    use halo2::pasta::Fq as Native;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use halo2arith::main_gate::five::main_gate::{MainGate, MainGateConfig};
     use halo2arith::main_gate::five::range::{RangeChip, RangeConfig, RangeInstructions};
@@ -427,13 +425,23 @@ mod tests {
     use halo2arith::utils::fe_to_big;
     use halo2arith::{halo2, AssignedCondition};
 
-    impl<'a, W: FieldExt, N: FieldExt> From<Integer<'a, W, N>> for UnassignedInteger<'a, W, N> {
+    #[cfg(feature = "kzg")]
+    use halo2::pairing::bn256::Fq as Wrong;
+    #[cfg(feature = "kzg")]
+    use halo2::pairing::bn256::Fr as Native;
+
+    #[cfg(feature = "zcash")]
+    use halo2::pasta::Fp as Wrong;
+    #[cfg(feature = "zcash")]
+    use halo2::pasta::Fq as Native;
+
+    impl<'a, W: WrongExt, N: FieldExt> From<Integer<'a, W, N>> for UnassignedInteger<'a, W, N> {
         fn from(integer: Integer<'a, W, N>) -> Self {
             UnassignedInteger(Some(integer))
         }
     }
 
-    impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+    impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         fn assign_integer_no_check(
             &self,
             region: &mut Region<'_, N>,
@@ -445,11 +453,11 @@ mod tests {
     }
     const BIT_LEN_LIMB: usize = 68;
 
-    fn rns<W: FieldExt, N: FieldExt>() -> Rns<W, N> {
+    fn rns<W: WrongExt, N: FieldExt>() -> Rns<W, N> {
         Rns::<W, N>::construct(BIT_LEN_LIMB)
     }
 
-    fn setup<W: FieldExt, N: FieldExt>() -> (Rns<W, N>, u32) {
+    fn setup<W: WrongExt, N: FieldExt>() -> (Rns<W, N>, u32) {
         let rns = rns();
         #[cfg(not(feature = "no_lookup"))]
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
@@ -465,7 +473,7 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<W: FieldExt, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
+        fn new<W: WrongExt, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
 
             let overflow_bit_lengths = rns::<W, N>().overflow_lengths();
@@ -497,11 +505,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitRange<W: FieldExt, N: FieldExt> {
+    struct TestCircuitRange<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitRange<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitRange<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -558,11 +566,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitReduction<W: FieldExt, N: FieldExt> {
+    struct TestCircuitReduction<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitReduction<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitReduction<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -618,11 +626,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitEquality<W: FieldExt, N: FieldExt> {
+    struct TestCircuitEquality<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitEquality<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitEquality<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -673,11 +681,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitMultiplication<W: FieldExt, N: FieldExt> {
+    struct TestCircuitMultiplication<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitMultiplication<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitMultiplication<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -778,11 +786,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitSquaring<W: FieldExt, N: FieldExt> {
+    struct TestCircuitSquaring<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitSquaring<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitSquaring<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -849,11 +857,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitInField<W: FieldExt, N: FieldExt> {
+    struct TestCircuitInField<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitInField<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitInField<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -904,11 +912,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitNonDeterministic<W: FieldExt, N: FieldExt> {
+    struct TestCircuitNonDeterministic<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitNonDeterministic<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitNonDeterministic<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1020,11 +1028,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitAddition<W: FieldExt, N: FieldExt> {
+    struct TestCircuitAddition<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitAddition<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitAddition<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1141,7 +1149,7 @@ mod tests {
 
                         let a_norm = (a.value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
                         let b_norm = b.value() % rns.wrong_modulus.clone();
-                        let c = a_norm - b_norm;
+                        let c = (a_norm - b_norm) % rns.wrong_modulus.clone();
                         let c = rns.new_from_big(c);
 
                         let a = integer_chip.range_assign_integer(&mut region, a.into(), Range::Remainder, offset)?;
@@ -1160,7 +1168,7 @@ mod tests {
 
                         let a_norm = (a.value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
                         let b_norm = b.value() % rns.wrong_modulus.clone();
-                        let c = a_norm - b_norm;
+                        let c = (a_norm - b_norm) % rns.wrong_modulus.clone();
                         let c = rns.new_from_big(c);
 
                         let a = integer_chip.assign_integer_no_check(&mut region, a.into(), offset)?;
@@ -1182,7 +1190,7 @@ mod tests {
 
                             let a_norm = (rns.to_integer(&a).unwrap().value() % rns.wrong_modulus.clone()) + rns.wrong_modulus.clone();
                             let b_norm = b.value() % rns.wrong_modulus.clone();
-                            let c = a_norm - b_norm;
+                            let c = (a_norm - b_norm) % rns.wrong_modulus.clone();
                             let c = rns.new_from_big(c);
 
                             let b = integer_chip.assign_integer_no_check(&mut region, b.into(), offset)?;
@@ -1258,11 +1266,11 @@ mod tests {
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuitConditionals<W: FieldExt, N: FieldExt> {
+    struct TestCircuitConditionals<W: WrongExt, N: FieldExt> {
         rns: Rns<W, N>,
     }
 
-    impl<W: FieldExt, N: FieldExt> Circuit<N> for TestCircuitConditionals<W, N> {
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitConditionals<W, N> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 

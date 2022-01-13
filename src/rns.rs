@@ -1,5 +1,5 @@
 use crate::circuit::AssignedInteger;
-use crate::{NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2arith::halo2;
 use halo2arith::utils::{big_to_fe, compose, decompose_big, fe_to_big};
@@ -8,6 +8,9 @@ use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use std::fmt;
 use std::marker::PhantomData;
+
+#[cfg(feature = "kzg")]
+use crate::halo2::arithmetic::BaseExt;
 
 pub trait Common<F: FieldExt> {
     fn value(&self) -> big_uint;
@@ -22,11 +25,17 @@ pub trait Common<F: FieldExt> {
     }
 }
 
+#[cfg(feature = "zcash")]
 fn modulus<F: FieldExt>() -> big_uint {
     big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
 }
 
-impl<'a, W: FieldExt, N: FieldExt> From<Integer<'a, W, N>> for big_uint {
+#[cfg(feature = "kzg")]
+fn modulus<F: BaseExt>() -> big_uint {
+    big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
+}
+
+impl<'a, W: WrongExt, N: FieldExt> From<Integer<'a, W, N>> for big_uint {
     fn from(el: Integer<'a, W, N>) -> Self {
         el.value()
     }
@@ -47,7 +56,7 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
 }
 
 #[derive(Clone)]
-pub struct ReductionWitness<'a, W: FieldExt, N: FieldExt> {
+pub struct ReductionWitness<'a, W: WrongExt, N: FieldExt> {
     pub result: Integer<'a, W, N>,
     pub quotient: Quotient<'a, W, N>,
     pub t: Vec<N>,
@@ -57,15 +66,15 @@ pub struct ReductionWitness<'a, W: FieldExt, N: FieldExt> {
     pub v_1: N,
 }
 
-pub(crate) struct MaybeReduced<'a, W: FieldExt, N: FieldExt>(Option<ReductionWitness<'a, W, N>>);
+pub(crate) struct MaybeReduced<'a, W: WrongExt, N: FieldExt>(Option<ReductionWitness<'a, W, N>>);
 
-impl<'a, W: FieldExt, N: FieldExt> From<Option<ReductionWitness<'a, W, N>>> for MaybeReduced<'a, W, N> {
+impl<'a, W: WrongExt, N: FieldExt> From<Option<ReductionWitness<'a, W, N>>> for MaybeReduced<'a, W, N> {
     fn from(integer: Option<ReductionWitness<'a, W, N>>) -> Self {
         MaybeReduced(integer)
     }
 }
 
-impl<'a, W: FieldExt, N: FieldExt> MaybeReduced<'a, W, N> {
+impl<'a, W: WrongExt, N: FieldExt> MaybeReduced<'a, W, N> {
     pub(crate) fn long(&self) -> Option<Integer<'a, W, N>> {
         self.0.as_ref().map(|reduction_result| {
             let quotient = match reduction_result.quotient.clone() {
@@ -121,19 +130,19 @@ impl<'a, W: FieldExt, N: FieldExt> MaybeReduced<'a, W, N> {
 }
 
 #[derive(Clone)]
-pub enum Quotient<'a, W: FieldExt, N: FieldExt> {
+pub enum Quotient<'a, W: WrongExt, N: FieldExt> {
     Short(N),
     Long(Integer<'a, W, N>),
 }
 
 #[derive(Clone)]
-pub(crate) struct ComparisionResult<'a, W: FieldExt, N: FieldExt> {
+pub(crate) struct ComparisionResult<'a, W: WrongExt, N: FieldExt> {
     pub result: Integer<'a, W, N>,
     pub borrow: [bool; NUMBER_OF_LIMBS],
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
+pub struct Rns<W: WrongExt, N: FieldExt> {
     pub bit_len_limb: usize,
     pub bit_len_lookup: usize,
 
@@ -142,18 +151,18 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
     pub binary_modulus: big_uint,
     pub crt_modulus: big_uint,
 
-    pub right_shifter_r: Native,
-    pub right_shifter_2r: Native,
-    pub left_shifter_r: Native,
-    pub left_shifter_2r: Native,
-    pub left_shifter_3r: Native,
+    pub right_shifter_r: N,
+    pub right_shifter_2r: N,
+    pub left_shifter_r: N,
+    pub left_shifter_2r: N,
+    pub left_shifter_3r: N,
 
     pub base_aux: Vec<big_uint>,
 
-    pub negative_wrong_modulus_decomposed: Vec<Native>,
-    pub wrong_modulus_decomposed: Vec<Native>,
-    pub wrong_modulus_minus_one: Vec<Native>,
-    pub wrong_modulus_in_native_modulus: Native,
+    pub negative_wrong_modulus_decomposed: Vec<N>,
+    pub wrong_modulus_decomposed: Vec<N>,
+    pub wrong_modulus_minus_one: Vec<N>,
+    pub wrong_modulus_in_native_modulus: N,
 
     pub max_reduced_limb: big_uint,
     pub max_unreduced_limb: big_uint,
@@ -177,10 +186,10 @@ pub struct Rns<Wrong: FieldExt, Native: FieldExt> {
 
     two_limb_mask: big_uint,
 
-    _marker_wrong: PhantomData<Wrong>,
+    _marker_wrong: PhantomData<W>,
 }
 
-impl<W: FieldExt, N: FieldExt> Rns<W, N> {
+impl<W: WrongExt, N: FieldExt> Rns<W, N> {
     fn calculate_base_aux(bit_len_limb: usize) -> Vec<big_uint> {
         let two = N::from(2);
         let r = &fe_to_big(two.pow(&[bit_len_limb as u64, 0, 0, 0]));
@@ -514,12 +523,12 @@ impl<F: FieldExt> Limb<F> {
 }
 
 #[derive(Clone)]
-pub struct Integer<'a, W: FieldExt, N: FieldExt> {
+pub struct Integer<'a, W: WrongExt, N: FieldExt> {
     limbs: Vec<Limb<N>>,
     rns: &'a Rns<W, N>,
 }
 
-impl<'a, W: FieldExt, N: FieldExt> fmt::Debug for Integer<'a, W, N> {
+impl<'a, W: WrongExt, N: FieldExt> fmt::Debug for Integer<'a, W, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = self.value();
         let value = value.to_str_radix(16);
@@ -533,14 +542,14 @@ impl<'a, W: FieldExt, N: FieldExt> fmt::Debug for Integer<'a, W, N> {
     }
 }
 
-impl<'a, W: FieldExt, N: FieldExt> Common<N> for Integer<'a, W, N> {
+impl<'a, W: WrongExt, N: FieldExt> Common<N> for Integer<'a, W, N> {
     fn value(&self) -> big_uint {
         let limb_values = self.limbs.iter().map(|limb| limb.value()).collect();
         compose(limb_values, self.rns.bit_len_limb)
     }
 }
 
-impl<'a, W: FieldExt, N: FieldExt> Integer<'a, W, N> {
+impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
     pub fn new(limbs: Vec<Limb<N>>, rns: &'a Rns<W, N>) -> Self {
         assert!(limbs.len() == NUMBER_OF_LIMBS);
         Self { limbs, rns }
@@ -717,7 +726,7 @@ impl<'a, W: FieldExt, N: FieldExt> Integer<'a, W, N> {
 mod tests {
     #[allow(dead_code)]
 
-    impl<W: FieldExt, N: FieldExt> Rns<W, N> {
+    impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         pub(crate) fn rand_in_field(&self) -> Integer<W, N> {
             use rand::thread_rng;
             let mut rng = thread_rng();
@@ -771,19 +780,26 @@ mod tests {
     use super::{big_to_fe, fe_to_big, modulus, Rns};
     use crate::rns::Common;
     use crate::rns::Integer;
+    use crate::WrongExt;
     use crate::NUMBER_OF_LIMBS;
-    use group::ff::Field;
     use halo2::arithmetic::FieldExt;
-    use halo2::pasta::Fp;
-    use halo2::pasta::Fp as Wrong;
-    use halo2::pasta::Fq;
-    use halo2::pasta::Fq as Native;
+
     use halo2arith::compose;
     use halo2arith::halo2;
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::{One, Zero};
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
+
+    #[cfg(feature = "kzg")]
+    use halo2::pairing::bn256::Fq as Wrong;
+    #[cfg(feature = "kzg")]
+    use halo2::pairing::bn256::Fr as Native;
+
+    #[cfg(feature = "zcash")]
+    use halo2::pasta::Fp as Wrong;
+    #[cfg(feature = "zcash")]
+    use halo2::pasta::Fq as Native;
 
     fn rns() -> Rns<Wrong, Native> {
         let bit_len_limb = 68;
@@ -819,7 +835,7 @@ mod tests {
         let shifted_1 = (el * left_shifter_r) % native_modulus.clone();
         let shifted_0 = fe_to_big(shifted_0);
         assert_eq!(shifted_0, shifted_1);
-        let shifted: Fq = big_to_fe(shifted_0);
+        let shifted: Native = big_to_fe(shifted_0);
         let el_1 = shifted * rns.right_shifter_r;
         assert_eq!(el_0, el_1);
 
@@ -830,7 +846,7 @@ mod tests {
         let shifted_1 = (el * left_shifter_2r) % native_modulus.clone();
         let shifted_0 = fe_to_big(shifted_0);
         assert_eq!(shifted_0, shifted_1);
-        let shifted: Fq = big_to_fe(shifted_0);
+        let shifted: Native = big_to_fe(shifted_0);
         let el_1 = shifted * rns.right_shifter_2r;
         assert_eq!(el_0, el_1);
 
@@ -838,7 +854,7 @@ mod tests {
         let el = fe_to_big(el_0);
         let aux = compose(rns.base_aux, rns.bit_len_limb);
         let el = (aux + el) % wrong_modulus.clone();
-        let el_1: Fp = big_to_fe(el);
+        let el_1: Wrong = big_to_fe(el);
         assert_eq!(el_0, el_1)
     }
 

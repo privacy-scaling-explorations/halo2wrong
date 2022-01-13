@@ -1,4 +1,5 @@
 use super::IntegerChip;
+use crate::WrongExt;
 use crate::circuit::AssignedInteger;
 use crate::rns::MaybeReduced;
 use halo2::arithmetic::FieldExt;
@@ -7,7 +8,7 @@ use halo2::plonk::Error;
 use halo2arith::main_gate::five::range::RangeInstructions;
 use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     fn assert_zero_v0_range_tune(&self) -> usize {
         // TODO
         self.rns.bit_len_limb

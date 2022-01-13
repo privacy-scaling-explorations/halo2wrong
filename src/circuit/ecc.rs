@@ -1,6 +1,7 @@
 use super::integer::IntegerConfig;
 use crate::circuit::AssignedInteger;
 use crate::rns::Integer;
+use crate::WrongExt;
 use halo2::arithmetic::FieldExt;
 use halo2arith::main_gate::five::main_gate::MainGateConfig;
 use halo2arith::main_gate::five::range::RangeConfig;
@@ -9,13 +10,13 @@ use halo2arith::{halo2, AssignedCondition};
 /* Shared structure of curve affine points */
 
 #[derive(Clone)]
-pub struct IncompletePoint<'a, W: FieldExt, N: FieldExt> {
+pub struct IncompletePoint<'a, W: WrongExt, N: FieldExt> {
     x: Integer<'a, W, N>,
     y: Integer<'a, W, N>,
 }
 
 #[derive(Clone)]
-pub struct Point<'a, W: FieldExt, N: FieldExt> {
+pub struct Point<'a, W: WrongExt, N: FieldExt> {
     x: Integer<'a, W, N>,
     y: Integer<'a, W, N>,
     is_identity: bool,

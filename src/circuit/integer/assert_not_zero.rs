@@ -1,5 +1,5 @@
 use super::IntegerChip;
-use crate::circuit::AssignedInteger;
+use crate::{circuit::AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
@@ -7,7 +7,7 @@ use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
 use num_bigint::BigUint as big_uint;
 use std::convert::TryInto;
 
-impl<W: FieldExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let one = N::one();
