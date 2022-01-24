@@ -80,27 +80,21 @@ impl<'a, W: WrongExt, N: FieldExt> From<Option<ReductionWitness<'a, W, N>>> for 
 
 impl<'a, W: WrongExt, N: FieldExt> MaybeReduced<'a, W, N> {
     pub(crate) fn long(&self) -> Option<Integer<'a, W, N>> {
-        self.0.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Long(quotient) => quotient,
-                _ => panic!("long quotient expected"),
-            };
-            quotient
+        self.0.as_ref().map(|reduction_result| match reduction_result.quotient.clone() {
+            Quotient::Long(quotient) => quotient,
+            _ => panic!("long quotient expected"),
         })
     }
 
     pub(crate) fn short(&self) -> Option<N> {
-        self.0.as_ref().map(|reduction_result| {
-            let quotient = match reduction_result.quotient.clone() {
-                Quotient::Short(quotient) => quotient,
-                _ => panic!("short quotient expected"),
-            };
-            quotient
+        self.0.as_ref().map(|reduction_result| match reduction_result.quotient.clone() {
+            Quotient::Short(quotient) => quotient,
+            _ => panic!("short quotient expected"),
         })
     }
 
     pub(crate) fn result(&self) -> Option<Integer<'a, W, N>> {
-        self.0.as_ref().map(|u| u.result.clone()).into()
+        self.0.as_ref().map(|u| u.result.clone())
     }
 
     pub(crate) fn residues(&self) -> (Option<N>, Option<N>, Option<N>, Option<N>) {
@@ -277,7 +271,7 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         let max_most_significant_reduced_limb = &(max_remainder >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
         let max_most_significant_operand_limb = &(max_operand >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
         // TODO: this is for now just much lower than actual
-        let max_most_significant_unreduced_limb = &(max_unreduced_limb.clone());
+        let max_most_significant_unreduced_limb = &max_unreduced_limb;
         let max_most_significant_mul_quotient_limb = &(max_mul_quotient >> ((NUMBER_OF_LIMBS - 1) * bit_len_limb));
 
         assert!((max_most_significant_reduced_limb.bits() as usize) < bit_len_limb);
@@ -285,7 +279,7 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         assert!((max_most_significant_mul_quotient_limb.bits() as usize) <= bit_len_limb);
 
         // limit reduction quotient by single limb
-        let max_reduction_quotient = &max_reduced_limb.clone();
+        let max_reduction_quotient = &max_reduced_limb;
         let max_reducible_value = max_reduction_quotient * wrong_modulus.clone() + max_remainder;
         let max_with_max_unreduced_limbs = compose(vec![max_unreduced_limb.clone(); 4], bit_len_limb);
         assert!(max_reducible_value > max_with_max_unreduced_limbs);
@@ -318,8 +312,8 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
             let u1 = &t[2] + (&t[3] << bit_len_limb);
             let u1 = u1 + (u0.clone() >> (2 * bit_len_limb));
 
-            let v0 = u0.clone() >> (2 * bit_len_limb);
-            let v1 = u1.clone() >> (2 * bit_len_limb);
+            let v0 = u0 >> (2 * bit_len_limb);
+            let v1 = u1 >> (2 * bit_len_limb);
 
             (v0, v1)
         };
@@ -339,15 +333,15 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
             assert!(q_max < (one << bit_len_limb));
 
             let p: Vec<big_uint> = negative_wrong_modulus_decomposed.iter().map(|e| fe_to_big(*e)).collect();
-            let q = &max_reduced_limb.clone();
+            let q = &max_reduced_limb;
             let t: Vec<big_uint> = a.iter().zip(p.iter()).map(|(a, p)| a + q * p).collect();
 
             let u0 = &t[0] + (&t[1] << bit_len_limb);
             let u1 = &t[2] + (&t[3] << bit_len_limb);
             let u1 = u1 + (u0.clone() >> (2 * bit_len_limb));
 
-            let v0 = u0.clone() >> (2 * bit_len_limb);
-            let v1 = u1.clone() >> (2 * bit_len_limb);
+            let v0 = u0 >> (2 * bit_len_limb);
+            let v1 = u1 >> (2 * bit_len_limb);
 
             (v0, v1)
         };
@@ -417,7 +411,7 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
             _marker_wrong: PhantomData,
         };
 
-        let max_with_max_unreduced_limbs = vec![big_to_fe(max_unreduced_limb.clone()); 4];
+        let max_with_max_unreduced_limbs = vec![big_to_fe(max_unreduced_limb); 4];
         let max_with_max_unreduced = rns.new_from_limbs(max_with_max_unreduced_limbs);
         let reduction_result = max_with_max_unreduced.reduce();
         let quotient = match reduction_result.quotient.clone() {
@@ -452,15 +446,16 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
     pub(crate) fn make_aux(&self, max_vals: Vec<big_uint>) -> Integer<W, N> {
         let mut max_shift = 0usize;
 
-        for i in 0..NUMBER_OF_LIMBS {
-            let (max_val, mut aux) = (max_vals[i].clone(), self.base_aux[i].clone());
+        for (max_val, aux) in max_vals.iter().zip(self.base_aux.iter()) {
             let mut shift = 1;
-            while max_val > aux {
-                aux = aux << 1usize;
+            let mut aux = aux.clone();
+            while *max_val > aux {
+                aux <<= 1usize;
                 max_shift = std::cmp::max(shift, max_shift);
                 shift += 1;
             }
         }
+
         let aux_limbs = self.base_aux.iter().map(|aux_limb| big_to_fe(aux_limb << max_shift)).collect();
         self.new_from_limbs(aux_limbs)
     }
@@ -584,7 +579,7 @@ impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
 
     pub fn scale(&mut self, k: N) {
         for limb in self.limbs.iter_mut() {
-            limb.0 = limb.0 * k;
+            limb.0 *= k;
         }
     }
 
@@ -649,15 +644,7 @@ impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
         let quotient: N = big_to_fe(quotient);
 
         // compute intermediate values
-        let t: Vec<N> = self
-            .limbs()
-            .iter()
-            .zip(negative_modulus.iter())
-            .map(|(a, p)| {
-                let t = *a + *p * quotient;
-                t
-            })
-            .collect();
+        let t: Vec<N> = self.limbs().iter().zip(negative_modulus.iter()).map(|(a, p)| *a + *p * quotient).collect();
 
         let result = self.rns.new_from_big(result);
 
@@ -847,7 +834,7 @@ mod tests {
         let shifted_0 = el_0 * rns.left_shifter_2r;
         let left_shifter_2r = big_uint::one() << (2 * rns.bit_len_limb);
         let el = fe_to_big(el_0);
-        let shifted_1 = (el * left_shifter_2r) % native_modulus.clone();
+        let shifted_1 = (el * left_shifter_2r) % native_modulus;
         let shifted_0 = fe_to_big(shifted_0);
         assert_eq!(shifted_0, shifted_1);
         let shifted: Native = big_to_fe(shifted_0);
@@ -857,7 +844,7 @@ mod tests {
         let el_0 = Wrong::random(&mut rng);
         let el = fe_to_big(el_0);
         let aux = compose(rns.base_aux, rns.bit_len_limb);
-        let el = (aux + el) % wrong_modulus.clone();
+        let el = (aux + el) % wrong_modulus;
         let el_1: Wrong = big_to_fe(el);
         assert_eq!(el_0, el_1)
     }

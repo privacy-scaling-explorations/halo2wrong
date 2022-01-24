@@ -33,11 +33,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let limb_1 = &mut AssignedLimb::from(assigned, max_val.clone());
 
         let assigned = range_chip.range_value(region, &integer.limb(2), self.rns.bit_len_limb, offset)?;
-        let limb_2 = &mut AssignedLimb::from(assigned, max_val.clone());
+        let limb_2 = &mut AssignedLimb::from(assigned, max_val);
 
         let max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
         let assigned = range_chip.range_value(region, &integer.limb(3), most_significant_limb_bit_len, offset)?;
-        let limb_3 = &mut AssignedLimb::from(assigned, max_val.clone());
+        let limb_3 = &mut AssignedLimb::from(assigned, max_val);
 
         // find the native value
         let main_gate = self.main_gate();
@@ -72,13 +72,14 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         should_be_in_remainder_range: bool,
     ) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
-        integer.value().map(|value| {
+
+        if let Some(value) = integer.value() {
             if should_be_in_remainder_range {
                 assert!(value <= self.rns.max_remainder)
             } else {
                 assert!(value <= self.rns.max_with_max_unreduced_limbs);
             }
-        });
+        }
 
         let (zero, one) = (N::zero(), N::one());
         let r = self.rns.left_shifter_r;
@@ -107,13 +108,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .enumerate()
             .map(|(i, assigned_value)| {
                 let max_val = if should_be_in_remainder_range {
-                    let max_val = if i == NUMBER_OF_LIMBS - 1 {
+                    if i == NUMBER_OF_LIMBS - 1 {
                         self.rns.max_most_significant_reduced_limb.clone()
                     } else {
                         self.rns.max_reduced_limb.clone()
-                    };
-
-                    max_val
+                    }
                 } else {
                     self.rns.max_unreduced_limb.clone()
                 };

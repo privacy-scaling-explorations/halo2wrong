@@ -538,7 +538,7 @@ mod tests {
                     // test doubling
 
                     let a = C::CurveExt::random(&mut rng);
-                    let b = a.clone();
+                    let b = a;
                     let c = a + b;
 
                     let a = &ecc_chip.assign_point(&mut region, Some(a.into()), offset)?;

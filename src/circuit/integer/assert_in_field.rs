@@ -37,7 +37,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
 
         // assert borrow values are bits
-        let borrow = comparision_result.as_ref().map(|r| r.borrow.clone());
+        let borrow = comparision_result.as_ref().map(|r| r.borrow);
         let b_0 = borrow.map(|borrow| if borrow[0] { N::one() } else { N::zero() });
         let b_1 = borrow.map(|borrow| if borrow[1] { N::one() } else { N::zero() });
         let b_2 = borrow.map(|borrow| if borrow[2] { N::one() } else { N::zero() });

@@ -75,9 +75,9 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
             for i in 0..(input.bit_len_limb / 2) {
                 let shift = |rem: big_uint, carry| {
                     if rem.is_odd() {
-                        (rem >> 1, one.clone(), carry)
+                        (rem >> 1, one, carry)
                     } else {
-                        (rem >> 1, zero.clone(), 0u64)
+                        (rem >> 1, zero, 0u64)
                     }
                 };
 

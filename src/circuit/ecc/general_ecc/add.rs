@@ -95,8 +95,8 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
          */
         let nzero = main_gate.cond_not(region, &zero_cond, offset)?;
         let p = self.select_or_assign(region, &nzero, &p, Emulated::identity(), offset)?;
-        let p = self.select(region, &b.is_identity(), &a, &p, offset)?;
-        let p = self.select(region, &a.is_identity(), &b, &p, offset)?;
+        let p = self.select(region, &b.is_identity(), a, &p, offset)?;
+        let p = self.select(region, &a.is_identity(), b, &p, offset)?;
 
         Ok(p)
     }

@@ -93,7 +93,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
-            let mut intermediate_value = intermediate_values[i].clone();
+            let mut intermediate_value = intermediate_values[i];
 
             for j in 0..=i {
                 let k = i - j;
@@ -270,7 +270,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | a_3 | q_0 | q_1 | tmp_a |
         // | q_2 | q_3 | -   | tmp_b |
 
-        assert!(NUMBER_OF_LIMBS == 4);
         let b_native = b.native();
         let b = b.limbs();
 
@@ -592,7 +591,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let mut intermediate_values_cycling: Vec<AssignedValue<N>> = vec![];
 
         for i in 0..NUMBER_OF_LIMBS {
-            let mut t = intermediate_values[i].clone();
+            let mut t = intermediate_values[i];
 
             for j in 0..=i {
                 let k = i - j;

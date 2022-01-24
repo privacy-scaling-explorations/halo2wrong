@@ -32,7 +32,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // 2. call normalize here.
         // 3. add wrong field range check on inv.
         let inv_or_one = self.range_assign_integer(region, inv_or_one.into(), Range::Remainder, offset)?;
-        let a_mul_inv = &self.mul(region, &a, &inv_or_one, offset)?;
+        let a_mul_inv = &self.mul(region, a, &inv_or_one, offset)?;
 
         // We believe the mul result is strictly less than wrong modulus, so we add strict constraints here.
         // The limbs[1..NUMBER_OF_LIMBS] of a_mul_inv should be 0.
@@ -82,7 +82,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let inv = self.range_assign_integer(region, inv.into(), Range::Remainder, offset)?;
         // let must_be_one = &self.mul(region, &a, &inv, offset)?;
         // self.assert_strict_one(region, must_be_one, offset)?;
-        self._mul_into_one(region, &a, &inv, offset)?;
+        self._mul_into_one(region, a, &inv, offset)?;
 
         Ok(inv)
     }
