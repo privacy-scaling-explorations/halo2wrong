@@ -425,15 +425,15 @@ mod tests {
     use halo2arith::utils::fe_to_big;
     use halo2arith::{halo2, AssignedCondition};
 
-    #[cfg(feature = "kzg")]
-    use halo2::pairing::bn256::Fq as Wrong;
-    #[cfg(feature = "kzg")]
-    use halo2::pairing::bn256::Fr as Native;
-
-    #[cfg(feature = "zcash")]
-    use halo2::pasta::Fp as Wrong;
-    #[cfg(feature = "zcash")]
-    use halo2::pasta::Fq as Native;
+    cfg_if::cfg_if! {
+      if #[cfg(feature = "kzg")] {
+        use halo2::pairing::bn256::Fq as Wrong;
+        use halo2::pairing::bn256::Fr as Native;
+      } else {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+      }
+    }
 
     impl<'a, W: WrongExt, N: FieldExt> From<Integer<'a, W, N>> for UnassignedInteger<'a, W, N> {
         fn from(integer: Integer<'a, W, N>) -> Self {

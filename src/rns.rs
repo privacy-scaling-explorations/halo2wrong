@@ -25,14 +25,18 @@ pub trait Common<F: FieldExt> {
     }
 }
 
-#[cfg(feature = "zcash")]
-fn modulus<F: FieldExt>() -> big_uint {
-    big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
-}
+cfg_if::cfg_if! {
+    if #[cfg(feature = "kzg")] {
+        fn modulus<F: BaseExt>() -> big_uint {
+            big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
+        }
 
-#[cfg(feature = "kzg")]
-fn modulus<F: BaseExt>() -> big_uint {
-    big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
+    } else {
+        // default feature
+        fn modulus<F: FieldExt>() -> big_uint {
+            big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
+        }
+    }
 }
 
 impl<'a, W: WrongExt, N: FieldExt> From<Integer<'a, W, N>> for big_uint {
@@ -791,15 +795,15 @@ mod tests {
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
-    #[cfg(feature = "kzg")]
-    use halo2::pairing::bn256::Fq as Wrong;
-    #[cfg(feature = "kzg")]
-    use halo2::pairing::bn256::Fr as Native;
-
-    #[cfg(feature = "zcash")]
-    use halo2::pasta::Fp as Wrong;
-    #[cfg(feature = "zcash")]
-    use halo2::pasta::Fq as Native;
+    cfg_if::cfg_if! {
+      if #[cfg(feature = "kzg")] {
+        use halo2::pairing::bn256::Fq as Wrong;
+        use halo2::pairing::bn256::Fr as Native;
+      } else {
+        use halo2::pasta::Fp as Wrong;
+        use halo2::pasta::Fq as Native;
+      }
+    }
 
     fn rns() -> Rns<Wrong, Native> {
         let bit_len_limb = 68;

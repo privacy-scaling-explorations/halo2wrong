@@ -1,8 +1,8 @@
 use super::AssignedCondition;
 use super::IntegerChip;
 use super::IntegerInstructions;
-use crate::WrongExt;
 use crate::circuit::AssignedInteger;
+use crate::WrongExt;
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;

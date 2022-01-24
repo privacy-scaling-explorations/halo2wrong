@@ -86,28 +86,28 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         MainGate::<_>::new(self.config.main_gate_config.clone())
     }
 
-    #[cfg(feature = "zcash")]
-    fn parameter_a(&self) -> Integer<C::Base, C::ScalarExt> {
-        self.rns.new(C::a())
-    }
+    cfg_if::cfg_if! {
+      if #[cfg(feature = "kzg")] {
+          fn parameter_a(&self) -> Integer<C::Base, C::ScalarExt> {
+              self.rns.new(C::Base::zero())
+          }
 
-    #[cfg(feature = "kzg")]
-    fn parameter_a(&self) -> Integer<C::Base, C::ScalarExt> {
-        self.rns.new(C::Base::zero())
+          fn is_a_0(&self) -> bool {
+            true
+          }
+      } else {
+        fn parameter_a(&self) -> Integer<C::Base, C::ScalarExt> {
+            self.rns.new(C::a())
+        }
+
+        fn is_a_0(&self) -> bool {
+            C::a() == C::Base::zero()
+        }
+      }
     }
 
     fn parameter_b(&self) -> Integer<C::Base, C::ScalarExt> {
         self.rns.new(C::b())
-    }
-
-    #[cfg(feature = "zcash")]
-    fn is_a_0(&self) -> bool {
-        C::a() == C::Base::zero()
-    }
-
-    #[cfg(feature = "kzg")]
-    fn is_a_0(&self) -> bool {
-        true
     }
 
     fn into_rns_point(&self, point: C) -> Point<C::Base, C::ScalarExt> {

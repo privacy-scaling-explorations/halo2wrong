@@ -1,5 +1,8 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::{circuit::{AssignedInteger, AssignedValue}, WrongExt};
+use crate::{
+    circuit::{AssignedInteger, AssignedValue},
+    WrongExt,
+};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;

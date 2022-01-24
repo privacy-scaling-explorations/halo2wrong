@@ -137,28 +137,27 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         MainGate::<N>::new(self.config.main_gate_config.clone())
     }
 
-    #[cfg(feature = "zcash")]
-    fn parameter_a(&self) -> Integer<Emulated::Base, N> {
-        self.rns_base_field.new(Emulated::a())
-    }
+    cfg_if::cfg_if! {
+      if #[cfg(feature = "kzg")] {
+        fn parameter_a(&self) -> Integer<Emulated::Base, N> {
+            self.rns_base_field.new(Emulated::Base::zero())
+        }
 
-    #[cfg(feature = "kzg")]
-    fn parameter_a(&self) -> Integer<Emulated::Base, N> {
-        self.rns_base_field.new(Emulated::Base::zero())
+        fn is_a_0(&self) -> bool {
+            true
+        }
+      } else {
+        fn parameter_a(&self) -> Integer<Emulated::Base, N> {
+            self.rns_base_field.new(Emulated::a())
+        }
+        fn is_a_0(&self) -> bool {
+            Emulated::a() == Emulated::Base::zero()
+        }
+      }
     }
 
     fn parameter_b(&self) -> Integer<Emulated::Base, N> {
         self.rns_base_field.new(Emulated::b())
-    }
-
-    #[cfg(feature = "zcash")]
-    fn is_a_0(&self) -> bool {
-        Emulated::a() == Emulated::Base::zero()
-    }
-
-    #[cfg(feature = "kzg")]
-    fn is_a_0(&self) -> bool {
-        true
     }
 
     fn into_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
@@ -379,15 +378,15 @@ mod tests {
     use halo2arith::main_gate::five::range::{RangeChip, RangeConfig, RangeInstructions};
     use halo2arith::{halo2, MainGateInstructions};
 
-    #[cfg(feature = "kzg")]
-    use halo2::pairing::bn256::Fq as Field;
-    #[cfg(feature = "kzg")]
-    use halo2::pairing::bn256::G1Affine as Curve;
-
-    #[cfg(feature = "zcash")]
-    use halo2::pasta::EqAffine as Curve;
-    #[cfg(feature = "zcash")]
-    use halo2::pasta::Fp as Field;
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "kzg")] {
+            use halo2::pairing::bn256::Fq as Field;
+            use halo2::pairing::bn256::G1Affine as Curve;
+        } else {
+            use halo2::pasta::EqAffine as Curve;
+            use halo2::pasta::Fp as Field;
+        }
+    }
 
     const BIT_LEN_LIMB: usize = 68;
 

@@ -1,7 +1,7 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::AssignedInteger;
 use crate::rns::{Common, Integer, MaybeReduced};
-use crate::{NUMBER_OF_LIMBS, WrongExt};
+use crate::{WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
