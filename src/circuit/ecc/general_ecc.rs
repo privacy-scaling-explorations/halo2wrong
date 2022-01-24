@@ -115,7 +115,7 @@ mod ladder;
 mod mul;
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
-    pub(super) fn new(config: EccConfig, rns_base_field: Rns<Emulated::Base, N>, rns_scalar_field: Rns<Emulated::ScalarExt, N>) -> Result<Self, Error> {
+    pub fn new(config: EccConfig, rns_base_field: Rns<Emulated::Base, N>, rns_scalar_field: Rns<Emulated::ScalarExt, N>) -> Result<Self, Error> {
         Ok(Self {
             config,
             rns_base_field,
@@ -123,12 +123,12 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         })
     }
 
-    fn scalar_field_chip(&self) -> IntegerChip<Emulated::ScalarExt, N> {
+    pub fn scalar_field_chip(&self) -> IntegerChip<Emulated::ScalarExt, N> {
         let integer_chip_config = self.config.integer_chip_config();
         IntegerChip::new(integer_chip_config, self.rns_scalar_field.clone())
     }
 
-    fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N> {
+    pub fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N> {
         let integer_chip_config = self.config.integer_chip_config();
         IntegerChip::new(integer_chip_config, self.rns_base_field.clone())
     }
@@ -161,7 +161,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         true
     }
 
-    fn into_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
+    pub fn into_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
         let coords = point.coordinates();
         if coords.is_some().into() {
             let coords = coords.unwrap();

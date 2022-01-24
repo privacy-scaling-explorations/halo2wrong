@@ -38,6 +38,10 @@ impl<N: FieldExt> AssignedPoint<N> {
             z: flag.clone(),
         }
     }
+
+    pub fn get_x(&self) -> AssignedInteger<N> {
+        self.x.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -73,12 +77,12 @@ impl<F: FieldExt> AssignedIncompletePoint<F> {
 }
 
 mod base_field_ecc;
-mod general_ecc;
+pub mod general_ecc;
 
 #[derive(Clone, Debug)]
 pub struct EccConfig {
-    range_config: RangeConfig,
-    main_gate_config: MainGateConfig,
+    pub range_config: RangeConfig,
+    pub main_gate_config: MainGateConfig,
 }
 
 impl EccConfig {

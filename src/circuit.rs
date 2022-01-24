@@ -7,6 +7,7 @@ use num_bigint::BigUint as big_uint;
 
 mod ecc;
 mod integer;
+mod ecdsa;
 
 pub(crate) use integer::IntegerInstructions;
 
