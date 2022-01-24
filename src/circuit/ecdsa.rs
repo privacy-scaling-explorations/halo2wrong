@@ -100,7 +100,7 @@ impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
         let q = ecc_chip.add(region, &g1, &g2, offset)?;
 
         // 6. check if Q.x == r (mod n)
-        let q_x = q.x.clone();
+        let q_x = q.get_x();
         // TODO: no equal constraint yet!
         let q_x_integer = self.rns_scalar_field.new_from_big(fe_to_big(q_x.native().value.ok_or_else(|| Error::Synthesis)?));   // get q_x assigned in our rns_scalar integer chip
         let q_x_integer_assigned = scalar_chip.assign_integer(region, q_x_integer.into(), offset)?;
