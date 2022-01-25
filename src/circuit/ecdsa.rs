@@ -8,6 +8,7 @@ use halo2::circuit::Region;
 use halo2::plonk::{ConstraintSystem, Error};
 use crate::rns::Rns;
 use crate::circuit::fe_to_big;
+use group::ff::Field;
 
 #[derive(Clone, Debug)]
 pub struct EcdsaConfig {
@@ -66,6 +67,7 @@ pub struct AssignedPublicKey<N: FieldExt> {
 }
 
 impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
+
     // https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm
     fn verify(
         &self,
@@ -77,6 +79,7 @@ impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip()?;
         let scalar_chip = ecc_chip.scalar_field_chip();
+        let base_chip = ecc_chip.base_field_chip();
 
         // 1. check 0 < r, s < n
 
@@ -101,11 +104,48 @@ impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
 
         // 6. check if Q.x == r (mod n)
         let q_x = q.get_x();
-        // TODO: no equal constraint yet!
-        let q_x_integer = self.rns_scalar_field.new_from_big(fe_to_big(q_x.native().value.ok_or_else(|| Error::Synthesis)?));   // get q_x assigned in our rns_scalar integer chip
-        let q_x_integer_assigned = scalar_chip.assign_integer(region, q_x_integer.into(), offset)?;
+        let q_x = base_chip.reduce(region, &q_x, offset)?;
 
-        scalar_chip.assert_equal(region, &q_x_integer_assigned, &sig.r, offset)?;
+        // to reconstruct `q_x`
+        let rns_zero = self.rns_scalar_field.new_from_big(fe_to_big(E::ScalarExt::zero()));
+        let rns_one = self.rns_scalar_field.new_from_big(fe_to_big(E::ScalarExt::one()));
+
+        let zero_assigned = scalar_chip.assign_integer(region, rns_zero.into(), offset)?;
+        let one_assigned = scalar_chip.assign_integer(region, rns_one.into(), offset)?;
+        let two_assigned = scalar_chip.mul2(region, &one_assigned, offset)?;
+        let neg_assigned = scalar_chip.neg(region, &one_assigned, offset)?;
+        let neg_assigned = scalar_chip.reduce(region, &neg_assigned, offset)?;
+
+        let should_be_zero = scalar_chip.add(region, &one_assigned, &neg_assigned, offset)?;
+
+        // should assert the above values
+        scalar_chip.assert_zero(region, &zero_assigned, offset)?;
+        scalar_chip.assert_zero(region, &should_be_zero, offset)?;
+        scalar_chip.assert_strict_one(region, &one_assigned, offset)?;
+
+        // since `q.x` is assigned by the |base_chip|, we use decompose() to:
+        //
+        // 1. represent `q.x` in wNAF form
+        // 2. reconstruct `q.x` in the |scalar_chip|
+        //
+        // after reconstruction, we naturally get `q.x mod n`, and we can assert `q.x == sig.r (mod n)`
+        let (cond, q_x_decomposed) = ecc_chip.decompose(region, q_x, offset).unwrap();
+
+        let mut acc = scalar_chip.cond_select(region, &one_assigned, &zero_assigned, &cond, offset)?;
+
+        for q_x_i in q_x_decomposed.iter().rev() {
+            // 0b01 - one, 0b00 - zero
+            let b0 = scalar_chip.cond_select(region, &one_assigned, &zero_assigned, &q_x_i.l, offset)?;
+            // 0b11 - neg, 0b10 - two 
+            let b1 = scalar_chip.cond_select(region, &neg_assigned, &two_assigned, &q_x_i.l, offset)?;
+            let a = scalar_chip.cond_select(region, &b1, &b0, &q_x_i.h, offset)?;
+
+            acc = scalar_chip.mul2(region, &acc, offset)?;
+            acc = scalar_chip.mul2(region, &acc, offset)?;
+            acc = scalar_chip.add(region, &acc, &a, offset)?;
+        }
+
+        scalar_chip.assert_strict_equal(region, &acc, &sig.r, offset)?;
 
         Ok(())
     }
@@ -205,10 +245,23 @@ mod tests {
             let mut x_bytes = [0u8;64];
             x_bytes[..32].copy_from_slice(&x_repr[..]);
             let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
-            println!("x bytes on n = {:?}", x_bytes_on_n.clone());
+            let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
+            println!("sig.r on Emulated = {:?}", x_bytes_on_n.clone());
+
+            // verify with Emulated
+            {
+                let s_inv = sig_s.invert().unwrap();
+                let u1 = m_hash * s_inv;
+                let u2 = x_bytes_on_n * s_inv;
+                let g1 = E::generator().mul(u1);
+                let g2 = pk.mul(u2);
+                let q = g1 + g2;
+                let q = q.to_affine();
+                println!("q on Emulated = {:?}", q);
+            }
 
             let integer_r = self.rns_scalar.new_from_big(fe_to_big(x_bytes_on_n));
-            let integer_s = self.rns_scalar.new_from_big(fe_to_big(randomness_inv * (m_hash + x_bytes_on_n * sk)));
+            let integer_s = self.rns_scalar.new_from_big(fe_to_big(sig_s));
 
             let integer_m_hash = self.rns_scalar.new_from_big(fe_to_big(m_hash));
 

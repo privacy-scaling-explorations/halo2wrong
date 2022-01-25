@@ -416,12 +416,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         IntegerChip { config, rns }
     }
 
-    fn range_chip(&self) -> RangeChip<N> {
+    pub fn range_chip(&self) -> RangeChip<N> {
         let bit_len_lookup = self.rns.bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
         RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
     }
 
-    fn main_gate(&self) -> MainGate<N> {
+    pub fn main_gate(&self) -> MainGate<N> {
         let main_gate_config = self.config.main_gate_config.clone();
         MainGate::<N>::new(main_gate_config)
     }
