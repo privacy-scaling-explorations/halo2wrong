@@ -13,13 +13,13 @@ use halo2arith::{
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer;
 
-struct ScalarTuple<F: FieldExt> {
-    h: AssignedCondition<F>,
-    l: AssignedCondition<F>,
+pub struct ScalarTuple<F: FieldExt> {
+    pub h: AssignedCondition<F>,
+    pub l: AssignedCondition<F>,
 }
 
 impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
-    fn decompose(
+    pub fn decompose(
         &self,
         region: &mut Region<'_, F>,
         input: AssignedInteger<F>,
