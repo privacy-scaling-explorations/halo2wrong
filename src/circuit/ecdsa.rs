@@ -7,8 +7,6 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::{ConstraintSystem, Error};
 use crate::rns::Rns;
-use crate::circuit::fe_to_big;
-use group::ff::Field;
 
 #[derive(Clone, Debug)]
 pub struct EcdsaConfig {
@@ -22,10 +20,10 @@ impl EcdsaConfig {
 }
 
 /// E is the emulated curve, C is the native curve
-struct EcdsaChip<E: CurveAffine, C: CurveAffine> {
-    pub config: EcdsaConfig,
-    pub rns_base_field: Rns<E::Base, C::ScalarExt>,
-    pub rns_scalar_field: Rns<E::Scalar, C::ScalarExt>,
+pub struct EcdsaChip<E: CurveAffine, C: CurveAffine> {
+    config: EcdsaConfig,
+    rns_base_field: Rns<E::Base, C::ScalarExt>,
+    rns_scalar_field: Rns<E::Scalar, C::ScalarExt>,
 }
 
 impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
@@ -49,6 +47,14 @@ impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
         let ecc_chip_config = self.config.ecc_chip_config();
         GeneralEccChip::new(ecc_chip_config, self.rns_base_field.clone(), self.rns_scalar_field.clone())
     }
+
+    pub fn get_rns_base(&self) -> Rns<E::Base, C::ScalarExt> {
+        self.rns_base_field.clone()
+    }
+
+    pub fn get_rns_scalar(&self) -> Rns<E::ScalarExt, C::ScalarExt> {
+        self.rns_scalar_field.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -67,7 +73,6 @@ pub struct AssignedPublicKey<N: FieldExt> {
 }
 
 impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
-
     // https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm
     fn verify(
         &self,
@@ -102,50 +107,14 @@ impl<E: CurveAffine, C: CurveAffine> EcdsaChip<E, C> {
         let g2 = ecc_chip.mul_var(region, pk.point.clone(), u2, offset)?;
         let q = ecc_chip.add(region, &g1, &g2, offset)?;
 
-        // 6. check if Q.x == r (mod n)
+        // 6. reduce q_x in E::ScalarExt
+        // assuming E::Base/E::ScalarExt have the same number of limbs
         let q_x = q.get_x();
-        let q_x = base_chip.reduce(region, &q_x, offset)?;
+        let q_x_reduced_in_q = base_chip.reduce(region, &q_x, offset)?;
+        let q_x_reduced_in_r = scalar_chip.reduce(region, &q_x_reduced_in_q, offset)?;
 
-        // to reconstruct `q_x`
-        let rns_zero = self.rns_scalar_field.new_from_big(fe_to_big(E::ScalarExt::zero()));
-        let rns_one = self.rns_scalar_field.new_from_big(fe_to_big(E::ScalarExt::one()));
-
-        let zero_assigned = scalar_chip.assign_integer(region, rns_zero.into(), offset)?;
-        let one_assigned = scalar_chip.assign_integer(region, rns_one.into(), offset)?;
-        let two_assigned = scalar_chip.mul2(region, &one_assigned, offset)?;
-        let neg_assigned = scalar_chip.neg(region, &one_assigned, offset)?;
-        let neg_assigned = scalar_chip.reduce(region, &neg_assigned, offset)?;
-
-        let should_be_zero = scalar_chip.add(region, &one_assigned, &neg_assigned, offset)?;
-
-        // should assert the above values
-        scalar_chip.assert_zero(region, &zero_assigned, offset)?;
-        scalar_chip.assert_zero(region, &should_be_zero, offset)?;
-        scalar_chip.assert_strict_one(region, &one_assigned, offset)?;
-
-        // since `q.x` is assigned by the |base_chip|, we use decompose() to:
-        //
-        // 1. represent `q.x` in wNAF form
-        // 2. reconstruct `q.x` in the |scalar_chip|
-        //
-        // after reconstruction, we naturally get `q.x mod n`, and we can assert `q.x == sig.r (mod n)`
-        let (cond, q_x_decomposed) = ecc_chip.decompose(region, q_x, offset).unwrap();
-
-        let mut acc = scalar_chip.cond_select(region, &one_assigned, &zero_assigned, &cond, offset)?;
-
-        for q_x_i in q_x_decomposed.iter().rev() {
-            // 0b01 - one, 0b00 - zero
-            let b0 = scalar_chip.cond_select(region, &one_assigned, &zero_assigned, &q_x_i.l, offset)?;
-            // 0b11 - neg, 0b10 - two 
-            let b1 = scalar_chip.cond_select(region, &neg_assigned, &two_assigned, &q_x_i.l, offset)?;
-            let a = scalar_chip.cond_select(region, &b1, &b0, &q_x_i.h, offset)?;
-
-            acc = scalar_chip.mul2(region, &acc, offset)?;
-            acc = scalar_chip.mul2(region, &acc, offset)?;
-            acc = scalar_chip.add(region, &acc, &a, offset)?;
-        }
-
-        scalar_chip.assert_strict_equal(region, &acc, &sig.r, offset)?;
+        // 7. check if Q.x == r (mod n)
+        scalar_chip.assert_strict_equal(region, &q_x_reduced_in_r, &sig.r, offset)?;
 
         Ok(())
     }
