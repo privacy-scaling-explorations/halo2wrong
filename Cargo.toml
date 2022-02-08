@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 halo2arith = { git = "https://github.com/kilic/halo2arith.git", default-features = false }
+# halo2arith = { path = "../../kilic/halo2arith" }
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
@@ -16,10 +17,8 @@ cfg-if = "0.1"
 
 [dev-dependencies]
 rand_core = { version = "0.6", default-features = false }
-rand_xorshift = "0.3"
 
 [features]
 default = ["zcash"]
 kzg = ["halo2arith/kzg"]
 zcash = ["halo2arith/zcash"]
-no_lookup = ["halo2arith/no_lookup"]

@@ -1,154 +1,160 @@
 use super::AssignedPoint;
-use crate::circuit::ecc::general_ecc::{GeneralEccChip, GeneralEccInstruction};
-use crate::circuit::AssignedInteger;
-use crate::NUMBER_OF_LIMBS;
+use crate::circuit::ecc::general_ecc::GeneralEccChip;
+use crate::circuit::{AssignedInteger, IntegerInstructions};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
 use halo2::plonk::Error;
-use halo2arith::{
-    halo2,
-    utils::{big_to_fe, fe_to_big},
-    Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, Term,
-};
-use num_bigint::BigUint as big_uint;
-use num_integer::Integer;
+use halo2arith::{halo2, Assigned, AssignedCondition, MainGateInstructions};
+use std::fmt;
 
-struct ScalarTuple<F: FieldExt> {
-    h: AssignedCondition<F>,
-    l: AssignedCondition<F>,
+#[derive(Default)]
+struct Selector<F: FieldExt>(Vec<AssignedCondition<F>>);
+
+impl<F: FieldExt> fmt::Debug for Selector<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut debug = f.debug_struct("Selector");
+        for (i, bit) in self.0.iter().enumerate() {
+            debug.field("window_index", &i).field("bit", bit);
+        }
+        debug.finish()?;
+        Ok(())
+    }
+}
+
+struct Windowed<F: FieldExt>(Vec<Selector<F>>);
+
+impl<F: FieldExt> fmt::Debug for Windowed<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut debug = f.debug_struct("Window");
+        for (i, selector) in self.0.iter().enumerate() {
+            debug.field("selector_index", &i).field("selector", selector);
+        }
+        debug.finish()?;
+        Ok(())
+    }
+}
+
+struct Table<F: FieldExt>(Vec<AssignedPoint<F>>);
+
+impl<F: FieldExt> fmt::Debug for Table<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut debug = f.debug_struct("Table");
+        for (i, entry) in self.0.iter().enumerate() {
+            debug
+                .field("entry_index", &i)
+                .field("xn", &entry.x.native().value())
+                .field("yn", &entry.y.native().value());
+        }
+        debug.finish()?;
+        Ok(())
+    }
+}
+
+pub(super) struct MulAux<F: FieldExt> {
+    to_add: AssignedPoint<F>,
+    to_sub: AssignedPoint<F>,
+}
+
+impl<F: FieldExt> MulAux<F> {
+    pub(super) fn new(to_add: AssignedPoint<F>, to_sub: AssignedPoint<F>) -> Self {
+        MulAux { to_add, to_sub }
+    }
 }
 
 impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
-    fn decompose(
-        &self,
-        region: &mut Region<'_, F>,
-        input: AssignedInteger<F>,
-        offset: &mut usize,
-    ) -> Result<(AssignedCondition<F>, Vec<ScalarTuple<F>>), Error> {
-        // Algorithm's limitation.
-        assert!(input.bit_len_limb % 2 == 0);
+    fn pad(&self, region: &mut Region<'_, F>, bits: &mut Vec<AssignedCondition<F>>, window_size: usize, offset: &mut usize) -> Result<(), Error> {
+        use group::ff::PrimeField;
+        assert_eq!(bits.len(), Emulated::ScalarExt::NUM_BITS as usize);
 
-        let zero = F::zero();
-        let one = F::one();
-        let two = F::from(2u64);
-        let four = F::from(4u64);
+        // TODO: This is a tmp workaround. Instead of padding with zeros we can use a shorter ending window.
+        let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
         let main_gate = self.main_gate();
-
-        let mut res = Vec::with_capacity(NUMBER_OF_LIMBS * input.bit_len_limb / 2);
-        let mut limb_carry_bits: Vec<AssignedCondition<F>> = vec![];
-
-        // For each two bits,
-        // b00: 0
-        // b01: 1
-        // b10: 2
-        // b11: -1
-        //
-        // d_next * 4 + lb + lh * 2 - lb * lh * 4 = d_curr
-        //
-        // Witness layout:
-        // | A   | B   | C     | D  |
-        // | --- | --- | ----- | -- |
-        // | lb0 | hb0 | limb0 | 0  |
-        // | lb1 | hb1 | 0     | d1 |
-        // | lb2 | hb2 | 0     | d2 |
-        // ...
-        //
-        // On next limb
-        // | lb0' | hb0' | limb1 | d0' |
-        // | lb1' | hb1' | 0     | d1' |
-        // | lb2' | hb2' | 0     | d2' |
-        // ...
-        //
-        // At last
-        // | lbn | hbn | 0 | dn |
-        // | 0   | 0   | 0 | d  |
-
-        let mut rem = big_uint::from(0u64);
-
-        for idx in 0..NUMBER_OF_LIMBS {
-            let last_limb_rem = rem.clone();
-            rem = match input.limb(idx).value() {
-                Some(v) => rem + fe_to_big(v),
-                _ => rem,
-            };
-
-            for i in 0..(input.bit_len_limb / 2) {
-                let shift = |rem: big_uint, carry| {
-                    if rem.is_odd() {
-                        (rem >> 1, one, carry)
-                    } else {
-                        (rem >> 1, zero, 0u64)
-                    }
-                };
-
-                let d = if i == 0 { big_to_fe(last_limb_rem.clone()) } else { big_to_fe(rem.clone()) };
-                let carry = 1u64;
-                let (rem_shifted, a, carry) = shift(rem, carry);
-                let (rem_shifted, b, carry) = shift(rem_shifted, carry);
-                rem = rem_shifted + carry;
-
-                let (l, h, _, _, limb_carry_bit) = main_gate.combine(
-                    region,
-                    [
-                        Term::Unassigned(Some(a), one),
-                        Term::Unassigned(Some(b), two),
-                        if i == 0 { Term::Assigned(&input.limbs[idx], -one) } else { Term::Zero },
-                        Term::Zero,
-                        Term::Unassigned(Some(d), -one),
-                    ],
-                    zero,
-                    offset,
-                    CombinationOptionCommon::CombineToNextScaleMul(four, -four).into(),
-                )?;
-
-                res.push(ScalarTuple { h: h.into(), l: l.into() });
-
-                if idx != 0 && i == 0 {
-                    limb_carry_bits.push(limb_carry_bit.into());
-                };
-            }
+        let mut zeros = Vec::with_capacity(padding_offset);
+        for _ in 0..padding_offset {
+            zeros.push(main_gate.assign_constant(region, F::zero(), offset)?.into());
         }
+        bits.extend(zeros);
+        bits.reverse();
 
-        let rem = big_to_fe(rem);
-        let rem: AssignedCondition<F> = main_gate.assign_to_acc(region, &Some(rem).into(), offset)?.into();
-        limb_carry_bits.push(rem.clone());
-
-        for limb_carry_bit in limb_carry_bits.iter() {
-            main_gate.assert_bit(region, limb_carry_bit.clone(), offset)?;
-        }
-
-        for x in res.iter() {
-            main_gate.assert_bit(region, x.h.clone(), offset)?;
-            main_gate.assert_bit(region, x.l.clone(), offset)?;
-        }
-
-        Ok((rem, res))
+        Ok(())
     }
 
-    pub(crate) fn _mul_var(
-        &self,
-        region: &mut Region<'_, F>,
-        p: AssignedPoint<F>,
-        e: AssignedInteger<F>,
-        offset: &mut usize,
-    ) -> Result<AssignedPoint<F>, Error> {
-        let p_neg = self.neg(region, &p, offset)?;
-        let p_double = self.double(region, &p, offset)?;
-        let (rem, selector) = self.decompose(region, e, offset)?;
-        let mut acc = self.select_or_assign(region, &rem, &p, Emulated::identity(), offset)?;
+    fn window(bits: Vec<AssignedCondition<F>>, window_size: usize) -> Windowed<F> {
+        assert_eq!(bits.len() % window_size, 0);
 
-        for di in selector.iter().rev() {
-            // 0b01 - p, 0b00 - identity
-            let b0 = self.select_or_assign(region, &di.l, &p, Emulated::identity(), offset)?;
-            // 0b11 - p_neg, 0b10 - p_double
-            let b1 = self.select(region, &di.l, &p_neg, &p_double, offset)?;
-            let a = self.select(region, &di.h, &b1, &b0, offset)?;
+        let number_of_windows = bits.len() / window_size;
+        let mut windowed: Windowed<F> = Windowed(Vec::new());
 
-            acc = self.double(region, &acc, offset)?;
-            acc = self.double(region, &acc, offset)?;
-            acc = self.add(region, &acc, &a, offset)?;
+        for i in 0..number_of_windows {
+            let mut selector: Selector<F> = Selector(Vec::new());
+            for j in 0..window_size {
+                selector.0.push(bits[i * window_size + j].clone());
+            }
+            selector.0.reverse();
+            windowed.0.push(selector);
         }
 
-        Ok(acc)
+        windowed
+    }
+
+    fn make_incremental_table(
+        &self,
+        region: &mut Region<'_, F>,
+        aux: &AssignedPoint<F>,
+        point: &AssignedPoint<F>,
+        window_size: usize,
+        offset: &mut usize,
+    ) -> Result<Table<F>, Error> {
+        let table_size = 1 << window_size;
+        let mut table = vec![aux.clone()];
+        for i in 0..(table_size - 1) {
+            let entry = self.add(region, &table[i], point, offset)?;
+            table.push(entry);
+        }
+        Ok(Table(table))
+    }
+
+    fn select_multi(&self, region: &mut Region<'_, F>, selector: &Selector<F>, table: &Table<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
+        let number_of_points = table.0.len();
+        let number_of_selectors = selector.0.len();
+        assert_eq!(number_of_points, 1 << number_of_selectors);
+
+        let mut reducer = table.0.clone();
+        for (i, selector) in selector.0.iter().enumerate() {
+            let n = 1 << (number_of_selectors - 1 - i);
+            for j in 0..n {
+                let k = 2 * j;
+                reducer[j] = self.select(region, selector, &reducer[k + 1], &reducer[k], offset)?;
+            }
+        }
+        Ok(reducer[0].clone())
+    }
+
+    pub(super) fn mul_var(
+        &self,
+        region: &mut Region<'_, F>,
+        point: &AssignedPoint<F>,
+        scalar: &AssignedInteger<F>,
+        aux: &MulAux<F>,
+        window_size: usize,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<F>, Error> {
+        let scalar_chip = self.scalar_field_chip();
+        let decomposed = &mut scalar_chip.decompose(region, scalar, offset)?;
+        self.pad(region, decomposed, window_size, offset)?;
+        let windowed = Self::window(decomposed.to_vec(), window_size);
+        let table = &self.make_incremental_table(region, &aux.to_add, point, window_size, offset)?;
+
+        let mut acc = self.select_multi(region, &windowed.0[0], table, offset)?;
+        acc = self.double_n(region, &acc, window_size, offset)?;
+        let to_add = self.select_multi(region, &windowed.0[1], table, offset)?;
+        acc = self.add(region, &acc, &to_add, offset)?;
+
+        for selector in windowed.0.iter().skip(2) {
+            acc = self.double_n(region, &acc, window_size - 1, offset)?;
+            let to_add = self.select_multi(region, selector, table, offset)?;
+            acc = self.ladder(region, &acc, &to_add, offset)?;
+        }
+        self.add(region, &acc, &aux.to_sub, offset)
     }
 }

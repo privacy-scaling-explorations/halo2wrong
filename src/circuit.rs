@@ -5,8 +5,8 @@ use halo2::{arithmetic::FieldExt, circuit::Cell};
 use halo2arith::{compose, fe_to_big, halo2, Assigned, AssignedValue, UnassignedValue};
 use num_bigint::BigUint as big_uint;
 
-mod ecc;
-mod integer;
+pub(crate) mod ecc;
+pub(crate) mod integer;
 
 pub(crate) use integer::IntegerInstructions;
 
@@ -15,6 +15,12 @@ pub struct AssignedLimb<F: FieldExt> {
     value: Option<Limb<F>>,
     cell: Cell,
     max_val: big_uint,
+}
+
+impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
+    fn from(limb: AssignedLimb<F>) -> Self {
+        AssignedValue::new(limb.cell(), limb.value())
+    }
 }
 
 impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {

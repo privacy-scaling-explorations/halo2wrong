@@ -42,7 +42,7 @@ impl IntegerConfig {
 
 pub struct IntegerChip<W: WrongExt, N: FieldExt> {
     config: IntegerConfig,
-    pub rns: Rns<W, N>,
+    rns: Rns<W, N>,
 }
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
@@ -53,6 +53,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
 pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
     fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
+    fn assign_constant(&self, region: &mut Region<'_, N>, integer: W, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn range_assign_integer(
         &self,
         region: &mut Region<'_, N>,
@@ -60,6 +61,7 @@ pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
         range: Range,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
+    fn decompose(&self, region: &mut Region<'_, N>, integer: &AssignedInteger<N>, offset: &mut usize) -> Result<Vec<AssignedCondition<N>>, Error>;
 
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn add_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
@@ -78,9 +80,7 @@ pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
     fn mul(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul_constant(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
     fn mul_into_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
-
     fn square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-
     fn div(
         &self,
         region: &mut Region<'_, N>,
@@ -95,24 +95,18 @@ pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
         b: &AssignedInteger<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
-
     fn invert(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error>;
     fn invert_incomplete(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-
     fn reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error>;
-
     fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_strict_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_not_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_zero(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
-
     fn assert_strict_one(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
     fn assert_strict_bit(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
-
     fn assert_in_field(&self, region: &mut Region<'_, N>, input: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error>;
-
-    fn cond_select(
+    fn select(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -120,8 +114,7 @@ pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
         cond: &AssignedCondition<N>,
         offset: &mut usize,
     ) -> Result<AssignedInteger<N>, Error>;
-
-    fn cond_select_or_assign(
+    fn select_or_assign(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -132,6 +125,45 @@ pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
 }
 
 impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
+    fn range_assign_integer(
+        &self,
+        region: &mut Region<'_, N>,
+        integer: UnassignedInteger<W, N>,
+        range: Range,
+        offset: &mut usize,
+    ) -> Result<AssignedInteger<N>, Error> {
+        self._range_assign_integer(region, integer, range, offset)
+    }
+
+    fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._assign_integer(region, integer, offset, true)
+    }
+
+    fn assign_constant(&self, region: &mut Region<'_, N>, integer: W, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        self._assign_constant(region, integer, offset)
+    }
+
+    fn decompose(&self, region: &mut Region<'_, N>, integer: &AssignedInteger<N>, offset: &mut usize) -> Result<Vec<AssignedCondition<N>>, Error> {
+        self.assert_in_field(region, integer, offset)?;
+
+        let main_gate = self.main_gate();
+
+        let mut decomposed = Vec::new();
+        for idx in 0..NUMBER_OF_LIMBS {
+            let number_of_bits = if idx == NUMBER_OF_LIMBS - 1 {
+                self.rns.bit_len_last_limb
+            } else {
+                self.rns.bit_len_limb
+            };
+            let decomposed_limb = main_gate.decompose(region, integer.limb(idx), number_of_bits, offset)?;
+            decomposed.extend(decomposed_limb);
+        }
+
+        assert_eq!(decomposed.len(), self.rns.bit_len_wrong_modulus);
+
+        Ok(decomposed)
+    }
+
     fn add(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_unreduced(region, a, offset)?,
@@ -270,20 +302,6 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
         self._reduce(region, a, offset)
     }
 
-    fn range_assign_integer(
-        &self,
-        region: &mut Region<'_, N>,
-        integer: UnassignedInteger<W, N>,
-        range: Range,
-        offset: &mut usize,
-    ) -> Result<AssignedInteger<N>, Error> {
-        self._range_assign_integer(region, integer, range, offset)
-    }
-
-    fn assign_integer(&self, region: &mut Region<'_, N>, integer: UnassignedInteger<W, N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
-        self._assign_integer(region, integer, offset, true)
-    }
-
     fn assert_equal(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>, offset: &mut usize) -> Result<(), Error> {
         let c = &self.sub(region, a, b, offset)?;
         self.assert_zero(region, c, offset)?;
@@ -332,7 +350,7 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
         main_gate.assert_bit(region, a.limb(0), offset)
     }
 
-    fn cond_select(
+    fn select(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -344,7 +362,7 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
         for i in 0..NUMBER_OF_LIMBS {
-            let res = main_gate.cond_select(region, a.limb(i), b.limb(i), cond, offset)?;
+            let res = main_gate.select(region, a.limb(i), b.limb(i), cond, offset)?;
 
             let max_val = if a.limbs[i].max_val > b.limbs[i].max_val {
                 a.limbs[i].max_val.clone()
@@ -355,12 +373,12 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.cond_select(region, a.native(), b.native(), cond, offset)?;
+        let native_value = main_gate.select(region, a.native(), b.native(), cond, offset)?;
 
         Ok(self.new_assigned_integer(limbs, native_value))
     }
 
-    fn cond_select_or_assign(
+    fn select_or_assign(
         &self,
         region: &mut Region<'_, N>,
         a: &AssignedInteger<N>,
@@ -374,14 +392,14 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
         for i in 0..NUMBER_OF_LIMBS {
             let b_limb = b.limb(i);
 
-            let res = main_gate.cond_select_or_assign(region, a.limb(i), b_limb.fe(), cond, offset)?;
+            let res = main_gate.select_or_assign(region, a.limb(i), b_limb.fe(), cond, offset)?;
 
             // here we assume given constant is always in field
             let max_val = a.limb(i).max_val();
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.cond_select_or_assign(region, a.native(), b.native(), cond, offset)?;
+        let native_value = main_gate.select_or_assign(region, a.native(), b.native(), cond, offset)?;
 
         Ok(self.new_assigned_integer(limbs, native_value))
     }
@@ -423,7 +441,7 @@ mod tests {
     use halo2arith::main_gate::five::range::{RangeChip, RangeConfig, RangeInstructions};
     use halo2arith::main_gate::MainGateInstructions;
     use halo2arith::utils::fe_to_big;
-    use halo2arith::{halo2, AssignedCondition};
+    use halo2arith::{decompose_big, halo2, AssignedCondition};
 
     cfg_if::cfg_if! {
       if #[cfg(feature = "kzg")] {
@@ -459,10 +477,7 @@ mod tests {
 
     fn setup<W: WrongExt, N: FieldExt>() -> (Rns<W, N>, u32) {
         let rns = rns();
-        #[cfg(not(feature = "no_lookup"))]
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
-        #[cfg(feature = "no_lookup")]
-        let k: u32 = 14;
         (rns, k)
     }
 
@@ -495,9 +510,7 @@ mod tests {
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
             let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
             let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
-            #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(layouter)?;
-            #[cfg(not(feature = "no_lookup"))]
             range_chip.load_overflow_range_tables(layouter)?;
 
             Ok(())
@@ -558,7 +571,8 @@ mod tests {
     fn test_circuit_range() {
         let (rns, k) = setup();
         let circuit = TestCircuitRange::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -618,7 +632,8 @@ mod tests {
     fn test_reduction_circuit() {
         let (rns, k) = setup();
         let circuit = TestCircuitReduction::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -673,7 +688,9 @@ mod tests {
     fn test_equality_circuit() {
         let (rns, k) = setup();
         let circuit = TestCircuitReduction::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -778,7 +795,8 @@ mod tests {
     fn test_multiplication_circuit() {
         let (rns, k) = setup();
         let circuit = TestCircuitMultiplication::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -849,7 +867,8 @@ mod tests {
     fn test_squaring_circuit() {
         let (rns, k) = setup();
         let circuit = TestCircuitSquaring::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -904,7 +923,8 @@ mod tests {
     fn test_assert_in_field_circuit() {
         let (rns, k) = setup();
         let circuit = TestCircuitInField::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -1020,7 +1040,8 @@ mod tests {
         let (rns, k) = setup();
         let circuit = TestCircuitNonDeterministic::<Wrong, Native> { rns };
 
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -1258,7 +1279,9 @@ mod tests {
     fn test_addition() {
         let (rns, k) = setup();
         let circuit = TestCircuitAddition::<Wrong, Native> { rns };
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
@@ -1303,7 +1326,7 @@ mod tests {
                     let b = integer_chip.range_assign_integer(&mut region, b, Range::Remainder, offset)?;
 
                     let cond: AssignedCondition<N> = main_gate.assign_value(&mut region, &cond, offset)?.into();
-                    let selected = integer_chip.cond_select(&mut region, &a, &b, &cond, offset)?;
+                    let selected = integer_chip.select(&mut region, &a, &b, &cond, offset)?;
                     integer_chip.assert_equal(&mut region, &b, &selected, offset)?;
                     integer_chip.assert_strict_equal(&mut region, &b, &selected, offset)?;
                     assert_eq!(b.max_val(), selected.max_val());
@@ -1319,7 +1342,7 @@ mod tests {
                     let b = integer_chip.range_assign_integer(&mut region, b, Range::Remainder, offset)?;
 
                     let cond: AssignedCondition<N> = main_gate.assign_value(&mut region, &cond, offset)?.into();
-                    let selected = integer_chip.cond_select(&mut region, &a, &b, &cond, offset)?;
+                    let selected = integer_chip.select(&mut region, &a, &b, &cond, offset)?;
                     integer_chip.assert_equal(&mut region, &a, &selected, offset)?;
                     integer_chip.assert_strict_equal(&mut region, &a, &selected, offset)?;
                     assert_eq!(a.max_val(), selected.max_val());
@@ -1333,7 +1356,7 @@ mod tests {
 
                     let a = integer_chip.range_assign_integer(&mut region, a, Range::Remainder, offset)?;
                     let cond: AssignedCondition<N> = main_gate.assign_value(&mut region, &cond, offset)?.into();
-                    let selected = integer_chip.cond_select_or_assign(&mut region, &a, &b, &cond, offset)?;
+                    let selected = integer_chip.select_or_assign(&mut region, &a, &b, &cond, offset)?;
                     let b_assigned = integer_chip.assign_integer(&mut region, b.into(), offset)?;
                     integer_chip.assert_equal(&mut region, &b_assigned, &selected, offset)?;
                     integer_chip.assert_strict_equal(&mut region, &b_assigned, &selected, offset)?;
@@ -1348,7 +1371,7 @@ mod tests {
 
                     let a = integer_chip.range_assign_integer(&mut region, a, Range::Remainder, offset)?;
                     let cond: AssignedCondition<N> = main_gate.assign_value(&mut region, &cond, offset)?.into();
-                    let selected = integer_chip.cond_select_or_assign(&mut region, &a, &b, &cond, offset)?;
+                    let selected = integer_chip.select_or_assign(&mut region, &a, &b, &cond, offset)?;
                     integer_chip.assert_equal(&mut region, &a, &selected, offset)?;
                     integer_chip.assert_strict_equal(&mut region, &a, &selected, offset)?;
                     assert_eq!(a.max_val(), selected.max_val());
@@ -1368,7 +1391,70 @@ mod tests {
         let (rns, k) = setup();
         let circuit = TestCircuitConditionals::<Wrong, Native> { rns };
 
-        let prover = match MockProver::run(k, &circuit, vec![]) {
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default, Clone, Debug)]
+    struct TestCircuitDecomposition<W: WrongExt, N: FieldExt> {
+        rns: Rns<W, N>,
+    }
+
+    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitDecomposition<W, N> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            TestCircuitConfig::new::<W, N>(meta)
+        }
+
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+            let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
+            let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
+            let rns = self.rns.clone();
+
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+                    let integer = rns.rand_in_field();
+                    let integer_big = integer.value();
+                    let assigned = integer_chip.range_assign_integer(&mut region, integer.into(), Range::Remainder, offset)?;
+                    let decomposed = integer_chip.decompose(&mut region, &assigned, offset)?;
+                    let expected = decompose_big::<W>(integer_big, rns.bit_len_wrong_modulus, 1);
+                    assert_eq!(expected.len(), decomposed.len());
+                    for (c, expected) in decomposed.iter().zip(expected.into_iter()) {
+                        if expected != W::zero() {
+                            main_gate.assert_one(&mut region, c, offset)?;
+                        } else {
+                            main_gate.assert_zero(&mut region, c, offset)?;
+                        }
+                    }
+                    Ok(())
+                },
+            )?;
+
+            config.config_range(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_decomposition_circuit() {
+        let (rns, k) = setup();
+        let circuit = TestCircuitDecomposition::<Wrong, Native> { rns };
+
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(k, &circuit, public_inputs) {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };

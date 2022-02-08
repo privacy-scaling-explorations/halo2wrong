@@ -142,7 +142,9 @@ pub(crate) struct ComparisionResult<'a, W: WrongExt, N: FieldExt> {
 #[derive(Debug, Clone, Default)]
 pub struct Rns<W: WrongExt, N: FieldExt> {
     pub bit_len_limb: usize,
+    pub bit_len_last_limb: usize,
     pub bit_len_lookup: usize,
+    pub bit_len_wrong_modulus: usize,
 
     pub wrong_modulus: big_uint,
     pub native_modulus: big_uint,
@@ -246,8 +248,8 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         let pre_max_operand = &((one << pre_max_operand_bit_len) - one);
 
         // n * T > q * w + r
-        let wrong_modulus_len = wrong_modulus.bits();
-        let max_remainder = &((one << wrong_modulus_len) - one);
+        let bit_len_wrong_modulus = wrong_modulus.bits() as usize;
+        let max_remainder = &((one << bit_len_wrong_modulus) - one);
 
         let pre_max_mul_quotient: &big_uint = &((crt_modulus - max_remainder) / wrong_modulus);
         let max_mul_quotient = &((one << (pre_max_mul_quotient.bits() - 1)) - big_uint::one());
@@ -366,9 +368,13 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
             assert!(base_aux[i] >= target);
         }
 
+        let bit_len_last_limb = bit_len_wrong_modulus as usize % bit_len_limb;
+
         let rns = Rns {
             bit_len_limb,
+            bit_len_last_limb,
             bit_len_lookup,
+            bit_len_wrong_modulus,
 
             right_shifter_r,
             right_shifter_2r,
@@ -530,13 +536,13 @@ pub struct Integer<'a, W: WrongExt, N: FieldExt> {
 impl<'a, W: WrongExt, N: FieldExt> fmt::Debug for Integer<'a, W, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = self.value();
-        let value = value.to_str_radix(16);
-        writeln!(f, "value: {}", value)?;
-        for limb in self.limbs().iter() {
+        let mut debug = f.debug_struct("Integer");
+        debug.field("value", &value.to_str_radix(16));
+        for (i, limb) in self.limbs().iter().enumerate() {
             let value = fe_to_big(*limb);
-            let value = value.to_str_radix(16);
-            writeln!(f, "limb: {}", value)?;
+            debug.field(&format!("limb {}", i), &value.to_str_radix(16));
         }
+        debug.finish()?;
         Ok(())
     }
 }
@@ -719,20 +725,17 @@ mod tests {
 
     impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         pub(crate) fn rand_in_field(&self) -> Integer<W, N> {
-            use rand::thread_rng;
             let mut rng = thread_rng();
             self.new_from_big(fe_to_big(W::random(&mut rng)))
         }
 
         pub(crate) fn rand_in_remainder_range(&self) -> Integer<W, N> {
-            use rand::thread_rng;
             let mut rng = thread_rng();
             let el = rng.gen_biguint(self.max_remainder.bits() as u64);
             self.new_from_big(el)
         }
 
         pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N> {
-            use rand::thread_rng;
             let mut rng = thread_rng();
             let el = rng.gen_biguint(self.max_operand.bits() as u64);
             self.new_from_big(el)
@@ -743,7 +746,6 @@ mod tests {
         }
 
         pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<W, N> {
-            use rand::thread_rng;
             let limbs: Vec<N> = (0..NUMBER_OF_LIMBS)
                 .map(|_| {
                     let mut rng = thread_rng();
@@ -774,13 +776,11 @@ mod tests {
     use crate::WrongExt;
     use crate::NUMBER_OF_LIMBS;
     use halo2::arithmetic::FieldExt;
-
     use halo2arith::compose;
     use halo2arith::halo2;
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::{One, Zero};
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
+    use rand::thread_rng;
 
     cfg_if::cfg_if! {
       if #[cfg(feature = "kzg")] {
@@ -797,20 +797,9 @@ mod tests {
         Rns::<Wrong, Native>::construct(bit_len_limb)
     }
 
-    // #[test]
-    // fn test_decomposing() {
-    //     let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
-    //     let number_of_limbs = 4usize;
-    //     let bit_len_limb = 64usize;
-    //     let bit_len_int = 256;
-    //     let el = &rng.gen_biguint(bit_len_int);
-    //     let decomposed = Integer::<Fp>::from_big(el.clone(), number_of_limbs, bit_len_limb);
-    //     assert_eq!(decomposed.value(), el.clone());
-    // }
-
     #[test]
     fn test_rns_constants() {
-        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+        let mut rng = thread_rng();
 
         let rns = rns();
 
@@ -852,8 +841,7 @@ mod tests {
     #[test]
     fn test_integer() {
         let rns = rns();
-
-        let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+        let mut rng = thread_rng();
 
         let wrong_modulus = rns.wrong_modulus.clone();
 
@@ -925,26 +913,4 @@ mod tests {
             assert_eq!(result.map(|_| {}), None);
         }
     }
-
-    // #[test]
-    // fn test_comparison() {
-    //     use halo2::pasta::Fp as Wrong;
-    //     use halo2::pasta::Fq as Native;
-    //     let bit_len_limb = 64;
-
-    //     let rns = &Rns::<Wrong, Native>::construct(bit_len_limb);
-
-    //     let wrong_modulus = rns.wrong_modulus_decomposed.clone();
-
-    //     let a_0 = wrong_modulus[0];
-    //     let a_1 = wrong_modulus[1];
-    //     let a_2 = wrong_modulus[2];
-    //     let a_3 = wrong_modulus[3];
-
-    //     let a = &rns.new_from_limbs(vec![a_0, a_1, a_2, a_3]);
-
-    //     let comparison_result = rns.compare_to_modulus(a);
-    //     println!("{:?}", comparison_result.borrow);
-    //     println!("{:?}", comparison_result.result);
-    // }
 }

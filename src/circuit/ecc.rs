@@ -1,74 +1,48 @@
 use super::integer::IntegerConfig;
 use crate::circuit::AssignedInteger;
-use crate::rns::Integer;
+use crate::rns::{Integer, Rns};
 use crate::WrongExt;
 use halo2::arithmetic::FieldExt;
+use halo2arith::halo2;
+use halo2arith::halo2::arithmetic::CurveAffine;
 use halo2arith::main_gate::five::main_gate::MainGateConfig;
 use halo2arith::main_gate::five::range::RangeConfig;
-use halo2arith::{halo2, AssignedCondition};
 
-/* Shared structure of curve affine points */
-
-#[derive(Clone)]
-pub struct IncompletePoint<'a, W: WrongExt, N: FieldExt> {
-    x: Integer<'a, W, N>,
-    y: Integer<'a, W, N>,
-}
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Point<'a, W: WrongExt, N: FieldExt> {
     x: Integer<'a, W, N>,
     y: Integer<'a, W, N>,
-    is_identity: bool,
 }
 
-#[derive(Clone, Debug)]
-pub struct AssignedPoint<N: FieldExt> {
-    x: AssignedInteger<N>,
-    y: AssignedInteger<N>,
-    // indicate whether the poinit is the identity point of curve or not
-    z: AssignedCondition<N>,
-}
+impl<'a, W: WrongExt, N: FieldExt> Point<'a, W, N> {
+    fn from(rns: &'a Rns<W, N>, point: impl CurveAffine<Base = W>) -> Self {
+        let coords = point.coordinates();
+        // disallow point of infinity
+        let coords = coords.unwrap();
 
-impl<N: FieldExt> AssignedPoint<N> {
-    fn from_impcomplete(point: &AssignedIncompletePoint<N>, flag: &AssignedCondition<N>) -> Self {
-        Self {
-            x: point.x.clone(),
-            y: point.y.clone(),
-            z: flag.clone(),
-        }
+        let x = rns.new(*coords.x());
+        let y = rns.new(*coords.y());
+        Point { x, y }
+    }
+
+    fn public(&self) -> Vec<N> {
+        let mut public_data = Vec::new();
+        public_data.extend(self.x.limbs());
+        public_data.extend(self.y.limbs());
+        public_data
     }
 }
 
 #[derive(Clone, Debug)]
 /// point that is assumed to be on curve and not infinity
-pub struct AssignedIncompletePoint<N: FieldExt> {
+pub struct AssignedPoint<N: FieldExt> {
     x: AssignedInteger<N>,
     y: AssignedInteger<N>,
 }
 
-impl<N: FieldExt> From<&AssignedPoint<N>> for AssignedIncompletePoint<N> {
-    fn from(point: &AssignedPoint<N>) -> Self {
-        AssignedIncompletePoint {
-            x: point.x.clone(),
-            y: point.y.clone(),
-        }
-    }
-}
-
 impl<F: FieldExt> AssignedPoint<F> {
-    pub fn new(x: AssignedInteger<F>, y: AssignedInteger<F>, z: AssignedCondition<F>) -> AssignedPoint<F> {
-        AssignedPoint { x, y, z }
-    }
-
-    pub fn is_identity(&self) -> AssignedCondition<F> {
-        self.z.clone()
-    }
-}
-
-impl<F: FieldExt> AssignedIncompletePoint<F> {
-    pub fn new(x: AssignedInteger<F>, y: AssignedInteger<F>) -> AssignedIncompletePoint<F> {
-        AssignedIncompletePoint { x, y }
+    pub fn new(x: AssignedInteger<F>, y: AssignedInteger<F>) -> AssignedPoint<F> {
+        AssignedPoint { x, y }
     }
 }
 

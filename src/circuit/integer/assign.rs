@@ -1,11 +1,12 @@
 use super::{IntegerChip, Range};
 use crate::circuit::{AssignedInteger, AssignedLimb, UnassignedInteger};
+use crate::rns::Common;
 use crate::{WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 use halo2arith::main_gate::five::range::RangeInstructions;
-use halo2arith::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
+use halo2arith::{fe_to_big, halo2, CombinationOptionCommon, MainGateInstructions, Term};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 
@@ -62,6 +63,20 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         let native_value = main_gate.assign_to_acc(region, &integer.native(), offset)?;
         Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
+    }
+
+    pub(super) fn _assign_constant(&self, region: &mut Region<'_, N>, integer: W, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+        let integer = self.rns.new(integer);
+        let main_gate = self.main_gate();
+
+        let limbs = integer.limbs();
+        let mut assigned_limbs = vec![];
+        for limb in limbs.iter() {
+            let assigned = main_gate.assign_constant(region, *limb, offset)?;
+            assigned_limbs.push(AssignedLimb::from(assigned, fe_to_big(*limb)));
+        }
+        let native = main_gate.assign_constant(region, integer.native(), offset)?;
+        Ok(AssignedInteger::new(assigned_limbs, native, self.rns.bit_len_limb))
     }
 
     pub(super) fn _assign_integer(
