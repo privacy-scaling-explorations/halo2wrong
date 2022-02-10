@@ -1,5 +1,5 @@
 use super::{AssignedPoint, BaseFieldEccChip};
-use crate::circuit::ecc::{Table, Windowed, Selector, MulAux};
+use crate::circuit::ecc::{Selector, Table, Windowed};
 use group::ff::PrimeField;
 use halo2::arithmetic::CurveAffine;
 use halo2::circuit::Region;
@@ -85,11 +85,11 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         region: &mut Region<'_, C::ScalarExt>,
         point: &AssignedPoint<C::ScalarExt>,
         scalar: &AssignedValue<C::ScalarExt>,
-        aux: &MulAux<C::ScalarExt>,
         window_size: usize,
         offset: &mut usize,
     ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         assert!(window_size > 0);
+        let aux = self.get_mul_aux(window_size, 1)?;
 
         let main_gate = self.main_gate();
         let decomposed = &mut main_gate.decompose(region, scalar, C::ScalarExt::NUM_BITS as usize, offset)?;
@@ -117,12 +117,12 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         &self,
         region: &mut Region<'_, C::ScalarExt>,
         pairs: Vec<(AssignedPoint<C::ScalarExt>, AssignedValue<C::ScalarExt>)>,
-        aux: &MulAux<C::ScalarExt>,
         window_size: usize,
         offset: &mut usize,
     ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
         assert!(window_size > 0);
         assert!(pairs.len() > 0);
+        let aux = self.get_mul_aux(window_size, pairs.len())?;
 
         let main_gate = self.main_gate();
 

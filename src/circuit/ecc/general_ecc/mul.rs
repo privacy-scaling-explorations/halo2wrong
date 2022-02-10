@@ -1,6 +1,6 @@
 use super::AssignedPoint;
-use crate::circuit::ecc::{Table, Selector, Windowed, MulAux};
 use crate::circuit::ecc::general_ecc::GeneralEccChip;
+use crate::circuit::ecc::{Selector, Table, Windowed};
 use crate::circuit::{AssignedInteger, IntegerInstructions};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Region;
@@ -69,16 +69,16 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         Ok(reducer[0].clone())
     }
 
-    pub(super) fn mul(
+    pub fn mul(
         &self,
         region: &mut Region<'_, F>,
         point: &AssignedPoint<F>,
         scalar: &AssignedInteger<F>,
-        aux: &MulAux<F>,
         window_size: usize,
         offset: &mut usize,
     ) -> Result<AssignedPoint<F>, Error> {
         assert!(window_size > 0);
+        let aux = self.get_mul_aux(window_size, 1)?;
 
         let scalar_chip = self.scalar_field_chip();
         let decomposed = &mut scalar_chip.decompose(region, scalar, offset)?;
@@ -101,16 +101,16 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         self.add(region, &acc, &aux.to_sub, offset)
     }
 
-    pub(super) fn mul_batch_1d_horizontal(
+    pub fn mul_batch_1d_horizontal(
         &self,
         region: &mut Region<'_, F>,
         pairs: Vec<(AssignedPoint<F>, AssignedInteger<F>)>,
-        aux: &MulAux<F>,
         window_size: usize,
         offset: &mut usize,
     ) -> Result<AssignedPoint<F>, Error> {
         assert!(window_size > 0);
         assert!(pairs.len() > 0);
+        let aux = self.get_mul_aux(window_size, pairs.len())?;
 
         let scalar_chip = self.scalar_field_chip();
         let mut decomposed_scalars: Vec<Vec<AssignedCondition<F>>> = pairs

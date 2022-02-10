@@ -1,4 +1,4 @@
-use super::{AssignedPoint, EccConfig, Point};
+use super::{make_mul_aux, AssignedPoint, EccConfig, MulAux, Point};
 use crate::circuit::integer::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::UnassignedInteger;
 use crate::rns::{Integer, Rns};
@@ -9,27 +9,41 @@ use halo2arith::halo2::circuit::Layouter;
 use halo2arith::halo2::plonk::{Column, Instance};
 use halo2arith::main_gate::five::main_gate::MainGate;
 use halo2arith::{halo2, Assigned, AssignedCondition};
+use std::collections::BTreeMap;
 
 mod add;
 mod mul;
 
+#[derive(Clone)]
 pub struct GeneralEccChip<Emulated: CurveAffine, N: FieldExt> {
     config: EccConfig,
     rns_base_field: Rns<Emulated::Base, N>,
     rns_scalar_field: Rns<Emulated::Scalar, N>,
+    aux_generator: Option<(AssignedPoint<N>, Option<Emulated>)>,
+    aux_registry: BTreeMap<(usize, usize), AssignedPoint<N>>,
 }
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
-    fn rns(bit_len_limb: usize) -> (Rns<Emulated::Base, N>, Rns<Emulated::ScalarExt, N>) {
+    pub fn rns(bit_len_limb: usize) -> (Rns<Emulated::Base, N>, Rns<Emulated::ScalarExt, N>) {
         (Rns::construct(bit_len_limb), Rns::construct(bit_len_limb))
     }
 
-    pub(super) fn new(config: EccConfig, bit_len_limb: usize) -> Self {
+    pub fn rns_base(&self) -> Rns<Emulated::Base, N> {
+        self.rns_base_field.clone()
+    }
+
+    pub fn rns_scalar(&self) -> Rns<Emulated::Scalar, N> {
+        self.rns_scalar_field.clone()
+    }
+
+    pub fn new(config: EccConfig, bit_len_limb: usize) -> Self {
         let (rns_base_field, rns_scalar_field) = Self::rns(bit_len_limb);
         Self {
             config,
             rns_base_field,
             rns_scalar_field,
+            aux_generator: None,
+            aux_registry: BTreeMap::new(),
         }
     }
 
@@ -37,21 +51,22 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         self.config.main_gate_config.instance
     }
 
-    fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N> {
+    pub fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N> {
         IntegerChip::new(self.config.integer_chip_config(), self.rns_base_field.clone())
     }
 
-    fn scalar_field_chip(&self) -> IntegerChip<Emulated::ScalarExt, N> {
+    pub fn scalar_field_chip(&self) -> IntegerChip<Emulated::ScalarExt, N> {
         IntegerChip::new(self.config.integer_chip_config(), self.rns_scalar_field.clone())
     }
 
-    fn main_gate(&self) -> MainGate<N> {
+    pub fn main_gate(&self) -> MainGate<N> {
         MainGate::<N>::new(self.config.main_gate_config.clone())
     }
 
-    pub(super) fn to_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
+    pub fn to_rns_point(&self, point: Emulated) -> Point<Emulated::Base, N> {
         let coords = point.coordinates();
         // disallow point of infinity
+        // it will not pass assing point enforcement
         let coords = coords.unwrap();
 
         let x = self.rns_base_field.new(*coords.x());
@@ -62,10 +77,29 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     fn parameter_b(&self) -> Integer<Emulated::Base, N> {
         self.rns_base_field.new(Emulated::b())
     }
+
+    fn get_mul_aux(&self, window_size: usize, number_of_pairs: usize) -> Result<MulAux<N>, Error> {
+        let to_add = match self.aux_generator.clone() {
+            Some((assigned, _)) => Ok(assigned),
+            None => {
+                println!("x1 {} {}", window_size, number_of_pairs);
+                Err(Error::Synthesis)
+            }
+        }?;
+        let to_sub = match self.aux_registry.get(&(window_size, number_of_pairs)) {
+            Some(aux) => Ok(aux.clone()),
+            None => {
+                println!("x0 {} {}", window_size, number_of_pairs);
+
+                Err(Error::Synthesis)
+            }
+        }?;
+        Ok(MulAux::new(to_add, to_sub))
+    }
 }
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
-    fn expose_public(&self, mut layouter: impl Layouter<N>, point: AssignedPoint<N>, offset: usize) -> Result<(), Error> {
+    pub fn expose_public(&self, mut layouter: impl Layouter<N>, point: AssignedPoint<N>, offset: usize) -> Result<(), Error> {
         let instance_column = self.instance_column();
         let mut offset = offset;
         for limb in point.x.limbs {
@@ -79,7 +113,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(())
     }
 
-    fn assign_constant(&self, region: &mut Region<'_, N>, point: Emulated, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn assign_constant(&self, region: &mut Region<'_, N>, point: Emulated, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let coords = point.coordinates();
         // disallow point of infinity
         let coords = coords.unwrap();
@@ -89,7 +123,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(AssignedPoint::new(x, y))
     }
 
-    fn assign_point(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn assign_point(&self, region: &mut Region<'_, N>, point: Option<Emulated>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let integer_chip = self.base_field_chip();
 
         let point = point.map(|point| self.to_rns_point(point));
@@ -106,7 +140,34 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(point)
     }
 
-    fn assert_is_on_curve(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
+    pub fn assign_aux_generator(&mut self, region: &mut Region<'_, N>, aux_generator: Option<Emulated>, offset: &mut usize) -> Result<(), Error> {
+        let aux_generator_assigned = self.assign_point(region, aux_generator, offset)?;
+        // let aux_to_sub = ecc_chip.assign_point(&mut region, Some(aux_to_sub), offset)?;
+        self.aux_generator = Some((aux_generator_assigned, aux_generator));
+        Ok(())
+    }
+
+    pub fn assign_aux(&mut self, region: &mut Region<'_, N>, window_size: usize, number_of_pairs: usize, offset: &mut usize) -> Result<(), Error> {
+        match self.aux_generator {
+            Some((_, point)) => {
+                let aux = match point {
+                    Some(point) => Some(make_mul_aux(point, window_size, number_of_pairs)),
+                    None => None,
+                };
+                let aux = self.assign_point(region, aux, offset)?;
+                self.aux_registry.insert((window_size, number_of_pairs), aux);
+                Ok(())
+            }
+            // aux generator is not assigned yet
+            None => {
+                println!("ee {} {}", window_size, number_of_pairs);
+
+                Err(Error::Synthesis)
+            }
+        }
+    }
+
+    pub fn assert_is_on_curve(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
 
         let y_square = &integer_chip.square(region, &point.y, offset)?;
@@ -117,13 +178,13 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(())
     }
 
-    fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
+    pub fn assert_equal(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
         integer_chip.assert_equal(region, &p0.x, &p1.x, offset)?;
         integer_chip.assert_equal(region, &p0.y, &p1.y, offset)
     }
 
-    fn select(
+    pub fn select(
         &self,
         region: &mut Region<'_, N>,
         c: &AssignedCondition<N>,
@@ -137,7 +198,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(AssignedPoint::new(x, y))
     }
 
-    fn select_or_assign(
+    pub fn select_or_assign(
         &self,
         region: &mut Region<'_, N>,
         c: &AssignedCondition<N>,
@@ -152,14 +213,14 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(AssignedPoint::new(x, y))
     }
 
-    fn normalize(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn normalize(&self, region: &mut Region<'_, N>, point: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let integer_chip = self.base_field_chip();
         let x = integer_chip.reduce(region, &point.x, offset)?;
         let y = integer_chip.reduce(region, &point.y, offset)?;
         Ok(AssignedPoint::new(x, y))
     }
 
-    fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn add(&self, region: &mut Region<'_, N>, p0: &AssignedPoint<N>, p1: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         // guarantees that p0 != p1 or p0 != p1
         // so that we can use unsafe addition formula which assumes operands are not equal
         // addition to that we strictly disallow addition result to be point of infinity
@@ -168,12 +229,12 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         self._add_incomplete_unsafe(region, p0, p1, offset)
     }
 
-    fn double(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn double(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         // point must be asserted to be in curve and not infinity
         self._double_incomplete(region, p, offset)
     }
 
-    fn double_n(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, logn: usize, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn double_n(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, logn: usize, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let mut acc = p.clone();
         for _ in 0..logn {
             acc = self._double_incomplete(region, &acc, offset)?;
@@ -181,7 +242,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Ok(acc)
     }
 
-    fn ladder(
+    pub fn ladder(
         &self,
         region: &mut Region<'_, N>,
         to_double: &AssignedPoint<N>,
@@ -191,7 +252,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         self._ladder_incomplete(region, to_double, to_add, offset)
     }
 
-    fn neg(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
+    pub fn neg(&self, region: &mut Region<'_, N>, p: &AssignedPoint<N>, offset: &mut usize) -> Result<AssignedPoint<N>, Error> {
         let integer_chip = self.base_field_chip();
         let y_neg = integer_chip.neg(region, &p.y, offset)?;
         Ok(AssignedPoint::new(p.x.clone(), y_neg))
@@ -200,8 +261,10 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
 
 #[cfg(test)]
 mod tests {
+    use std::marker::PhantomData;
+
     use crate::circuit::ecc::general_ecc::GeneralEccChip;
-    use crate::circuit::ecc::{make_mul_aux, AssignedPoint, EccConfig, Point, MulAux};
+    use crate::circuit::ecc::{AssignedPoint, EccConfig, Point};
     use crate::circuit::integer::{IntegerConfig, IntegerInstructions};
     use crate::circuit::AssignedInteger;
     use crate::rns::Rns;
@@ -230,23 +293,14 @@ mod tests {
 
     const BIT_LEN_LIMB: usize = 68;
 
-    fn rns<C: CurveAffine, N: FieldExt>() -> (Rns<C::Base, N>, Rns<C::ScalarExt, N>) {
-        (Rns::construct(BIT_LEN_LIMB), Rns::construct(BIT_LEN_LIMB))
-    }
-
     fn setup<C: CurveAffine, N: FieldExt>(k_override: u32) -> (Rns<C::Base, N>, Rns<C::ScalarExt, N>, u32) {
-        let (rns_base, rns_scalar) = rns::<C, N>();
+        let (rns_base, rns_scalar) = GeneralEccChip::<C, N>::rns(BIT_LEN_LIMB);
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         let mut k: u32 = (bit_len_lookup + 1) as u32;
         if k_override != 0 {
             k = k_override;
         }
         (rns_base, rns_scalar, k)
-    }
-
-    fn gen_table_aux<C: CurveAffine>() -> C {
-        let rng = thread_rng();
-        C::Curve::random(rng).to_affine()
     }
 
     #[derive(Clone, Debug)]
@@ -384,10 +438,9 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccPublicInput<C: CurveAffine, N: FieldExt> {
-        rns_base: Rns<C::Base, N>,
-        rns_scalar: Rns<C::ScalarExt, N>,
         a: Option<C>,
         b: Option<C>,
+        _marker: PhantomData<N>,
     }
 
     impl<C: CurveAffine, N: FieldExt> Circuit<N> for TestEccPublicInput<C, N> {
@@ -442,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_general_ecc_public_input() {
-        let (rns_base, rns_scalar, k) = setup::<Curve, Field>(0);
+        let (rns_base, _, k) = setup::<Curve, Field>(0);
         use rand::thread_rng;
         let mut rng = thread_rng();
 
@@ -457,10 +510,9 @@ mod tests {
         public_data.extend(c1.public());
 
         let circuit = TestEccPublicInput::<Curve, Field> {
-            rns_base: rns_base.clone(),
-            rns_scalar,
             a: Some(a),
             b: Some(b),
+            _marker: PhantomData,
         };
 
         let prover = match MockProver::run(k, &circuit, vec![public_data]) {
@@ -473,10 +525,9 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccMul<C: CurveAffine, N: FieldExt> {
-        rns_base: Rns<C::Base, N>,
-        rns_scalar: Rns<C::ScalarExt, N>,
         window_size: usize,
-        aux_to_add: C,
+        aux_generator: C,
+        _marker: PhantomData<N>,
     }
 
     impl<C: CurveAffine, N: FieldExt> Circuit<N> for TestEccMul<C, N> {
@@ -493,34 +544,39 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, BIT_LEN_LIMB);
             let scalar_chip = ecc_chip.scalar_field_chip();
             // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
             // main_gate.break_here(&mut region, offset)?;
 
-            let aux_to_sub = make_mul_aux(self.aux_to_add, self.window_size, 1);
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    ecc_chip.assign_aux_generator(&mut region, Some(self.aux_generator), offset)?;
+                    ecc_chip.assign_aux(&mut region, self.window_size, 1, offset)?;
+                    ecc_chip.get_mul_aux(self.window_size, 1)?;
+                    Ok(())
+                },
+            )?;
 
             layouter.assign_region(
-                || "region 0",
+                || "region mul",
                 |mut region| {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let mut rng = thread_rng();
 
-                    let aux_to_add = ecc_chip.assign_point(&mut region, Some(self.aux_to_add), offset)?;
-                    let aux_to_sub = ecc_chip.assign_point(&mut region, Some(aux_to_sub), offset)?;
-                    let mul_aux = MulAux::new(aux_to_add, aux_to_sub);
-
                     let base = C::CurveExt::random(&mut rng);
                     let s = C::ScalarExt::random(&mut rng);
                     let result = base * s;
 
-                    let s = self.rns_scalar.new(s);
+                    let s = ecc_chip.rns_scalar_field.new(s);
                     let base = ecc_chip.assign_point(&mut region, Some(base.into()), offset)?;
                     let s = scalar_chip.assign_integer(&mut region, Some(s).into(), offset)?;
                     let result_0 = ecc_chip.assign_point(&mut region, Some(result.into()), offset)?;
 
-                    let result_1 = ecc_chip.mul(&mut region, &base, &s, &mul_aux, self.window_size, offset)?;
+                    let result_1 = ecc_chip.mul(&mut region, &base, &s, self.window_size, offset)?;
                     ecc_chip.assert_equal(&mut region, &result_0, &result_1, offset)?;
 
                     Ok(())
@@ -535,16 +591,15 @@ mod tests {
 
     #[test]
     fn test_general_ecc_mul_circuit() {
-        let (rns_base, rns_scalar, k) = setup::<Curve, Field>(20);
+        let (_, _, k) = setup::<Curve, Field>(20);
         for window_size in 1..5 {
             let mut rng = thread_rng();
-            let aux_to_add = CurveProjective::random(&mut rng).to_affine();
+            let aux_generator = CurveProjective::random(&mut rng).to_affine();
 
             let circuit = TestEccMul::<Curve, Field> {
-                rns_base: rns_base.clone(),
-                rns_scalar: rns_scalar.clone(),
-                aux_to_add,
+                aux_generator,
                 window_size,
+                _marker: PhantomData,
             };
 
             let public_inputs = vec![vec![]];
@@ -558,11 +613,10 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccBatchMul<C: CurveAffine, N: FieldExt> {
-        rns_base: Rns<C::Base, N>,
-        rns_scalar: Rns<C::ScalarExt, N>,
         window_size: usize,
-        aux_to_add: C,
+        aux_generator: C,
         number_of_pairs: usize,
+        _marker: PhantomData<N>,
     }
 
     impl<C: CurveAffine, N: FieldExt> Circuit<N> for TestEccBatchMul<C, N> {
@@ -579,23 +633,28 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, BIT_LEN_LIMB);
             let scalar_chip = ecc_chip.scalar_field_chip();
             // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
             // main_gate.break_here(&mut region, offset)?;
 
-            let aux_to_sub = make_mul_aux(self.aux_to_add, self.window_size, self.number_of_pairs);
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    ecc_chip.assign_aux_generator(&mut region, Some(self.aux_generator), offset)?;
+                    ecc_chip.assign_aux(&mut region, self.window_size, self.number_of_pairs, offset)?;
+                    ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
+                    Ok(())
+                },
+            )?;
 
             layouter.assign_region(
-                || "region 0",
+                || "region mul",
                 |mut region| {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let mut rng = thread_rng();
-
-                    let aux_to_add = ecc_chip.assign_point(&mut region, Some(self.aux_to_add), offset)?;
-                    let aux_to_sub = ecc_chip.assign_point(&mut region, Some(aux_to_sub), offset)?;
-                    let mul_aux = MulAux::new(aux_to_add, aux_to_sub);
 
                     let mut acc = C::CurveExt::identity();
                     let pairs: Vec<(AssignedPoint<N>, AssignedInteger<N>)> = (0..self.number_of_pairs)
@@ -603,7 +662,7 @@ mod tests {
                             let base = C::CurveExt::random(&mut rng);
                             let s = C::ScalarExt::random(&mut rng);
                             acc = acc + (base * s);
-                            let s = self.rns_scalar.new(s);
+                            let s = ecc_chip.rns_scalar_field.new(s);
                             let base = ecc_chip.assign_point(&mut region, Some(base.into()), offset)?;
                             let s = scalar_chip.assign_integer(&mut region, Some(s).into(), offset)?;
                             Ok((base, s))
@@ -611,7 +670,7 @@ mod tests {
                         .collect::<Result<_, Error>>()?;
 
                     let result_0 = ecc_chip.assign_point(&mut region, Some(acc.into()), offset)?;
-                    let result_1 = ecc_chip.mul_batch_1d_horizontal(&mut region, pairs, &mul_aux, self.window_size, offset)?;
+                    let result_1 = ecc_chip.mul_batch_1d_horizontal(&mut region, pairs, self.window_size, offset)?;
                     ecc_chip.assert_equal(&mut region, &result_0, &result_1, offset)?;
 
                     Ok(())
@@ -626,18 +685,17 @@ mod tests {
 
     #[test]
     fn test_general_ecc_mul_batch_circuit() {
-        let (rns_base, rns_scalar, k) = setup::<Curve, Field>(20);
+        let (_, _, k) = setup::<Curve, Field>(20);
         for number_of_pairs in 4..5 {
             for window_size in 1..3 {
                 let mut rng = thread_rng();
-                let aux_to_add = CurveProjective::random(&mut rng).to_affine();
+                let aux_generator = CurveProjective::random(&mut rng).to_affine();
 
                 let circuit = TestEccBatchMul::<Curve, Field> {
-                    rns_base: rns_base.clone(),
-                    rns_scalar: rns_scalar.clone(),
-                    aux_to_add,
+                    aux_generator,
                     window_size,
                     number_of_pairs,
+                    _marker: PhantomData,
                 };
 
                 let public_inputs = vec![vec![]];

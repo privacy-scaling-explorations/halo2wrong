@@ -1,4 +1,6 @@
-use super::EccConfig;
+use std::collections::BTreeMap;
+
+use super::{make_mul_aux, EccConfig, MulAux};
 use crate::circuit::ecc::{AssignedPoint, Point};
 use crate::circuit::integer::{IntegerChip, IntegerInstructions, Range};
 use crate::circuit::UnassignedInteger;
@@ -16,19 +18,23 @@ mod mul;
 
 pub struct BaseFieldEccChip<C: CurveAffine> {
     config: EccConfig,
-    rns: Rns<C::Base, C::ScalarExt>,
+    pub(crate) rns: Rns<C::Base, C::ScalarExt>,
+    aux_generator: Option<(AssignedPoint<C::ScalarExt>, Option<C>)>,
+    aux_registry: BTreeMap<(usize, usize), AssignedPoint<C::ScalarExt>>,
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
-    fn rns(bit_len_limb: usize) -> Rns<C::Base, C::Scalar> {
+    pub fn rns(bit_len_limb: usize) -> Rns<C::Base, C::Scalar> {
         Rns::construct(bit_len_limb)
     }
 
     #[allow(unused_variables)]
-    fn new(config: EccConfig, bit_len_limb: usize) -> Self {
+    pub fn new(config: EccConfig, bit_len_limb: usize) -> Self {
         Self {
             config,
             rns: Self::rns(bit_len_limb),
+            aux_generator: None,
+            aux_registry: BTreeMap::new(),
         }
     }
 
@@ -48,6 +54,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn to_rns_point(&self, point: C) -> Point<C::Base, C::ScalarExt> {
         let coords = point.coordinates();
         // disallow point of infinity
+        // it will not pass assing point enforcement
         let coords = coords.unwrap();
 
         let x = self.rns.new(*coords.x());
@@ -57,6 +64,18 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     fn parameter_b(&self) -> Integer<C::Base, C::ScalarExt> {
         self.rns.new(C::b())
+    }
+
+    fn get_mul_aux(&self, window_size: usize, number_of_pairs: usize) -> Result<MulAux<C::ScalarExt>, Error> {
+        let to_add = match self.aux_generator.clone() {
+            Some((assigned, _)) => Ok(assigned),
+            None => Err(Error::Synthesis),
+        }?;
+        let to_sub = match self.aux_registry.get(&(window_size, number_of_pairs)) {
+            Some(aux) => Ok(aux.clone()),
+            None => Err(Error::Synthesis),
+        }?;
+        Ok(MulAux::new(to_add, to_sub))
     }
 }
 
@@ -102,7 +121,29 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(point)
     }
 
-    #[allow(unused_variables)]
+    pub fn assign_aux_generator(&mut self, region: &mut Region<'_, C::ScalarExt>, aux_generator: Option<C>, offset: &mut usize) -> Result<(), Error> {
+        let aux_generator_assigned = self.assign_point(region, aux_generator, offset)?;
+        // let aux_to_sub = ecc_chip.assign_point(&mut region, Some(aux_to_sub), offset)?;
+        self.aux_generator = Some((aux_generator_assigned, aux_generator));
+        Ok(())
+    }
+
+    pub fn assign_aux(&mut self, region: &mut Region<'_, C::ScalarExt>, window_size: usize, number_of_pairs: usize, offset: &mut usize) -> Result<(), Error> {
+        match self.aux_generator {
+            Some((_, point)) => {
+                let aux = match point {
+                    Some(point) => Some(make_mul_aux(point, window_size, number_of_pairs)),
+                    None => None,
+                };
+                let aux = self.assign_point(region, aux, offset)?;
+                self.aux_registry.insert((window_size, number_of_pairs), aux);
+                Ok(())
+            }
+            // aux generator is not assigned yet
+            None => Err(Error::Synthesis),
+        }
+    }
+
     fn assert_is_on_curve(&self, region: &mut Region<'_, C::ScalarExt>, point: &AssignedPoint<C::ScalarExt>, offset: &mut usize) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
 
@@ -222,7 +263,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 #[cfg(test)]
 mod tests {
     use crate::circuit::ecc::base_field_ecc::BaseFieldEccChip;
-    use crate::circuit::ecc::{make_mul_aux, AssignedPoint, EccConfig, Point, MulAux};
+    use crate::circuit::ecc::{AssignedPoint, EccConfig, Point};
     use crate::circuit::integer::IntegerConfig;
     use crate::rns::Rns;
     use crate::NUMBER_OF_LOOKUP_LIMBS;
@@ -482,9 +523,8 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccMul<C: CurveAffine> {
-        rns: Rns<C::Base, C::ScalarExt>,
         window_size: usize,
-        aux_to_add: C,
+        aux_generator: C,
     }
 
     impl<C: CurveAffine> Circuit<C::ScalarExt> for TestEccMul<C> {
@@ -501,10 +541,21 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
             let main_gate = MainGate::<C::ScalarExt>::new(config.main_gate_config.clone());
+            // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
+            // main_gate.break_here(&mut region, offset)?;
 
-            let aux_to_sub = make_mul_aux(self.aux_to_add, self.window_size, 1);
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    ecc_chip.assign_aux_generator(&mut region, Some(self.aux_generator), offset)?;
+                    ecc_chip.assign_aux(&mut region, self.window_size, 1, offset)?;
+                    ecc_chip.get_mul_aux(self.window_size, 1)?;
+                    Ok(())
+                },
+            )?;
 
             layouter.assign_region(
                 || "region 0",
@@ -512,10 +563,6 @@ mod tests {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let mut rng = thread_rng();
-
-                    let aux_to_add = ecc_chip.assign_point(&mut region, Some(self.aux_to_add), offset)?;
-                    let aux_to_sub = ecc_chip.assign_point(&mut region, Some(aux_to_sub), offset)?;
-                    let mul_aux = MulAux::new(aux_to_add, aux_to_sub);
 
                     let base = C::CurveExt::random(&mut rng);
                     let s = C::ScalarExt::random(&mut rng);
@@ -525,7 +572,7 @@ mod tests {
                     let s = main_gate.assign_value(&mut region, &Some(s).into(), offset)?;
                     let result_0 = ecc_chip.assign_point(&mut region, Some(result.into()), offset)?;
 
-                    let result_1 = ecc_chip.mul(&mut region, &base, &s, &mul_aux, self.window_size, offset)?;
+                    let result_1 = ecc_chip.mul(&mut region, &base, &s, self.window_size, offset)?;
                     ecc_chip.assert_equal(&mut region, &result_0, &result_1, offset)?;
 
                     Ok(())
@@ -540,16 +587,12 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_mul_circuit() {
-        let (rns, k) = setup::<Curve>(20);
+        let (_, k) = setup::<Curve>(20);
         for window_size in 1..5 {
             let mut rng = thread_rng();
-            let aux_to_add = CurveProjective::random(&mut rng).to_affine();
+            let aux_generator = CurveProjective::random(&mut rng).to_affine();
 
-            let circuit = TestEccMul::<Curve> {
-                rns: rns.clone(),
-                aux_to_add,
-                window_size,
-            };
+            let circuit = TestEccMul::<Curve> { aux_generator, window_size };
 
             let public_inputs = vec![vec![]];
             let prover = match MockProver::run(k, &circuit, public_inputs) {
@@ -562,10 +605,9 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccBatchMul<C: CurveAffine> {
-        rns: Rns<C::Base, C::ScalarExt>,
         window_size: usize,
         number_of_pairs: usize,
-        aux_to_add: C,
+        aux_generator: C,
     }
 
     impl<C: CurveAffine> Circuit<C::ScalarExt> for TestEccBatchMul<C> {
@@ -582,10 +624,19 @@ mod tests {
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
             let main_gate = MainGate::<C::ScalarExt>::new(config.main_gate_config.clone());
 
-            let aux_to_sub = make_mul_aux(self.aux_to_add, self.window_size, self.number_of_pairs);
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    ecc_chip.assign_aux_generator(&mut region, Some(self.aux_generator), offset)?;
+                    ecc_chip.assign_aux(&mut region, self.window_size, self.number_of_pairs, offset)?;
+                    ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
+                    Ok(())
+                },
+            )?;
 
             layouter.assign_region(
                 || "region 0",
@@ -593,10 +644,6 @@ mod tests {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let mut rng = thread_rng();
-
-                    let aux_to_add = ecc_chip.assign_point(&mut region, Some(self.aux_to_add), offset)?;
-                    let aux_to_sub = ecc_chip.assign_point(&mut region, Some(aux_to_sub), offset)?;
-                    let mul_aux = MulAux::new(aux_to_add, aux_to_sub);
 
                     let mut acc = C::CurveExt::identity();
                     let pairs: Vec<(AssignedPoint<C::ScalarExt>, AssignedValue<C::ScalarExt>)> = (0..self.number_of_pairs)
@@ -611,7 +658,7 @@ mod tests {
                         .collect::<Result<_, Error>>()?;
 
                     let result_0 = ecc_chip.assign_point(&mut region, Some(acc.into()), offset)?;
-                    let result_1 = ecc_chip.mul_batch_1d_horizontal(&mut region, pairs, &mul_aux, self.window_size, offset)?;
+                    let result_1 = ecc_chip.mul_batch_1d_horizontal(&mut region, pairs, self.window_size, offset)?;
                     ecc_chip.assert_equal(&mut region, &result_0, &result_1, offset)?;
 
                     Ok(())
@@ -626,16 +673,15 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_mul_batch_circuit() {
-        let (rns, k) = setup::<Curve>(20);
+        let (_, k) = setup::<Curve>(20);
 
         for number_of_pairs in 4..5 {
             for window_size in 1..3 {
                 let mut rng = thread_rng();
-                let aux_to_add = CurveProjective::random(&mut rng).to_affine();
+                let aux_generator = CurveProjective::random(&mut rng).to_affine();
 
                 let circuit = TestEccBatchMul::<Curve> {
-                    rns: rns.clone(),
-                    aux_to_add,
+                    aux_generator,
                     window_size,
                     number_of_pairs,
                 };
