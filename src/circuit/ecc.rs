@@ -35,10 +35,6 @@ impl<'a, W: WrongExt, N: FieldExt> Point<'a, W, N> {
         public_data.extend(self.y.limbs());
         public_data
     }
-
-    pub fn get_x(&self) -> AssignedInteger<N> {
-        self.x.clone()
-    }
 }
 
 #[derive(Clone)]
@@ -62,6 +58,10 @@ impl<F: FieldExt> AssignedPoint<F> {
     pub fn new(x: AssignedInteger<F>, y: AssignedInteger<F>) -> AssignedPoint<F> {
         AssignedPoint { x, y }
     }
+
+    pub fn get_x(&self) -> AssignedInteger<F> {
+        self.x.clone()
+    }
 }
 
 mod base_field_ecc;
@@ -69,11 +69,18 @@ pub mod general_ecc;
 
 #[derive(Clone, Debug)]
 pub struct EccConfig {
-    pub range_config: RangeConfig,
-    pub main_gate_config: MainGateConfig,
+    range_config: RangeConfig,
+    main_gate_config: MainGateConfig,
 }
 
 impl EccConfig {
+    pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
+        Self {
+            range_config,
+            main_gate_config,
+        }
+    }
+
     fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
