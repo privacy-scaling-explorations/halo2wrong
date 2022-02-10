@@ -1,20 +1,20 @@
-use crate::circuit::ecc::general_ecc::GeneralEccChip;
+use crate::circuit::ecc::base_field_ecc::BaseFieldEccChip;
 use crate::circuit::ecc::AssignedPoint;
 use crate::circuit::IntegerInstructions;
-use halo2::arithmetic::{CurveAffine, FieldExt};
+use halo2::arithmetic::CurveAffine;
 use halo2::circuit::Region;
 use halo2::plonk::Error;
 use halo2arith::halo2;
 
-impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
+impl<C: CurveAffine> BaseFieldEccChip<C> {
     pub(crate) fn _add_incomplete_unsafe(
         &self,
-        region: &mut Region<'_, F>,
-        a: &AssignedPoint<F>,
-        b: &AssignedPoint<F>,
+        region: &mut Region<'_, C::Scalar>,
+        a: &AssignedPoint<C::Scalar>,
+        b: &AssignedPoint<C::Scalar>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<F>, Error> {
-        let ch = self.base_field_chip();
+    ) -> Result<AssignedPoint<C::Scalar>, Error> {
+        let ch = self.integer_chip();
 
         // lambda = b_y - a_y / b_x - a_x
         let numerator = &ch.sub(region, &b.y, &a.y, offset)?;
@@ -35,35 +35,40 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         Ok(p_0)
     }
 
-    pub(crate) fn _double_incomplete(&self, region: &mut Region<'_, F>, point: &AssignedPoint<F>, offset: &mut usize) -> Result<AssignedPoint<F>, Error> {
-        let ch = self.base_field_chip();
+    pub(crate) fn _double_incomplete(
+        &self,
+        region: &mut Region<'_, C::Scalar>,
+        point: &AssignedPoint<C::Scalar>,
+        offset: &mut usize,
+    ) -> Result<AssignedPoint<C::Scalar>, Error> {
+        let integer_chip = self.integer_chip();
 
         // lambda = (3 * a_x^2) / 2 * a_y
-        let x_0_square = &ch.square(region, &point.x, offset)?;
-        let numerator = &ch.mul3(region, x_0_square, offset)?;
-        let denominator = &ch.mul2(region, &point.y, offset)?;
-        let lambda = &ch.div_incomplete(region, numerator, denominator, offset)?;
+        let x_0_square = &integer_chip.square(region, &point.x, offset)?;
+        let numerator = &integer_chip.mul3(region, x_0_square, offset)?;
+        let denominator = &integer_chip.mul2(region, &point.y, offset)?;
+        let lambda = &integer_chip.div_incomplete(region, numerator, denominator, offset)?;
 
         // c_x = lambda * lambda - 2 * a_x
-        let lambda_square = &ch.square(region, lambda, offset)?;
-        let x = &ch.sub_sub(region, lambda_square, &point.x, &point.x, offset)?;
+        let lambda_square = &integer_chip.square(region, lambda, offset)?;
+        let x = &integer_chip.sub_sub(region, lambda_square, &point.x, &point.x, offset)?;
 
         // c_y = lambda * (a_x - c_x) - a_y
-        let t = &ch.sub(region, &point.x, x, offset)?;
-        let t = &ch.mul(region, lambda, t, offset)?;
-        let y = ch.sub(region, t, &point.y, offset)?;
+        let t = &integer_chip.sub(region, &point.x, x, offset)?;
+        let t = &integer_chip.mul(region, lambda, t, offset)?;
+        let y = integer_chip.sub(region, t, &point.y, offset)?;
 
         Ok(AssignedPoint::new(x.clone(), y))
     }
 
     pub(crate) fn _ladder_incomplete(
         &self,
-        region: &mut Region<'_, F>,
-        to_double: &AssignedPoint<F>,
-        to_add: &AssignedPoint<F>,
+        region: &mut Region<'_, C::Scalar>,
+        to_double: &AssignedPoint<C::Scalar>,
+        to_add: &AssignedPoint<C::Scalar>,
         offset: &mut usize,
-    ) -> Result<AssignedPoint<F>, Error> {
-        let ch = self.base_field_chip();
+    ) -> Result<AssignedPoint<C::Scalar>, Error> {
+        let ch = self.integer_chip();
 
         // (P + Q) + P
         // P is to_double (x_1, y_1)
