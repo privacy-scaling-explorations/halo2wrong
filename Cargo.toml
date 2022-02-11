@@ -1,24 +1,7 @@
-[package]
-name = "halo2wrong"
-version = "0.1.0"
-authors = ["kilic <kiliconu@itu.edu.tr>"]
-edition = "2018"
-
-[dependencies]
-halo2arith = { git = "https://github.com/kilic/halo2arith.git", default-features = false }
-# halo2arith = { path = "../../kilic/halo2arith" }
-num-bigint = { version = "0.4", features = ["rand"] }
-num-integer = "0.1"
-num-traits = "0.2"
-rand = "0.8"
-group = "0.11"
-subtle = { version = "2.3", default-features = false }
-cfg-if = "0.1"
-
-[dev-dependencies]
-rand_core = { version = "0.6", default-features = false }
-
-[features]
-default = ["zcash"]
-kzg = ["halo2arith/kzg"]
-zcash = ["halo2arith/zcash"]
+[workspace]
+members = [
+  "maingate",
+  "integer",
+  "ecc",
+  "ecdsa"
+]
