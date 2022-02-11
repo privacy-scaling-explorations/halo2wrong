@@ -64,6 +64,7 @@ impl<F: FieldExt> Chip<F> for MainGate<F> {
 pub enum CombinationOption<F: FieldExt> {
     Common(CombinationOptionCommon<F>),
     OneLinerDoubleMul,
+    OneLinerDoubleNegMul,
     CombineToNextDoubleMul(F),
 }
 
@@ -691,52 +692,35 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     ) -> Result<AssignedValue<F>, Error> {
         // We should satisfy the equation below with bit asserted condition flag
         // c (a-b) + b - res = 0
+        // c a - c b + b - res = 0
 
         // Witness layout:
-        // | A   | B   | C | D   |
-        // | --- | --- | - | --- |
-        // | dif | a   | b | -   |
-        // | c   | dif | b | res |
+        // | A   | B   | C | D   | E  |
+        // | --- | --- | - | --- | ---|
+        // | c   | a   | c | b   | res|
 
-        let (dif, res) = match (a.value(), b.value(), cond.bool_value) {
+        let res = match (a.value(), b.value(), cond.bool_value) {
             (Some(a), Some(b), Some(cond)) => {
-                let dif = a - b;
                 let res = if cond { a } else { b };
-                (Some(dif), Some(res))
+                Some(res)
             }
-            _ => (None, None),
+            _ => None,
         };
 
-        // a - b - dif = 0
-        let (_, _, _, dif, _) = self.combine(
+        let (a_val, _, c_val, _, res) = self.combine(
             region,
             [
-                Term::assigned_to_add(&a),
-                Term::assigned_to_sub(&b),
-                Term::Zero,
-                Term::unassigned_to_sub(dif),
-                Term::Zero,
-            ],
-            F::zero(),
-            offset,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?;
-
-        // cond * dif + b + a_or_b  = 0
-        let (_, _, _, res, _) = self.combine(
-            region,
-            [
-                Term::assigned_to_mul(&dif),
-                Term::assigned_to_mul(cond),
+                Term::assigned_to_mul(&cond),
+                Term::assigned_to_mul(&a),
+                Term::assigned_to_mul(&cond),
                 Term::assigned_to_add(&b),
                 Term::unassigned_to_sub(res),
-                Term::Zero,
             ],
             F::zero(),
             offset,
-            CombinationOptionCommon::OneLinerMul.into(),
+            CombinationOption::OneLinerDoubleNegMul.into(),
         )?;
-
+        region.constrain_equal(a_val.cell(), c_val.cell())?;
         Ok(res)
     }
 
@@ -1036,6 +1020,11 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             CombinationOption::OneLinerDoubleMul => {
                 region.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, *offset, || Ok(F::one()))?;
                 region.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, *offset, || Ok(F::one()))?;
+                region.assign_fixed(|| "se_next", self.config.se_next, *offset, || Ok(F::zero()))?;
+            }
+            CombinationOption::OneLinerDoubleNegMul => {
+                region.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, *offset, || Ok(F::one()))?;
+                region.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, *offset, || Ok(-F::one()))?;
                 region.assign_fixed(|| "se_next", self.config.se_next, *offset, || Ok(F::zero()))?;
             }
         };
