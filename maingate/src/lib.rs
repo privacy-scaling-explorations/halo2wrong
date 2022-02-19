@@ -9,18 +9,9 @@ use utils::decompose;
 mod main_gate;
 pub mod utils;
 
-pub use main_gate::five;
-pub use main_gate::four;
+pub use halo2wrong::halo2;
 pub use main_gate::*;
-
-cfg_if::cfg_if! {
-    if #[cfg(feature = "kzg")] {
-        pub use halo2_kzg as halo2;
-    } else {
-        // default feature
-        pub use halo2_zcash as halo2;
-    }
-}
+pub use main_gate::{five, four};
 
 pub use main_gate::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use utils::*;

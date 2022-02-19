@@ -12,25 +12,13 @@ rand = "0.8"
 group = "0.11"
 subtle = { version = "2.3", default-features = false }
 cfg-if = "0.1"
-
-[dependencies.halo2_zcash]
-package = "halo2_proofs"
-git = "https://github.com/zcash/halo2.git"
-rev = "bb56139414332da8964f92c4d5332af5848fe706"
-optional = true
-
-[dependencies.halo2_kzg]
-package = "halo2_proofs"
-git = "https://github.com/appliedzkp/halo2.git"
-rev = "c5d91de3df1b08f7835ac1365ea47f48e1f1353a"
-optional = true
+halo2wrong = { path = "../halo2wrong", default-features = false }
 
 [features]
 default = ["zcash"]
-zcash = ["halo2_zcash"]
-kzg = ["halo2_kzg"]
+zcash = ["halo2wrong/zcash"]
+kzg = ["halo2wrong/kzg"]
 no_lookup = []
-
 
 [dev-dependencies]
 rand_core = { version = "0.6", default-features = false }
