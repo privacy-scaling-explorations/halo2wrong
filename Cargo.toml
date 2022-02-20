@@ -3,5 +3,6 @@ members = [
   "maingate",
   "integer",
   "ecc",
-  "ecdsa/circuit"
+  "ecdsa/circuit",
+  "ecdsa/secp256k1forhalo2"
 ]
