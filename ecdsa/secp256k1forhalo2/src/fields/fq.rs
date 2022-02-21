@@ -6,21 +6,24 @@ use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-use lazy_static::lazy_static;
+use crate::arithmetic::{adc, mac, sbb};
+use maingate::halo2::arithmetic::{FieldExt, Group};
+
+#[cfg(feature = "kzg")]
+use alloc::vec::Vec;
 
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
-use crate::arithmetic::{adc, mac, sbb};
+#[cfg(not(feature = "kzg"))]
+use lazy_static::lazy_static;
 
-use maingate::halo2::arithmetic::{FieldExt, Group};
 #[cfg(not(feature = "kzg"))]
 use maingate::halo2::arithmetic::{SqrtRatio, SqrtTables};
 
 #[cfg(feature = "kzg")]
 use maingate::halo2::arithmetic::BaseExt;
 
-use alloc::vec::Vec;
 #[cfg(feature = "kzg")]
 use std::io::{self, Read, Write};
 
@@ -484,8 +487,8 @@ impl ff::Field for Fq {
 
     #[cfg(feature = "kzg")]
     fn sqrt(&self) -> CtOption<Self> {
-        // TODO Provide the real value for T_MINUS1_OVER2
-        crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
+        unimplemented!()
+        // crate::arithmetic::sqrt_tonelli_shanks(self, &Self::T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
@@ -718,7 +721,7 @@ impl FieldExt for Fq {
 
     #[cfg(feature = "kzg")]
     fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        let result = Fq::from_raw([
+        let result = Self::from_raw([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
             u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
@@ -731,7 +734,7 @@ impl FieldExt for Fq {
     /// a `Fq` by reducing by the modulus.
     #[cfg(not(feature = "kzg"))]
     fn from_bytes_wide(bytes: &[u8; 64]) -> Self {
-        Fq::from_u512([
+        Self::from_u512([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
             u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
@@ -744,7 +747,7 @@ impl FieldExt for Fq {
     }
 
     fn get_lower_128(&self) -> u128 {
-        let tmp = Fq::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
+        let tmp = Self::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         u128::from(tmp.0[0]) | (u128::from(tmp.0[1]) << 64)
     }

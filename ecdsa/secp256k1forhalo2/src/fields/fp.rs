@@ -6,17 +6,24 @@ use ff::PrimeField;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-#[cfg(feature = "bits")]
-use ff::{FieldBits, PrimeFieldBits};
+use maingate::halo2::arithmetic::{FieldExt, Group};
 
 use crate::arithmetic::{adc, mac, sbb};
 
+#[cfg(feature = "kzg")]
+use alloc::vec::Vec;
+
+#[cfg(feature = "bits")]
+use ff::{FieldBits, PrimeFieldBits};
+
 #[cfg(not(feature = "kzg"))]
 use maingate::halo2::arithmetic::SqrtRatio;
-use maingate::halo2::arithmetic::{FieldExt, Group};
 
 #[cfg(feature = "kzg")]
 use maingate::halo2::arithmetic::BaseExt;
+
+#[cfg(feature = "kzg")]
+use std::io::{self, Read, Write};
 
 /// This represents an element of $\mathbb{F}_p$ where
 ///
@@ -637,6 +644,17 @@ impl SqrtRatio for Fp {
 impl BaseExt for Fp {
     const MODULUS: &'static str = MODULUS_STR;
 
+    fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write(&self.to_bytes())?;
+        Ok(())
+    }
+
+    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
+        unimplemented!();
+        // let mut buf: &mut [u8];
+        // let Ok(size) = reader.read(buf);
+    }
+
     fn from_bytes_wide(bytes: &[u8; 64]) -> Fp {
         Fp::from_u512([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
@@ -660,6 +678,12 @@ impl FieldExt for Fp {
 
     const ZETA: Self = Self::zero();
 
+    #[cfg(feature = "kzg")]
+    const T_MINUS1_OVER2: [u64; 4] = [0 as u64; 4];
+    #[cfg(feature = "kzg")]
+    const RESCUE_ALPHA: u64 = 0 as u64;
+    #[cfg(feature = "kzg")]
+    const RESCUE_INVALPHA: [u64; 4] = [0 as u64; 4];
     fn from_u128(v: u128) -> Self {
         Fp::from_raw([v as u64, (v >> 64) as u64, 0, 0])
     }
@@ -678,6 +702,31 @@ impl FieldExt for Fp {
             u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
             u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
         ])
+    }
+
+    #[cfg(feature = "kzg")]
+    fn to_bytes(&self) -> [u8; 32] {
+        let limb_bytes: Vec<[u8; 8]> = self.0.iter().map(|limb| u64::to_le_bytes(*limb)).collect();
+        let mut result: [u8; 32] = [0 as u8; 32];
+        let mut index = 0;
+        limb_bytes.iter().for_each(|bytes| {
+            for byte in bytes.iter() {
+                result[index] = *byte;
+                index += 1
+            }
+        });
+        result
+    }
+
+    #[cfg(feature = "kzg")]
+    fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
+        let result = Self::from_raw([
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+        ]);
+        CtOption::new(result, Choice::from(1 as u8))
     }
 
     fn get_lower_128(&self) -> u128 {

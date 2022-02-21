@@ -6,8 +6,10 @@ use core::fmt;
 use core::iter::Sum;
 use core::ops::{Add, Mul, Neg, Sub};
 
+#[cfg(not(feature = "kzg"))]
 use alloc::boxed::Box;
 
+use core::convert::TryInto;
 use ff::{Field, PrimeField};
 use group::{
     cofactor::{CofactorCurve, CofactorGroup},
@@ -15,8 +17,6 @@ use group::{
     Curve as _, Group as _, GroupEncoding,
 };
 use rand::RngCore;
-//FIXME lets try to get it from core
-use core::convert::TryInto;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{Fp, Fq};
@@ -130,6 +130,7 @@ macro_rules! new_curve_impl {
 
             impl_projective_curve_ext!($name, $base, $curve_type);
 
+            #[cfg(not(feature = "kzg"))]
             fn a() -> Self::Base {
                 $name::curve_constant_a()
             }
@@ -651,6 +652,7 @@ macro_rules! new_curve_impl {
                 CtOption::new(p, p.is_on_curve())
             }
 
+            #[cfg(not(feature = "kzg"))]
             fn a() -> Self::Base {
                 $name::curve_constant_a()
             }
@@ -812,17 +814,20 @@ macro_rules! impl_projective_curve_ext {
 
         /// Apply the curve endomorphism by multiplying the x-coordinate
         /// by an element of multiplicative order 3.
+        #[cfg(not(feature = "kzg"))]
         fn endo(&self) -> Self {
             unimplemented!();
         }
     };
     ($name:ident, $base:ident, general) => {
         /// Unimplemented: hashing to this curve is not supported
+        #[cfg(not(feature = "kzg"))]
         fn hash_to_curve<'a>(_domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
             unimplemented!()
         }
 
         /// Unimplemented: no endomorphism is supported for this curve.
+        #[cfg(not(feature = "kzg"))]
         fn endo(&self) -> Self {
             unimplemented!()
         }
