@@ -20,6 +20,10 @@ use maingate::halo2::arithmetic::{SqrtRatio, SqrtTables};
 #[cfg(feature = "kzg")]
 use maingate::halo2::arithmetic::BaseExt;
 
+use alloc::vec::Vec;
+#[cfg(feature = "kzg")]
+use std::io::{self, Read, Write};
+
 /// This represents an element of $\mathbb{F}_q$ where
 ///
 /// `q = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141`
@@ -43,7 +47,7 @@ impl fmt::Debug for Fq {
 }
 
 impl From<bool> for Fq {
-    fn from(bit: bool) -> Fq {
+    fn from(bit: bool) -> Self {
         if bit {
             Fq::one()
         } else {
@@ -53,8 +57,8 @@ impl From<bool> for Fq {
 }
 
 impl From<u64> for Fq {
-    fn from(val: u64) -> Fq {
-        Fq([val, 0, 0, 0]) * R2
+    fn from(val: u64) -> Self {
+        Self([val, 0, 0, 0]) * R2
     }
 }
 
@@ -94,7 +98,7 @@ impl core::cmp::PartialOrd for Fq {
 
 impl ConditionallySelectable for Fq {
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
-        Fq([
+        Self([
             u64::conditional_select(&a.0[0], &b.0[0], choice),
             u64::conditional_select(&a.0[1], &b.0[1], choice),
             u64::conditional_select(&a.0[2], &b.0[2], choice),
@@ -197,24 +201,24 @@ impl Default for Fq {
 impl Fq {
     /// Returns zero, the additive identity.
     #[inline]
-    pub const fn zero() -> Fq {
+    pub const fn zero() -> Self {
         Fq([0, 0, 0, 0])
     }
 
     /// Returns one, the multiplicative identity.
     #[inline]
-    pub const fn one() -> Fq {
+    pub const fn one() -> Self {
         R
     }
 
     /// Doubles this field element.
     #[inline]
-    pub const fn double(&self) -> Fq {
+    pub const fn double(&self) -> Self {
         // TODO: This can be achieved more efficiently with a bitshift.
         self.add(self)
     }
 
-    fn from_u512(limbs: [u64; 8]) -> Fq {
+    fn from_u512(limbs: [u64; 8]) -> Self {
         // We reduce an arbitrary 512-bit number by decomposing it into two 256-bit digits
         // with the higher bits multiplied by 2^256. Thus, we perform two reductions
         //
@@ -242,7 +246,7 @@ impl Fq {
 
     /// Squares this element.
     #[inline]
-    pub const fn square(&self) -> Fq {
+    pub const fn square(&self) -> Self {
         let (r1, carry) = mac(0, self.0[0], self.0[1], 0);
         let (r2, carry) = mac(0, self.0[0], self.0[2], carry);
         let (r3, r4) = mac(0, self.0[0], self.0[3], carry);
@@ -269,7 +273,7 @@ impl Fq {
         let (r6, carry) = mac(r6, self.0[3], self.0[3], carry);
         let (r7, _) = adc(0, r7, carry);
 
-        Fq::montgomery_reduce(r0, r1, r2, r3, r4, r5, r6, r7)
+        Self::montgomery_reduce(r0, r1, r2, r3, r4, r5, r6, r7)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -319,7 +323,7 @@ impl Fq {
         let (d2, carry) = adc(d2, MODULUS.0[2] & borrow, carry);
         let (d3, _) = adc(d3, MODULUS.0[3] & borrow, carry);
 
-        Fq([d0, d1, d2, d3])
+        Self([d0, d1, d2, d3])
     }
 
     /// Multiplies `rhs` by `self`, returning the result.
@@ -365,7 +369,7 @@ impl Fq {
         let (d2, carry) = adc(d2, MODULUS.0[2] & borrow, carry);
         let (d3, _) = adc(d3, MODULUS.0[3] & borrow, carry);
 
-        Fq([d0, d1, d2, d3])
+        Self([d0, d1, d2, d3])
     }
 
     /// Adds `rhs` to `self`, returning the result.
@@ -389,7 +393,7 @@ impl Fq {
         let (d2, carry) = adc(d2, MODULUS.0[2] & borrow, carry);
         let (d3, _) = adc(d3, MODULUS.0[3] & borrow, carry);
 
-        Fq([d0, d1, d2, d3])
+        Self([d0, d1, d2, d3])
     }
 
     /// Negates `self`.
@@ -407,7 +411,7 @@ impl Fq {
         // zero if `self` was zero, and `u64::max_value()` if self was nonzero.
         let mask = (((self.0[0] | self.0[1] | self.0[2] | self.0[3]) == 0) as u64).wrapping_sub(1);
 
-        Fq([d0 & mask, d1 & mask, d2 & mask, d3 & mask])
+        Self([d0 & mask, d1 & mask, d2 & mask, d3 & mask])
     }
 }
 
@@ -474,18 +478,19 @@ impl ff::Field for Fq {
     /// Computes the square root of this element, if it exists.
     #[cfg(not(feature = "kzg"))]
     fn sqrt(&self) -> CtOption<Self> {
-        // #[cfg(feature = "std")]
         let (is_square, res) = FQ_TABLES.sqrt_alt(self);
         CtOption::new(res, is_square)
     }
 
-    #[cfg(not(feature = "kzg"))]
+    #[cfg(feature = "kzg")]
     fn sqrt(&self) -> CtOption<Self> {
+        // TODO Provide the real value for T_MINUS1_OVER2
         crate::arithmetic::sqrt_tonelli_shanks(self, &T_MINUS1_OVER2)
     }
 
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
+
     fn invert(&self) -> CtOption<Self> {
         let tmp = self.pow_vartime(&[0xbfd25e8cd036413f, 0xbaaedce6af48a03b, 0xfffffffffffffffe, 0xffffffffffffffff]);
 
@@ -652,7 +657,18 @@ impl SqrtRatio for Fq {
 impl BaseExt for Fq {
     const MODULUS: &'static str = MODULUS_STR;
 
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Fq {
+    fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write(&self.to_bytes())?;
+        Ok(())
+    }
+
+    fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
+        unimplemented!();
+        // let mut buf: &mut [u8];
+        // let Ok(size) = reader.read(buf);
+    }
+
+    fn from_bytes_wide(bytes: &[u8; 64]) -> Self {
         Fq::from_u512([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
@@ -675,14 +691,46 @@ impl FieldExt for Fq {
 
     const ZETA: Self = Self::zero();
 
+    #[cfg(feature = "kzg")]
+    const T_MINUS1_OVER2: [u64; 4] = [0 as u64; 4];
+    #[cfg(feature = "kzg")]
+    const RESCUE_ALPHA: u64 = 0 as u64;
+    #[cfg(feature = "kzg")]
+    const RESCUE_INVALPHA: [u64; 4] = [0 as u64; 4];
+
     fn from_u128(v: u128) -> Self {
         Fq::from_raw([v as u64, (v >> 64) as u64, 0, 0])
+    }
+
+    #[cfg(feature = "kzg")]
+    fn to_bytes(&self) -> [u8; 32] {
+        let limb_bytes: Vec<[u8; 8]> = self.0.iter().map(|limb| u64::to_le_bytes(*limb)).collect();
+        let mut result: [u8; 32] = [0 as u8; 32];
+        let mut index = 0;
+        limb_bytes.iter().for_each(|bytes| {
+            for byte in bytes.iter() {
+                result[index] = *byte;
+                index += 1
+            }
+        });
+        result
+    }
+
+    #[cfg(feature = "kzg")]
+    fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
+        let result = Fq::from_raw([
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+        ]);
+        CtOption::new(result, Choice::from(1 as u8))
     }
 
     /// Converts a 512-bit little endian integer into
     /// a `Fq` by reducing by the modulus.
     #[cfg(not(feature = "kzg"))]
-    fn from_bytes_wide(bytes: &[u8; 64]) -> Fq {
+    fn from_bytes_wide(bytes: &[u8; 64]) -> Self {
         Fq::from_u512([
             u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
             u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
