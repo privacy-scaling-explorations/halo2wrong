@@ -292,7 +292,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "zcash")]
     fn test_ecdsa_verifier() {
         use group::Group;
         // use halo2::pasta::Eq as Projective;
@@ -300,7 +299,12 @@ mod tests {
         // use halo2::pasta::Fp as N;
 
         cfg_if::cfg_if! {
-            if #[cfg(feature = "kzg")] {
+            if #[cfg(feature = "secp")] {
+                use secp256k1forhalo2::Fp as Field;
+                use secp256k1forhalo2::Secp256k1Affine as Curve;
+                use secp256k1forhalo2::Secp256k1 as CurveProjective;
+            }
+            else if #[cfg(feature = "kzg")] {
                 use halo2::pairing::bn256::Fq as Field;
                 use halo2::pairing::bn256::G1Affine as Curve;
                 use halo2::pairing::bn256::G1 as CurveProjective;
