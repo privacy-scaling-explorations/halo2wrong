@@ -650,9 +650,9 @@ impl BaseExt for Fp {
     }
 
     fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
-        unimplemented!();
-        // let mut buf: &mut [u8];
-        // let Ok(size) = reader.read(buf);
+        let mut compressed = [0u8; 32];
+        reader.read_exact(&mut compressed[..])?;
+        Option::from(Self::from_bytes(&compressed)).ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
     }
 
     fn from_bytes_wide(bytes: &[u8; 64]) -> Fp {
