@@ -6,8 +6,8 @@ use maingate::halo2::arithmetic::CurveExt;
 
 #[cfg(not(feature = "kzg"))]
 fn criterion_benchmark(c: &mut Criterion) {
-    point_bench::<maingate::halo2::pallas::Point>(c, "Pallas");
-    point_bench::<maingate::halo2::vesta::Point>(c, "Vesta");
+    point_bench::<maingate::halo2::pasta::pallas::Point>(c, "Pallas");
+    point_bench::<maingate::halo2::pasta::vesta::Point>(c, "Vesta");
 }
 
 #[cfg(not(feature = "kzg"))]
