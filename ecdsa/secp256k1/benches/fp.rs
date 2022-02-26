@@ -5,7 +5,7 @@ use rand::SeedableRng;
 use rand_xorshift::XorShiftRng;
 
 use ff::{Field, PrimeField};
-use secp256k1forhalo2::Fp;
+use secp256k1::Fp;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fp");

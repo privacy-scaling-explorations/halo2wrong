@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-secp256k1forhalo2 = { path = "../secp256k1forhalo2/", default-features = true, optional = true }
+secp256k1 = { path = "../secp256k1/", default-features = true, optional = true }
 ecc = { path = "../../ecc", default-features = false }
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
@@ -21,4 +21,4 @@ rand_core = { version = "0.6", default-features = false }
 default = ["zcash"]
 kzg = ["ecc/kzg"]
 zcash = ["ecc/zcash"]
-secp = ["secp256k1forhalo2/zcash"]
+secp = ["secp256k1/zcash"]

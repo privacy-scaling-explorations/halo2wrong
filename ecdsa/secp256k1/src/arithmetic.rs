@@ -8,7 +8,7 @@ mod fields;
 
 pub(crate) use fields::*;
 
-use maingate::halo2::arithmetic::FieldExt;
+use halo2wrong::halo2::arithmetic::FieldExt;
 
 /// This represents an element of a group with basic operations that can be
 /// performed. This allows an FFT implementation (for example) to operate
