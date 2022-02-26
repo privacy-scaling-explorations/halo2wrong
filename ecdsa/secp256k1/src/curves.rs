@@ -21,7 +21,7 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::{Fp, Fq};
 
-use maingate::halo2::arithmetic::{Coordinates, CurveAffine, CurveExt, Group};
+use halo2wrong::halo2::arithmetic::{Coordinates, CurveAffine, CurveExt, Group};
 
 macro_rules! new_curve_impl {
     (($($privacy:tt)*), $name:ident, $name_affine:ident, $base:ident, $scalar:ident,

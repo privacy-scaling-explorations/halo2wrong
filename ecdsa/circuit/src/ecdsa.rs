@@ -300,9 +300,9 @@ mod tests {
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "secp")] {
-                use secp256k1forhalo2::Fp as Field;
-                use secp256k1forhalo2::Secp256k1Affine as Curve;
-                use secp256k1forhalo2::Secp256k1 as CurveProjective;
+                use secp256k1::Fp as Field;
+                use secp256k1::Secp256k1Affine as Curve;
+                use secp256k1::Secp256k1 as CurveProjective;
             }
             else if #[cfg(feature = "kzg")] {
                 use halo2::pairing::bn256::Fq as Field;

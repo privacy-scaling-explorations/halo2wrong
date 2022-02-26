@@ -4,5 +4,5 @@ members = [
   "integer",
   "ecc",
   "ecdsa/circuit",
-  "ecdsa/secp256k1forhalo2"
+  "ecdsa/secp256k1"
 ]
