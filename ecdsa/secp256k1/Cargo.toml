@@ -23,18 +23,6 @@ num-integer = "0.1"
 num-traits = "0.2"
 rand_xorshift = "0.3"
 
-[[bench]]
-name = "fp"
-harness = false
-
-[[bench]]
-name = "fq"
-harness = false
-
-[[bench]]
-name = "point"
-harness = false
-
 [dependencies]
 
 halo2wrong = { path = "../../halo2wrong", default-features = false }
