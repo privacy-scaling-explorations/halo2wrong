@@ -778,7 +778,12 @@ macro_rules! impl_projective_curve_specific {
     ($name:ident, $base:ident, general) => {
         /// Unimplemented: there is no standard generator for this curve.
         fn generator() -> Self {
-            unimplemented!()
+            // Reference: https://neuromancer.sk/std/secg/secp256k1
+            Self {
+                x: $base([0x79be667ef9dcbbac, 0x55a06295ce870b07, 0x029bfcdb2dce28d9, 0x59f2815b16f81798]),
+                y: $base([0x483ada7726a3c465, 0x5da4fbfc0e1108a8, 0xfd17b448a6855419, 0x9c47d08ffb10d4b8]),
+                z: $base::one(),
+            }
         }
 
         fn double(&self) -> Self {
