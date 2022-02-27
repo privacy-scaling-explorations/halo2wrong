@@ -734,47 +734,6 @@ macro_rules! new_curve_impl {
 }
 
 macro_rules! impl_projective_curve_specific {
-    ($name:ident, $base:ident, special_a0_b5) => {
-        fn generator() -> Self {
-            // NOTE: This is specific to b = 5
-
-            const NEGATIVE_ONE: $base = $base::neg(&$base::one());
-            const TWO: $base = $base::from_raw([2, 0, 0, 0]);
-
-            Self {
-                x: NEGATIVE_ONE,
-                y: TWO,
-                z: $base::one(),
-            }
-        }
-
-        fn double(&self) -> Self {
-            // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-dbl-2009-l
-            //
-            // There are no points of order 2.
-
-            let a = self.x.square();
-            let b = self.y.square();
-            let c = b.square();
-            let d = self.x + b;
-            let d = d.square();
-            let d = d - a - c;
-            let d = d + d;
-            let e = a + a + a;
-            let f = e.square();
-            let z3 = self.z * self.y;
-            let z3 = z3 + z3;
-            let x3 = f - (d + d);
-            let c = c + c;
-            let c = c + c;
-            let c = c + c;
-            let y3 = e * (d - x3) - c;
-
-            let tmp = $name { x: x3, y: y3, z: z3 };
-
-            $name::conditional_select(&tmp, &$name::identity(), self.is_identity())
-        }
-    };
     ($name:ident, $base:ident, general) => {
         /// Unimplemented: there is no standard generator for this curve.
         fn generator() -> Self {
@@ -840,24 +799,15 @@ macro_rules! impl_projective_curve_ext {
 }
 
 macro_rules! impl_affine_curve_specific {
-    ($name:ident, $base:ident, special_a0_b5) => {
-        fn generator() -> Self {
-            // NOTE: This is specific to b = 5
-
-            const NEGATIVE_ONE: $base = $base::neg(&$base::from_raw([1, 0, 0, 0]));
-            const TWO: $base = $base::from_raw([2, 0, 0, 0]);
-
-            Self {
-                x: NEGATIVE_ONE,
-                y: TWO,
-                infinity: Choice::from(0u8),
-            }
-        }
-    };
     ($name:ident, $base:ident, general) => {
         /// Unimplemented: there is no standard generator for this curve.
         fn generator() -> Self {
-            unimplemented!()
+            // Reference: https://neuromancer.sk/std/secg/secp256k1
+            Self {
+                x: $base([0x79be667ef9dcbbac, 0x55a06295ce870b07, 0x029bfcdb2dce28d9, 0x59f2815b16f81798]),
+                y: $base([0x483ada7726a3c465, 0x5da4fbfc0e1108a8, 0xfd17b448a6855419, 0x9c47d08ffb10d4b8]),
+                infinity: Choice::from(0u8),
+            }
         }
     };
 }
