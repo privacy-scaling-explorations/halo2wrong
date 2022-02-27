@@ -739,8 +739,8 @@ macro_rules! impl_projective_curve_specific {
         fn generator() -> Self {
             // Reference: https://neuromancer.sk/std/secg/secp256k1
             Self {
-                x: $base([0x79be667ef9dcbbac, 0x55a06295ce870b07, 0x029bfcdb2dce28d9, 0x59f2815b16f81798]),
-                y: $base([0x483ada7726a3c465, 0x5da4fbfc0e1108a8, 0xfd17b448a6855419, 0x9c47d08ffb10d4b8]),
+                x: $base::from_raw([0x59f2815b16f81798, 0x029bfcdb2dce28d9, 0x55a06295ce870b07, 0x79be667ef9dcbbac]),
+                y: $base::from_raw([0x9c47d08ffb10d4b8, 0xfd17b448a6855419, 0x5da4fbfc0e1108a8, 0x483ada7726a3c465]),
                 z: $base::one(),
             }
         }
@@ -804,8 +804,9 @@ macro_rules! impl_affine_curve_specific {
         fn generator() -> Self {
             // Reference: https://neuromancer.sk/std/secg/secp256k1
             Self {
-                x: $base([0x79be667ef9dcbbac, 0x55a06295ce870b07, 0x029bfcdb2dce28d9, 0x59f2815b16f81798]),
-                y: $base([0x483ada7726a3c465, 0x5da4fbfc0e1108a8, 0xfd17b448a6855419, 0x9c47d08ffb10d4b8]),
+                x: $base::from_raw([0x59f2815b16f81798, 0x029bfcdb2dce28d9, 0x55a06295ce870b07, 0x79be667ef9dcbbac]),
+                y: $base::from_raw([0x9c47d08ffb10d4b8, 0xfd17b448a6855419, 0x5da4fbfc0e1108a8, 0x483ada7726a3c465]),
+
                 infinity: Choice::from(0u8),
             }
         }
@@ -934,6 +935,11 @@ new_curve_impl!(
 );
 
 #[cfg(test)]
+#[test]
+fn test_generator() {
+    assert_eq!(Secp256k1::generator().is_on_curve().unwrap_u8(), 1u8)
+}
+
 #[test]
 fn test_curve() {
     use group::tests::curve_tests;
