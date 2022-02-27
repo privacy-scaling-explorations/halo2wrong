@@ -294,26 +294,9 @@ mod tests {
     #[test]
     fn test_ecdsa_verifier() {
         use group::Group;
-        // use halo2::pasta::Eq as Projective;
-        // use halo2::pasta::EqAffine as E;
-        // use halo2::pasta::Fp as N;
-
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "secp")] {
-                use secp256k1::Fp as Field;
-                use secp256k1::Secp256k1Affine as Curve;
-                use secp256k1::Secp256k1 as CurveProjective;
-            }
-            else if #[cfg(feature = "kzg")] {
-                use halo2::pairing::bn256::Fq as Field;
-                use halo2::pairing::bn256::G1Affine as Curve;
-                use halo2::pairing::bn256::G1 as CurveProjective;
-            } else {
-                use halo2::pasta::EqAffine as Curve;
-                use halo2::pasta::Eq as CurveProjective;
-                use halo2::pasta::Fp as Field;
-            }
-        }
+        use secp256k1::Fp as Field;
+        use secp256k1::Secp256k1 as CurveProjective;
+        use secp256k1::Secp256k1Affine as Curve;
 
         let k = 20;
 
