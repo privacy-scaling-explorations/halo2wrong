@@ -277,9 +277,12 @@ mod tests {
             use halo2::pairing::bn256::G1Affine as Curve;
             use halo2::pairing::bn256::G1 as CurveProjective;
         } else {
-            use halo2::pasta::EqAffine as Curve;
-            use halo2::pasta::Eq as CurveProjective;
-            use halo2::pasta::Fp as Field;
+            use secp256k1::Fp as Field;
+            use secp256k1::Secp256k1 as CurveProjective;
+            use secp256k1::Secp256k1Affine as Curve;
+            // use halo2::pasta::EqAffine as Curve;
+            // use halo2::pasta::Eq as CurveProjective;
+            // use halo2::pasta::Fp as Field;
         }
     }
 

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-secp256k1 = { path = "../secp256k1/", default-features = true, optional = true }
-ecc = { path = "../../ecc", default-features = false }
+secp256k1 = { path = "../../ecc/secp256k1/", default-features = true, optional = true }
+ecc = { path = "../../ecc/circuit/", default-features = false }
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
