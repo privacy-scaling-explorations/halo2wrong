@@ -1,10 +1,11 @@
 use crate::halo2::arithmetic::FieldExt;
-use crate::halo2::circuit::{Chip, Layouter, Region};
+use crate::halo2::circuit::{Chip, Layouter};
 use crate::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance};
 use crate::halo2::poly::Rotation;
 use crate::main_gate::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::utils::decompose;
 use crate::{big_to_fe, Assigned, AssignedBit, AssignedCondition, AssignedValue, UnassignedValue};
+use halo2wrong::RegionCtx;
 use std::marker::PhantomData;
 
 const WIDTH: usize = 4;
@@ -75,46 +76,40 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         layouter.constrain_instance(value.cell(), config.instance, row)
     }
 
-    fn assign_constant(&self, region: &mut Region<'_, F>, constant: F, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn assign_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, constant: F) -> Result<AssignedValue<F>, Error> {
         let (assigned, _, _, _) = self.combine(
-            region,
+            ctx,
             [Term::unassigned_to_sub(Some(constant)), Term::Zero, Term::Zero, Term::Zero],
             constant,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
         Ok(assigned)
     }
 
-    fn assign_value(&self, region: &mut Region<'_, F>, unassigned: &UnassignedValue<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        self.assign_to_column(region, unassigned, MainGateColumn::A, offset)
+    fn assign_value(&self, ctx: &mut RegionCtx<'_, '_, F>, unassigned: &UnassignedValue<F>) -> Result<AssignedValue<F>, Error> {
+        self.assign_to_column(ctx, unassigned, MainGateColumn::A)
     }
 
-    fn assign_to_column(
-        &self,
-        region: &mut Region<'_, F>,
-        unassigned: &UnassignedValue<F>,
-        column: MainGateColumn,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error> {
+    fn assign_to_column(&self, ctx: &mut RegionCtx<'_, '_, F>, unassigned: &UnassignedValue<F>, column: MainGateColumn) -> Result<AssignedValue<F>, Error> {
         let column = match column {
             MainGateColumn::A => self.config.a,
             MainGateColumn::B => self.config.b,
             MainGateColumn::C => self.config.c,
             MainGateColumn::D => self.config.d,
         };
-        let cell = region.assign_advice(|| "assign value", column, *offset, || unassigned.value().ok_or(Error::Synthesis))?;
+        let cell = ctx.assign_advice("assign value", column, unassigned.value())?;
+
         // proceed to the next row
-        self.no_operation(region, offset)?;
+        self.no_operation(ctx)?;
 
         Ok(unassigned.assign(cell.cell()))
     }
 
-    fn assign_to_acc(&self, region: &mut Region<'_, F>, unassigned: &UnassignedValue<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        self.assign_to_column(region, unassigned, MainGateColumn::D, offset)
+    fn assign_to_acc(&self, ctx: &mut RegionCtx<'_, '_, F>, unassigned: &UnassignedValue<F>) -> Result<AssignedValue<F>, Error> {
+        self.assign_to_column(ctx, unassigned, MainGateColumn::D)
     }
 
-    fn assign_bit(&self, region: &mut Region<'_, F>, bit: &UnassignedValue<F>, offset: &mut usize) -> Result<AssignedBit<F>, Error> {
+    fn assign_bit(&self, ctx: &mut RegionCtx<'_, '_, F>, bit: &UnassignedValue<F>) -> Result<AssignedBit<F>, Error> {
         // val * val - val  = 0
 
         // Witness layout:
@@ -123,7 +118,7 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | val | val | val | - |
 
         let (a, b, c, _) = self.combine(
-            region,
+            ctx,
             [
                 Term::unassigned_to_mul(bit.value()),
                 Term::unassigned_to_mul(bit.value()),
@@ -131,94 +126,75 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::Zero,
             ],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
-        region.constrain_equal(a.cell(), b.cell())?;
-        region.constrain_equal(b.cell(), c.cell())?;
+        ctx.constrain_equal(a.cell(), b.cell())?;
+        ctx.constrain_equal(b.cell(), c.cell())?;
 
         Ok(c.into())
     }
 
-    fn add(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        self.add_with_constant(region, a, b, F::zero(), offset)
+    fn add(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+        self.add_with_constant(ctx, a, b, F::zero())
     }
 
-    fn sub(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
-        self.sub_with_constant(region, a, b, F::zero(), offset)
+    fn sub(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+        self.sub_with_constant(ctx, a, b, F::zero())
     }
 
-    fn add_with_constant(
-        &self,
-        region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: impl Assigned<F>,
-        constant: F,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error> {
+    fn add_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => Some(a + b + constant),
             _ => None,
         };
 
         let (_, _, res, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::assigned_to_add(&b), Term::unassigned_to_sub(c), Term::Zero],
             constant,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(res)
     }
 
-    fn add_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, constant: F, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn add_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + constant);
 
         let (_, _, res, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::Zero, Term::unassigned_to_sub(c), Term::Zero],
             constant,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(res)
     }
 
-    fn neg_with_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, constant: F, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn neg_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| -a + constant);
 
         let (_, _, res, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_sub(&a), Term::Zero, Term::unassigned_to_sub(c), Term::Zero],
             constant,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(res)
     }
 
-    fn sub_with_constant(
-        &self,
-        region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: impl Assigned<F>,
-        constant: F,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error> {
+    fn sub_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => Some(a - b + constant),
             _ => None,
         };
 
         let (_, _, res, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::assigned_to_sub(&b), Term::unassigned_to_sub(c), Term::Zero],
             constant,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
@@ -227,12 +203,11 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn sub_sub_with_constant(
         &self,
-        region: &mut Region<'_, F>,
+        ctx: &mut RegionCtx<'_, '_, F>,
         a: impl Assigned<F>,
         b_0: impl Assigned<F>,
         b_1: impl Assigned<F>,
         constant: F,
-        offset: &mut usize,
     ) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b_0.value(), b_1.value()) {
             (Some(a), Some(b_0), Some(b_1)) => Some(a - b_0 - b_1 + constant),
@@ -240,7 +215,7 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         };
 
         let (_, _, _, res) = self.combine(
-            region,
+            ctx,
             [
                 Term::assigned_to_add(&a),
                 Term::assigned_to_sub(&b_0),
@@ -248,32 +223,30 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::unassigned_to_sub(c),
             ],
             constant,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(res)
     }
 
-    fn mul2(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn mul2(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + a);
 
         let (_, _, res, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::assigned_to_add(&a), Term::unassigned_to_sub(c), Term::Zero],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(res)
     }
 
-    fn mul3(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn mul3(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + a + a);
 
         let (_, _, _, res) = self.combine(
-            region,
+            ctx,
             [
                 Term::assigned_to_add(&a),
                 Term::assigned_to_add(&a),
@@ -281,31 +254,29 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::unassigned_to_sub(c),
             ],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(res)
     }
 
-    fn mul(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn mul(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => Some(a * b),
             _ => None,
         };
 
         let (_, _, res, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&a), Term::assigned_to_mul(&b), Term::unassigned_to_sub(c), Term::Zero],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(res)
     }
 
-    fn div_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn div_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => match b.invert().into() {
                 Some(b_inverted) => Some(a * &b_inverted),
@@ -316,29 +287,22 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         };
 
         let (_, res, _, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&b), Term::unassigned_to_mul(c), Term::assigned_to_add(&a), Term::Zero],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(res)
     }
 
-    fn div(
-        &self,
-        region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: impl Assigned<F>,
-        offset: &mut usize,
-    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
-        let (b_inverted, cond) = self.invert(region, b, offset)?;
-        let res = self.mul(region, a, b_inverted, offset)?;
+    fn div(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
+        let (b_inverted, cond) = self.invert(ctx, b)?;
+        let res = self.mul(ctx, a, b_inverted)?;
         Ok((res, cond))
     }
 
-    fn invert_unsafe(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn invert_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
         // Just enforce the equation below
         // If input 'a' is zero then no valid witness will be found
         // a * a' - 1 = 0
@@ -353,17 +317,16 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         };
 
         let (_, inverse, _, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&a), Term::unassigned_to_mul(inverse), Term::Zero, Term::Zero],
             -F::one(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(inverse)
     }
 
-    fn invert(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
+    fn invert(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
         let (one, zero) = (F::one(), F::zero());
 
         // Returns 'r' as a condition bit that defines if inversion successful or not
@@ -388,17 +351,16 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             _ => (None, None),
         };
 
-        let r = self.assign_bit(region, &r.into(), offset)?;
+        let r = self.assign_bit(ctx, &r.into())?;
 
         // (a * a') - 1 + r = 0
         // | A | B  | C | D |
         // | - | -- | - | - |
         // | a | a' | r | - |
         let (_, a_inv, _, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&a), Term::unassigned_to_mul(a_inv), Term::assigned_to_add(&r), Term::Zero],
             -one,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
@@ -408,35 +370,33 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | r | a' | r | - |
 
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&r), Term::assigned_to_mul(&a_inv), Term::assigned_to_sub(&r), Term::Zero],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok((a_inv, r))
     }
 
-    fn assert_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+    fn assert_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::assigned_to_sub(&b), Term::Zero, Term::Zero],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(())
     }
 
-    fn assert_not_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+    fn assert_not_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
         // (a - b) must have an inverse
-        let c = self.sub_with_constant(region, a, b, F::zero(), offset)?;
-        self.assert_not_zero(region, c, offset)
+        let c = self.sub_with_constant(ctx, a, b, F::zero())?;
+        self.assert_not_zero(ctx, c)
     }
 
-    fn is_equal(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
+    fn is_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedCondition<F>, Error> {
         let (one, zero) = (F::one(), F::zero());
 
         // Given a and b equation below is enforced
@@ -461,8 +421,8 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             _ => (None, None),
         };
 
-        let r = self.assign_bit(region, &r.into(), offset)?;
-        let dif = self.sub(region, a, b, offset)?;
+        let r = self.assign_bit(ctx, &r.into())?;
+        let dif = self.sub(ctx, a, b)?;
 
         // 0 = rx - r - x + u
         // | A   | B | C | D |
@@ -475,10 +435,9 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         };
 
         let (_, _, u, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_sub(&r), Term::unassigned_to_sub(x), Term::unassigned_to_add(u), Term::Zero],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
@@ -488,21 +447,20 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | dif | u | r | - |
 
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&dif), Term::assigned_to_mul(&u), Term::assigned_to_add(&r), Term::Zero],
             -one,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(r)
     }
 
-    fn assert_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
-        self.assert_equal_to_constant(region, a, F::zero(), offset)
+    fn assert_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error> {
+        self.assert_equal_to_constant(ctx, a, F::zero())
     }
 
-    fn assert_not_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+    fn assert_not_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error> {
         // Non-zero element must have an inverse
         // a * w - 1 = 0
 
@@ -516,38 +474,36 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         };
 
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&a), Term::unassigned_to_mul(w), Term::Zero, Term::Zero],
             -F::one(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(())
     }
 
-    fn is_zero(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
-        let (_, is_zero) = self.invert(region, a, offset)?;
+    fn is_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedCondition<F>, Error> {
+        let (_, is_zero) = self.invert(ctx, a)?;
         Ok(is_zero)
     }
 
-    fn assert_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
-        self.assert_equal_to_constant(region, a, F::one(), offset)
+    fn assert_one(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error> {
+        self.assert_equal_to_constant(ctx, a, F::one())
     }
 
-    fn assert_equal_to_constant(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: F, offset: &mut usize) -> Result<(), Error> {
+    fn assert_equal_to_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: F) -> Result<(), Error> {
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::Zero, Term::Zero, Term::Zero],
             -b,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(())
     }
 
-    fn or(&self, region: &mut Region<'_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
+    fn or(&self, ctx: &mut RegionCtx<'_, '_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error> {
         let c = match (c1.value(), c2.value()) {
             (Some(c1), Some(c2)) => Some(c1 + c2 - c1 * c2),
             _ => None,
@@ -557,17 +513,16 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         // c + c1 * c2 - c1 - c2 = 0
         let (_, _, c, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_sub(c1), Term::assigned_to_sub(c2), Term::unassigned_to_add(c), Term::Zero],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(c.into())
     }
 
-    fn and(&self, region: &mut Region<'_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
+    fn and(&self, ctx: &mut RegionCtx<'_, '_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error> {
         let c = match (c1.value(), c2.value()) {
             (Some(c1), Some(c2)) => Some(c1 * c2),
             _ => None,
@@ -576,40 +531,31 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         let zero = F::zero();
 
         let (_, _, c, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(c1), Term::assigned_to_mul(c2), Term::unassigned_to_sub(c), Term::Zero],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(c.into())
     }
 
-    fn not(&self, region: &mut Region<'_, F>, c: &AssignedCondition<F>, offset: &mut usize) -> Result<AssignedCondition<F>, Error> {
+    fn not(&self, ctx: &mut RegionCtx<'_, '_, F>, c: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error> {
         let one = F::one();
 
         let not_c = c.value().map(|c| one - c);
 
         let (_, b, _, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(c), Term::unassigned_to_add(not_c), Term::Zero, Term::Zero],
             -one,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         Ok(b.into())
     }
 
-    fn select(
-        &self,
-        region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: impl Assigned<F>,
-        cond: &AssignedCondition<F>,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error> {
+    fn select(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, cond: &AssignedCondition<F>) -> Result<AssignedValue<F>, Error> {
         // We should satisfy the equation below with bit asserted condition flag
         // c (a-b) + b - res = 0
 
@@ -630,16 +576,15 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         // a - b - dif = 0
         let (_, _, _, dif) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::assigned_to_sub(&b), Term::Zero, Term::unassigned_to_sub(dif)],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // cond * dif + b + a_or_b  = 0
         let (_, _, _, res) = self.combine(
-            region,
+            ctx,
             [
                 Term::assigned_to_mul(&dif),
                 Term::assigned_to_mul(cond),
@@ -647,21 +592,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::unassigned_to_sub(res),
             ],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(res)
     }
 
-    fn select_or_assign(
-        &self,
-        region: &mut Region<'_, F>,
-        a: impl Assigned<F>,
-        b: F,
-        cond: &AssignedCondition<F>,
-        offset: &mut usize,
-    ) -> Result<AssignedValue<F>, Error> {
+    fn select_or_assign(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: F, cond: &AssignedCondition<F>) -> Result<AssignedValue<F>, Error> {
         // We should satisfy the equation below with bit asserted condition flag
         // c (a-b_constant) + b_constant - res = 0
 
@@ -682,16 +619,15 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         // a - b - dif = 0
         let (_, _, _, dif) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_add(&a), Term::Zero, Term::Zero, Term::unassigned_to_sub(dif)],
             -b,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // cond * dif + b + a_or_b  = 0
         let (_, _, _, res) = self.combine(
-            region,
+            ctx,
             [
                 Term::assigned_to_mul(&dif),
                 Term::assigned_to_mul(cond),
@@ -699,14 +635,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::unassigned_to_sub(res),
             ],
             b,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(res)
     }
 
-    fn assert_bit(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+    fn assert_bit(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error> {
         // val * val - val  = 0
 
         // Witness layout:
@@ -715,20 +650,19 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | val | val | val | - |
 
         let (a, b, c, _) = self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&a), Term::assigned_to_mul(&a), Term::assigned_to_sub(&a), Term::Zero],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
-        region.constrain_equal(a.cell(), b.cell())?;
-        region.constrain_equal(b.cell(), c.cell())?;
+        ctx.constrain_equal(a.cell(), b.cell())?;
+        ctx.constrain_equal(b.cell(), c.cell())?;
 
         Ok(())
     }
 
-    fn one_or_one(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+    fn one_or_one(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
         // (a-1) * (b-1)  = 0
 
         // Witness layout:
@@ -737,80 +671,64 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | val | val | -   | - |
 
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_sub(&a), Term::assigned_to_sub(&b), Term::Zero, Term::Zero],
             F::one(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
         Ok(())
     }
 
-    fn combine(
-        &self,
-        region: &mut Region<'_, F>,
-        terms: [Term<F>; WIDTH],
-        constant: F,
-        offset: &mut usize,
-        option: CombinationOption<F>,
-    ) -> Result<CombinedValues<F>, Error> {
+    fn combine(&self, ctx: &mut RegionCtx<'_, '_, F>, terms: [Term<F>; WIDTH], constant: F, option: CombinationOption<F>) -> Result<CombinedValues<F>, Error> {
         let (c_0, u_0) = (terms[0].coeff(), terms[0].base());
         let (c_1, u_1) = (terms[1].coeff(), terms[1].base());
         let (c_2, u_2) = (terms[2].coeff(), terms[2].base());
         let (c_3, u_3) = (terms[3].coeff(), terms[3].base());
 
-        let cell_0 = region
-            .assign_advice(|| "coeff_0", self.config.a, *offset, || c_0.ok_or(Error::Synthesis))?
-            .cell();
-        let cell_1 = region
-            .assign_advice(|| "coeff_1", self.config.b, *offset, || c_1.ok_or(Error::Synthesis))?
-            .cell();
-        let cell_2 = region
-            .assign_advice(|| "coeff_2", self.config.c, *offset, || c_2.ok_or(Error::Synthesis))?
-            .cell();
-        let cell_3 = region
-            .assign_advice(|| "coeff_3", self.config.d, *offset, || c_3.ok_or(Error::Synthesis))?
-            .cell();
+        let cell_0 = ctx.assign_advice("coeff_0", self.config.a, c_0)?.cell();
+        let cell_1 = ctx.assign_advice("coeff_1", self.config.b, c_1)?.cell();
+        let cell_2 = ctx.assign_advice("coeff_2", self.config.c, c_2)?.cell();
+        let cell_3 = ctx.assign_advice("coeff_3", self.config.d, c_3)?.cell();
 
-        region.assign_fixed(|| "base_0", self.config.sa, *offset, || Ok(u_0))?;
-        region.assign_fixed(|| "base_1", self.config.sb, *offset, || Ok(u_1))?;
-        region.assign_fixed(|| "base_2", self.config.sc, *offset, || Ok(u_2))?;
-        region.assign_fixed(|| "base_3", self.config.sd, *offset, || Ok(u_3))?;
+        ctx.assign_fixed("base_0", self.config.sa, u_0)?;
+        ctx.assign_fixed("base_1", self.config.sb, u_1)?;
+        ctx.assign_fixed("base_2", self.config.sc, u_2)?;
+        ctx.assign_fixed("base_3", self.config.sd, u_3)?;
 
-        region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(constant))?;
+        ctx.assign_fixed("s_constant", self.config.s_constant, constant)?;
 
         match option {
             CombinationOption::Common(option) => match option {
                 CombinationOptionCommon::CombineToNextMul(next) => {
-                    region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
-                    region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(next))?;
+                    ctx.assign_fixed("s_mul", self.config.s_mul, F::one())?;
+                    ctx.assign_fixed("sd_next", self.config.sd_next, next)?;
                 }
                 CombinationOptionCommon::CombineToNextScaleMul(next, scale) => {
-                    region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(scale))?;
-                    region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(next))?;
+                    ctx.assign_fixed("s_mul", self.config.s_mul, scale)?;
+                    ctx.assign_fixed("sd_next", self.config.sd_next, next)?;
                 }
                 CombinationOptionCommon::CombineToNextAdd(next) => {
-                    region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(next))?;
-                    region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
+                    ctx.assign_fixed("sd_next", self.config.sd_next, next)?;
+                    ctx.assign_fixed("s_mul unused", self.config.s_mul, F::zero())?;
                 }
                 CombinationOptionCommon::OneLinerMul => {
-                    region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::one()))?;
-                    region.assign_fixed(|| "sd_next unused", self.config.sd_next, *offset, || Ok(F::zero()))?;
+                    ctx.assign_fixed("s_mul", self.config.s_mul, F::one())?;
+                    ctx.assign_fixed("sd_next unused", self.config.sd_next, F::zero())?;
                 }
                 CombinationOptionCommon::OneLinerAdd => {
-                    region.assign_fixed(|| "sd_next unused", self.config.sd_next, *offset, || Ok(F::zero()))?;
-                    region.assign_fixed(|| "s_mul unused", self.config.s_mul, *offset, || Ok(F::zero()))?;
+                    ctx.assign_fixed("sd_next unused", self.config.sd_next, F::zero())?;
+                    ctx.assign_fixed("s_mul unused", self.config.s_mul, F::zero())?;
                 }
             },
         };
 
-        terms[0].constrain_equal(region, cell_0)?;
-        terms[1].constrain_equal(region, cell_1)?;
-        terms[2].constrain_equal(region, cell_2)?;
-        terms[3].constrain_equal(region, cell_3)?;
+        terms[0].constrain_equal(ctx.region, cell_0)?;
+        terms[1].constrain_equal(ctx.region, cell_1)?;
+        terms[2].constrain_equal(ctx.region, cell_2)?;
+        terms[3].constrain_equal(ctx.region, cell_3)?;
 
-        *offset += 1;
+        ctx.next();
 
         let a_0 = AssignedValue::new(cell_0, c_0);
         let a_1 = AssignedValue::new(cell_1, c_1);
@@ -820,25 +738,18 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok((a_0, a_1, a_2, a_3))
     }
 
-    fn nand(&self, region: &mut Region<'_, F>, a: impl Assigned<F>, b: impl Assigned<F>, offset: &mut usize) -> Result<(), Error> {
+    fn nand(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
         self.combine(
-            region,
+            ctx,
             [Term::assigned_to_mul(&a), Term::assigned_to_mul(&b), Term::Zero, Term::Zero],
             F::zero(),
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn decompose(
-        &self,
-        region: &mut Region<'_, F>,
-        composed: impl Assigned<F>,
-        number_of_bits: usize,
-        offset: &mut usize,
-    ) -> Result<Vec<AssignedBit<F>>, Error> {
+    fn decompose(&self, ctx: &mut RegionCtx<'_, '_, F>, composed: impl Assigned<F>, number_of_bits: usize) -> Result<Vec<AssignedBit<F>>, Error> {
         use num_bigint::BigUint as big_uint;
         use num_traits::One;
 
@@ -855,7 +766,7 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         for i in 0..number_of_bits {
             let bit = decomposed_value.as_ref().map(|bits| bits[i]);
-            assigned_bits.push(self.assign_bit(region, &bit.into(), offset)?);
+            assigned_bits.push(self.assign_bit(ctx, &bit.into())?);
         }
 
         let width = WIDTH - 1;
@@ -876,7 +787,7 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             let coeff_2 = &assigned_bits[j + 2];
 
             self.combine(
-                region,
+                ctx,
                 [
                     Term::Assigned(&coeff_0, base_0),
                     Term::Assigned(&coeff_1, base_1),
@@ -884,7 +795,6 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                     Term::unassigned_to_sub(acc),
                 ],
                 F::zero(),
-                offset,
                 CombinationOptionCommon::CombineToNextAdd(F::one()).into(),
             )?;
 
@@ -920,10 +830,9 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             };
 
             self.combine(
-                region,
+                ctx,
                 [term_0, term_1, Term::Zero, Term::unassigned_to_sub(acc)],
                 F::zero(),
-                offset,
                 CombinationOptionCommon::OneLinerAdd.into(),
             )?;
         }
@@ -935,15 +844,15 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(assigned_bits)
     }
 
-    fn no_operation(&self, region: &mut Region<'_, F>, offset: &mut usize) -> Result<(), Error> {
-        region.assign_fixed(|| "s_mul", self.config.s_mul, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sc", self.config.sc, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sa", self.config.sa, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sb", self.config.sb, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd", self.config.sd, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "sd_next", self.config.sd_next, *offset, || Ok(F::zero()))?;
-        region.assign_fixed(|| "s_constant", self.config.s_constant, *offset, || Ok(F::zero()))?;
-        *offset += 1;
+    fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
+        ctx.assign_fixed("s_mul", self.config.s_mul, F::zero())?;
+        ctx.assign_fixed("sc", self.config.sc, F::zero())?;
+        ctx.assign_fixed("sa", self.config.sa, F::zero())?;
+        ctx.assign_fixed("sb", self.config.sb, F::zero())?;
+        ctx.assign_fixed("sd", self.config.sd, F::zero())?;
+        ctx.assign_fixed("sd_next", self.config.sd_next, F::zero())?;
+        ctx.assign_fixed("s_constant", self.config.s_constant, F::zero())?;
+        ctx.next();
         Ok(())
     }
 }
@@ -1027,6 +936,7 @@ mod tests {
     use crate::utils::decompose;
     use crate::{big_to_fe, AssignedCondition, UnassignedValue};
     use group::ff::PrimeField;
+    use halo2wrong::RegionCtx;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
 
@@ -1079,7 +989,8 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-                    let value = main_gate.assign_value(&mut region, &Some(self.public_input).into(), offset)?;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let value = main_gate.assign_value(ctx, &Some(self.public_input).into())?;
                     Ok(value)
                 },
             )?;
@@ -1135,7 +1046,7 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
                     // OneLinerAdd
 
                     let (a_0, a_1, a_2, a_3) = (rand(), rand(), rand(), rand());
@@ -1150,7 +1061,7 @@ mod tests {
                         Term::Unassigned(Some(a_3), r_3),
                     ];
 
-                    let (u_0, u_1, u_2, u_3) = main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::OneLinerAdd.into())?;
+                    let (u_0, u_1, u_2, u_3) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerAdd.into())?;
 
                     let terms = [
                         Term::Assigned(&u_0, r_0),
@@ -1159,7 +1070,7 @@ mod tests {
                         Term::Assigned(&u_3, r_3),
                     ];
 
-                    main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::OneLinerAdd.into())?;
+                    main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerAdd.into())?;
 
                     // OneLinerMul
 
@@ -1175,7 +1086,7 @@ mod tests {
                         Term::Unassigned(Some(a_3), r_3),
                     ];
 
-                    let (u_0, u_1, u_2, u_3) = main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::OneLinerMul.into())?;
+                    let (u_0, u_1, u_2, u_3) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerMul.into())?;
 
                     let terms = [
                         Term::Assigned(&u_0, r_0),
@@ -1184,7 +1095,7 @@ mod tests {
                         Term::Assigned(&u_3, r_3),
                     ];
 
-                    main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::OneLinerMul.into())?;
+                    main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerMul.into())?;
 
                     // CombineToNextMul(F)
 
@@ -1200,10 +1111,9 @@ mod tests {
                         Term::Unassigned(Some(a_3), r_3),
                     ];
 
-                    let (u_0, u_1, u_2, u_3) =
-                        main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::CombineToNextMul(r_next).into())?;
+                    let (u_0, u_1, u_2, u_3) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextMul(r_next).into())?;
 
-                    main_gate.assign_to_acc(&mut region, &Some(a_next).into(), offset)?;
+                    main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
                     let terms = [
                         Term::Assigned(&u_0, r_0),
@@ -1212,9 +1122,9 @@ mod tests {
                         Term::Assigned(&u_3, r_3),
                     ];
 
-                    main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::CombineToNextMul(r_next).into())?;
+                    main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextMul(r_next).into())?;
 
-                    main_gate.assign_to_acc(&mut region, &Some(a_next).into(), offset)?;
+                    main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
                     // CombineToNextScaleMul(F, F)
 
@@ -1230,15 +1140,10 @@ mod tests {
                         Term::Unassigned(Some(a_3), r_3),
                     ];
 
-                    let (u_0, u_1, u_2, u_3) = main_gate.combine(
-                        &mut region,
-                        terms,
-                        constant,
-                        offset,
-                        CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
-                    )?;
+                    let (u_0, u_1, u_2, u_3) =
+                        main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into())?;
 
-                    main_gate.assign_to_acc(&mut region, &Some(a_next).into(), offset)?;
+                    main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
                     let terms = [
                         Term::Assigned(&u_0, r_0),
@@ -1247,15 +1152,9 @@ mod tests {
                         Term::Assigned(&u_3, r_3),
                     ];
 
-                    main_gate.combine(
-                        &mut region,
-                        terms,
-                        constant,
-                        offset,
-                        CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
-                    )?;
+                    main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into())?;
 
-                    main_gate.assign_to_acc(&mut region, &Some(a_next).into(), offset)?;
+                    main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
                     // CombineToNextAdd(F)
 
@@ -1271,10 +1170,9 @@ mod tests {
                         Term::Unassigned(Some(a_3), r_3),
                     ];
 
-                    let (u_0, u_1, u_2, u_3) =
-                        main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::CombineToNextAdd(r_next).into())?;
+                    let (u_0, u_1, u_2, u_3) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextAdd(r_next).into())?;
 
-                    main_gate.assign_to_acc(&mut region, &Some(a_next).into(), offset)?;
+                    main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
                     let terms = [
                         Term::Assigned(&u_0, r_0),
@@ -1283,9 +1181,9 @@ mod tests {
                         Term::Assigned(&u_3, r_3),
                     ];
 
-                    main_gate.combine(&mut region, terms, constant, offset, CombinationOptionCommon::CombineToNextAdd(r_next).into())?;
+                    main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextAdd(r_next).into())?;
 
-                    main_gate.assign_to_acc(&mut region, &Some(a_next).into(), offset)?;
+                    main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
                     Ok(())
                 },
@@ -1333,19 +1231,19 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
                     if self.neg_path {
                         let minus_one = -F::one();
-                        main_gate.assign_bit(&mut region, &UnassignedValue(Some(minus_one)), offset)?;
+                        main_gate.assign_bit(ctx, &UnassignedValue(Some(minus_one)))?;
                     } else {
                         let one = F::one();
                         let zero = F::zero();
 
-                        let u = main_gate.assign_bit(&mut region, &UnassignedValue(Some(one)), offset)?;
-                        main_gate.assert_bit(&mut region, u, offset)?;
+                        let u = main_gate.assign_bit(ctx, &UnassignedValue(Some(one)))?;
+                        main_gate.assert_bit(ctx, u)?;
 
-                        let u = main_gate.assign_bit(&mut region, &UnassignedValue(Some(zero)), offset)?;
-                        main_gate.assert_bit(&mut region, u, offset)?;
+                        let u = main_gate.assign_bit(ctx, &UnassignedValue(Some(zero)))?;
+                        main_gate.assert_bit(ctx, u)?;
                     }
 
                     Ok(())
@@ -1412,68 +1310,68 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
                     if self.neg_path {
                     } else {
                         let one = F::one();
                         let zero = F::zero();
 
-                        let assigned_one = &main_gate.assign_bit(&mut region, &Some(one).into(), offset)?;
+                        let assigned_one = &main_gate.assign_bit(ctx, &Some(one).into())?;
 
-                        let assigned_zero = &main_gate.assign_bit(&mut region, &Some(zero).into(), offset)?;
+                        let assigned_zero = &main_gate.assign_bit(ctx, &Some(zero).into())?;
 
                         // assert_equal_to_constant
 
                         let val = rand();
-                        let assigned = &main_gate.assign_value(&mut region, &Some(val).into(), offset)?;
-                        main_gate.assert_equal_to_constant(&mut region, assigned, val, offset)?;
-                        main_gate.assert_not_zero(&mut region, assigned, offset)?;
+                        let assigned = &main_gate.assign_value(ctx, &Some(val).into())?;
+                        main_gate.assert_equal_to_constant(ctx, assigned, val)?;
+                        main_gate.assert_not_zero(ctx, assigned)?;
 
                         // assert_equal
 
                         let val = rand();
-                        let assigned_0 = main_gate.assign_value(&mut region, &Some(val).into(), offset)?;
-                        let assigned_1 = main_gate.assign_value(&mut region, &Some(val).into(), offset)?;
-                        main_gate.assert_equal(&mut region, assigned_0, assigned_1, offset)?;
+                        let assigned_0 = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let assigned_1 = main_gate.assign_value(ctx, &Some(val).into())?;
+                        main_gate.assert_equal(ctx, assigned_0, assigned_1)?;
 
                         // assert_not_equal
 
                         let val_0 = rand();
                         let val_1 = rand();
-                        let assigned_0 = main_gate.assign_value(&mut region, &Some(val_0).into(), offset)?;
-                        let assigned_1 = main_gate.assign_value(&mut region, &Some(val_1).into(), offset)?;
-                        main_gate.assert_not_equal(&mut region, assigned_0, assigned_1, offset)?;
+                        let assigned_0 = main_gate.assign_value(ctx, &Some(val_0).into())?;
+                        let assigned_1 = main_gate.assign_value(ctx, &Some(val_1).into())?;
+                        main_gate.assert_not_equal(ctx, assigned_0, assigned_1)?;
 
                         // is_equal
 
                         let val = rand();
-                        let assigned_0 = main_gate.assign_value(&mut region, &Some(val).into(), offset)?;
-                        let assigned_1 = main_gate.assign_value(&mut region, &Some(val).into(), offset)?;
-                        let is_equal = &main_gate.is_equal(&mut region, assigned_0, assigned_1, offset)?;
+                        let assigned_0 = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let assigned_1 = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let is_equal = &main_gate.is_equal(ctx, assigned_0, assigned_1)?;
 
-                        main_gate.assert_one(&mut region, is_equal, offset)?;
-                        main_gate.assert_equal(&mut region, is_equal, assigned_one, offset)?;
+                        main_gate.assert_one(ctx, is_equal)?;
+                        main_gate.assert_equal(ctx, is_equal, assigned_one)?;
 
                         let val_0 = rand();
                         let val_1 = rand();
-                        let assigned_0 = main_gate.assign_value(&mut region, &Some(val_0).into(), offset)?;
-                        let assigned_1 = main_gate.assign_value(&mut region, &Some(val_1).into(), offset)?;
-                        let is_equal = &main_gate.is_equal(&mut region, assigned_0, assigned_1, offset)?;
+                        let assigned_0 = main_gate.assign_value(ctx, &Some(val_0).into())?;
+                        let assigned_1 = main_gate.assign_value(ctx, &Some(val_1).into())?;
+                        let is_equal = &main_gate.is_equal(ctx, assigned_0, assigned_1)?;
 
-                        main_gate.assert_zero(&mut region, is_equal, offset)?;
-                        main_gate.assert_equal(&mut region, is_equal, assigned_zero, offset)?;
+                        main_gate.assert_zero(ctx, is_equal)?;
+                        main_gate.assert_equal(ctx, is_equal, assigned_zero)?;
 
                         // is_zero
 
                         let val = rand();
-                        let assigned = main_gate.assign_value(&mut region, &Some(val).into(), offset)?;
-                        let is_zero = &main_gate.is_zero(&mut region, assigned, offset)?;
-                        main_gate.assert_zero(&mut region, is_zero, offset)?;
-                        main_gate.assert_equal(&mut region, is_zero, assigned_zero, offset)?;
+                        let assigned = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let is_zero = &main_gate.is_zero(ctx, assigned)?;
+                        main_gate.assert_zero(ctx, is_zero)?;
+                        main_gate.assert_equal(ctx, is_zero, assigned_zero)?;
 
-                        let is_zero = &main_gate.is_zero(&mut region, assigned_zero, offset)?;
-                        main_gate.assert_one(&mut region, is_zero, offset)?;
-                        main_gate.assert_equal(&mut region, is_zero, assigned_one, offset)?;
+                        let is_zero = &main_gate.is_zero(ctx, assigned_zero)?;
+                        main_gate.assert_one(ctx, is_zero)?;
+                        main_gate.assert_equal(ctx, is_zero, assigned_one)?;
                     }
 
                     Ok(())
@@ -1537,7 +1435,8 @@ mod tests {
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
-                    let mut offset = 0;
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
 
                     let a = rand();
                     let b = rand();
@@ -1546,11 +1445,11 @@ mod tests {
                     let b = Some(b);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let c_1 = main_gate.add(&mut region, a, b, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let b = main_gate.assign_value(ctx, &b.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let c_1 = main_gate.add(ctx, a, b)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     let a = rand();
                     let b = rand();
@@ -1558,10 +1457,10 @@ mod tests {
                     let a = Some(a);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let c_1 = main_gate.add_constant(&mut region, a, b, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let c_1 = main_gate.add_constant(ctx, a, b)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     let a = rand();
                     let b = rand();
@@ -1571,11 +1470,11 @@ mod tests {
                     let b = Some(b);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let c_1 = main_gate.add_with_constant(&mut region, a, b, constant, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let b = main_gate.assign_value(ctx, &b.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let c_1 = main_gate.add_with_constant(ctx, a, b, constant)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     let a = rand();
                     let b = rand();
@@ -1584,11 +1483,11 @@ mod tests {
                     let b = Some(b);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let c_1 = main_gate.sub(&mut region, a, b, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let b = main_gate.assign_value(ctx, &b.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let c_1 = main_gate.sub(ctx, a, b)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     let a = rand();
                     let b = rand();
@@ -1598,11 +1497,11 @@ mod tests {
                     let b = Some(b);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let c_1 = main_gate.sub_with_constant(&mut region, a, b, constant, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let b = main_gate.assign_value(ctx, &b.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let c_1 = main_gate.sub_with_constant(ctx, a, b, constant)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     let a = rand();
                     let b = rand();
@@ -1611,11 +1510,11 @@ mod tests {
                     let b = Some(b);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let c_1 = main_gate.mul(&mut region, a, b, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let b = main_gate.assign_value(ctx, &b.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let c_1 = main_gate.mul(ctx, a, b)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     let a = rand();
                     let b = rand();
@@ -1624,11 +1523,11 @@ mod tests {
                     let b = Some(b);
                     let c = Some(c);
 
-                    let a = main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let c_0 = main_gate.assign_value(&mut region, &c.into(), &mut offset)?;
-                    let (c_1, _) = main_gate.div(&mut region, a, b, &mut offset)?;
-                    main_gate.assert_equal(&mut region, c_0, c_1, &mut offset)?;
+                    let a = main_gate.assign_value(ctx, &a.into())?;
+                    let b = main_gate.assign_value(ctx, &b.into())?;
+                    let c_0 = main_gate.assign_value(ctx, &c.into())?;
+                    let (c_1, _) = main_gate.div(ctx, a, b)?;
+                    main_gate.assert_equal(ctx, c_0, c_1)?;
 
                     Ok(())
                 },
@@ -1681,7 +1580,8 @@ mod tests {
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
-                    let mut offset = 0;
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
 
                     let a = rand();
                     let b = rand();
@@ -1691,11 +1591,11 @@ mod tests {
                     let b = Some(b);
                     let cond = Some(cond);
 
-                    let a = &main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = &main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond.into(), &mut offset)?.into();
-                    let selected = main_gate.select(&mut region, a, b, &cond, &mut offset)?;
-                    main_gate.assert_equal(&mut region, b, selected, &mut offset)?;
+                    let a = &main_gate.assign_value(ctx, &a.into())?;
+                    let b = &main_gate.assign_value(ctx, &b.into())?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let selected = main_gate.select(ctx, a, b, &cond)?;
+                    main_gate.assert_equal(ctx, b, selected)?;
 
                     let a = rand();
                     let b = rand();
@@ -1705,11 +1605,11 @@ mod tests {
                     let b = Some(b);
                     let cond = Some(cond);
 
-                    let a = &main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b = &main_gate.assign_value(&mut region, &b.into(), &mut offset)?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond.into(), &mut offset)?.into();
-                    let selected = main_gate.select(&mut region, a, b, &cond, &mut offset)?;
-                    main_gate.assert_equal(&mut region, a, selected, &mut offset)?;
+                    let a = &main_gate.assign_value(ctx, &a.into())?;
+                    let b = &main_gate.assign_value(ctx, &b.into())?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let selected = main_gate.select(ctx, a, b, &cond)?;
+                    main_gate.assert_equal(ctx, a, selected)?;
 
                     let a = rand();
                     let b_constant = rand();
@@ -1719,11 +1619,11 @@ mod tests {
                     let b_unassigned = Some(b_constant);
                     let cond = Some(cond);
 
-                    let a = &main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let b_assigned = &main_gate.assign_value(&mut region, &b_unassigned.into(), &mut offset)?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond.into(), &mut offset)?.into();
-                    let selected = main_gate.select_or_assign(&mut region, a, b_constant, &cond, &mut offset)?;
-                    main_gate.assert_equal(&mut region, b_assigned, selected, &mut offset)?;
+                    let a = &main_gate.assign_value(ctx, &a.into())?;
+                    let b_assigned = &main_gate.assign_value(ctx, &b_unassigned.into())?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let selected = main_gate.select_or_assign(ctx, a, b_constant, &cond)?;
+                    main_gate.assert_equal(ctx, b_assigned, selected)?;
 
                     let a = rand();
                     let b_constant = rand();
@@ -1732,10 +1632,10 @@ mod tests {
                     let a = Some(a);
                     let cond = Some(cond);
 
-                    let a = &main_gate.assign_value(&mut region, &a.into(), &mut offset)?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(&mut region, &cond.into(), &mut offset)?.into();
-                    let selected = main_gate.select_or_assign(&mut region, a, b_constant, &cond, &mut offset)?;
-                    main_gate.assert_equal(&mut region, a, selected, &mut offset)?;
+                    let a = &main_gate.assign_value(ctx, &a.into())?;
+                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let selected = main_gate.select_or_assign(ctx, a, b_constant, &cond)?;
+                    main_gate.assert_equal(ctx, a, selected)?;
 
                     Ok(())
                 },
@@ -1793,19 +1693,19 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
-
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
                     let a = rand();
                     let number_of_bits = F::NUM_BITS as usize;
                     let decomposed = decompose(a, number_of_bits, 1);
-                    let a = main_gate.assign_value(&mut region, &Some(a).into(), offset)?;
-                    let a_decomposed = main_gate.decompose(&mut region, a, number_of_bits, offset)?;
+                    let a = main_gate.assign_value(ctx, &Some(a).into())?;
+                    let a_decomposed = main_gate.decompose(ctx, a, number_of_bits)?;
                     assert_eq!(decomposed.len(), a_decomposed.len());
 
                     for (assigned, value) in a_decomposed.iter().zip(decomposed.into_iter()) {
                         if value == F::zero() {
-                            main_gate.assert_zero(&mut region, assigned, offset)?;
+                            main_gate.assert_zero(ctx, assigned)?;
                         } else {
-                            main_gate.assert_one(&mut region, assigned, offset)?;
+                            main_gate.assert_one(ctx, assigned)?;
                         }
                     }
 
@@ -1817,8 +1717,8 @@ mod tests {
                     let a: big_uint = rng.sample(RandomBits::new(number_of_bits as u64));
                     let a: F = big_to_fe(a);
                     let decomposed = decompose(a, number_of_bits, 1);
-                    let a = main_gate.assign_value(&mut region, &Some(a).into(), offset)?;
-                    let a_decomposed = main_gate.decompose(&mut region, a, number_of_bits, offset)?;
+                    let a = main_gate.assign_value(ctx, &Some(a).into())?;
+                    let a_decomposed = main_gate.decompose(ctx, a, number_of_bits)?;
                     assert_eq!(decomposed.len(), a_decomposed.len());
 
                     Ok(())

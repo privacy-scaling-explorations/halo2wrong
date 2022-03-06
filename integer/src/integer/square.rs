@@ -1,12 +1,11 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::MaybeReduced, AssignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Region;
 use halo2::plonk::Error;
-use maingate::{five::range::RangeInstructions, halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, Term};
+use maingate::{five::range::RangeInstructions, halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _square(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _square(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
@@ -24,10 +23,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
 
         let range_chip = self.range_chip();
-        let quotient = &self.range_assign_integer(region, quotient.into(), Range::MulQuotient, offset)?;
-        let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
-        let v_0 = &range_chip.range_value(region, &v_0.into(), self.mul_v0_range_tune(), offset)?;
-        let v_1 = &range_chip.range_value(region, &v_1.into(), self.mul_v1_range_tune(), offset)?;
+        let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
+        let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.mul_v0_range_tune())?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.mul_v1_range_tune())?;
 
         // Constaints:
         // t_0 =  a_0 * b_0
@@ -85,7 +84,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 .into();
 
                 let (_, _, _, _, t) = main_gate.combine(
-                    region,
+                    ctx,
                     [
                         Term::Assigned(&a.limb(j), zero),
                         Term::Assigned(&a.limb(k), zero),
@@ -94,7 +93,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                         Term::Unassigned(intermediate_value, -one),
                     ],
                     zero,
-                    offset,
                     combination_option,
                 )?;
 
@@ -126,7 +124,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let left_shifter_2r = self.rns.left_shifter_2r;
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&intermediate_values_cycling[0].clone(), one),
                 Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
@@ -135,12 +133,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Zero,
                 Term::Zero,
@@ -149,7 +146,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Unassigned(u_0, -one),
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
@@ -162,7 +158,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | -   | v_1 | v_0 | u_1   |
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&intermediate_values_cycling[2].clone(), one),
                 Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
@@ -171,12 +167,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Zero,
                 Term::Assigned(v_1, left_shifter_2r),
@@ -185,14 +180,13 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Unassigned(u_1, -one),
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // update native value
         let a_native = a.native();
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&a_native, zero),
                 Term::Assigned(&a_native, zero),
@@ -201,7 +195,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 

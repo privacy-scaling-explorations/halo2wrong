@@ -1,20 +1,15 @@
 use super::main_gate::{MainGate, MainGateColumn, MainGateConfig};
 use super::NUMBER_OF_LOOKUP_LIMBS;
 use crate::halo2::arithmetic::FieldExt;
-use crate::halo2::circuit::{Chip, Region};
+use crate::halo2::circuit::Chip;
+use crate::halo2::circuit::Layouter;
 use crate::halo2::plonk::{ConstraintSystem, Error};
-
+use crate::halo2::plonk::{Selector, TableColumn};
+use crate::halo2::poly::Rotation;
 use crate::main_gate::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedValue, UnassignedValue};
+use halo2wrong::RegionCtx;
 
-#[cfg(not(feature = "no_lookup"))]
-use crate::halo2::circuit::Layouter;
-#[cfg(not(feature = "no_lookup"))]
-use crate::halo2::plonk::{Selector, TableColumn};
-#[cfg(not(feature = "no_lookup"))]
-use crate::halo2::poly::Rotation;
-
-#[cfg(not(feature = "no_lookup"))]
 #[derive(Clone, Debug)]
 pub struct TableConfig {
     selector: Selector,
@@ -25,14 +20,8 @@ pub struct TableConfig {
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
     main_gate_config: MainGateConfig,
-
-    #[cfg(not(feature = "no_lookup"))]
     s_dense_limb_range: Selector,
-
-    #[cfg(not(feature = "no_lookup"))]
     dense_limb_range_table: TableColumn,
-
-    #[cfg(not(feature = "no_lookup"))]
     fine_tune_tables: Vec<TableConfig>,
 }
 
@@ -43,7 +32,6 @@ pub struct RangeChip<F: FieldExt> {
 }
 
 impl<F: FieldExt> RangeChip<F> {
-    #[cfg(not(feature = "no_lookup"))]
     fn get_table(&self, bit_len: usize) -> Result<&TableConfig, Error> {
         let table_config = self
             .config
@@ -75,16 +63,14 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, bit_len: usize, offset: &mut usize) -> Result<AssignedValue<F>, Error>;
+    fn range_value(&self, ctx: &mut RegionCtx<'_, '_, F>, input: &UnassignedValue<F>, bit_len: usize) -> Result<AssignedValue<F>, Error>;
 
-    #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
-    #[cfg(not(feature = "no_lookup"))]
     fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_value(&self, region: &mut Region<'_, F>, input: &UnassignedValue<F>, bit_len: usize, offset: &mut usize) -> Result<AssignedValue<F>, Error> {
+    fn range_value(&self, ctx: &mut RegionCtx<'_, '_, F>, input: &UnassignedValue<F>, bit_len: usize) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
         let (one, zero) = (F::one(), F::zero());
         let r = self.left_shifter[0];
@@ -102,8 +88,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         if number_of_dense_limbs != 0 {
             // Enable dense decomposion range check.
             // Notice that fine tune limb will be in the dense limb set.
-            #[cfg(not(feature = "no_lookup"))]
-            self.config.s_dense_limb_range.enable(region, *offset)?;
+            ctx.enable(self.config.s_dense_limb_range)?
         }
 
         // Bases for linear combination to the input.
@@ -115,22 +100,20 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
             // Open small table selector if this value is in small table
             if number_of_dense_limbs == 0 {
-                #[cfg(not(feature = "no_lookup"))]
-                self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
+                ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
             }
 
             // | A   | B   | C   | D   | E   |
             // | --- | --- | --- | --- | --- |
             // | -   | a_0 | -   | -   | -   |
-            main_gate.assign_to_column(region, input, MainGateColumn::B, offset)
+            main_gate.assign_to_column(ctx, input, MainGateColumn::B)
         } else {
             let first_row_with_fine_tune = number_of_dense_limbs < 4 && fine_limb_bit_len != 0;
             let has_overflow = number_of_dense_limbs == 4 && fine_limb_bit_len > 0;
 
             // Enable table selector for last limb ie fine tuning limb.
             if first_row_with_fine_tune {
-                #[cfg(not(feature = "no_lookup"))]
-                self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
+                ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
             }
 
             // Input is decomposed insto smaller limbs
@@ -186,10 +169,9 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
             if has_overflow {
                 let _ = main_gate.combine(
-                    region,
+                    ctx,
                     [term_0, term_1, term_2, term_3, Term::Zero],
                     zero,
-                    offset,
                     CombinationOptionCommon::CombineToNextAdd(-one).into(),
                 )?;
 
@@ -210,14 +192,12 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 let overflow = Term::Unassigned(overflow, rrrr);
 
                 // should meet with overflow bit len
-                #[cfg(not(feature = "no_lookup"))]
-                self.get_table(fine_limb_bit_len)?.selector.enable(region, *offset)?;
+                ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
 
                 let (_, _, _, assigned, _) = main_gate.combine(
-                    region,
+                    ctx,
                     [Term::Zero, overflow, Term::Zero, unassigned_input, intermediate],
                     zero,
-                    offset,
                     CombinationOptionCommon::OneLinerAdd.into(),
                 )?;
 
@@ -225,13 +205,12 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             } else {
                 let unassigned_input = Term::Unassigned(input.value(), -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
-                let (_, _, _, _, assigned) = main_gate.combine(region, [term_0, term_1, term_2, term_3, unassigned_input], zero, offset, combination_option)?;
+                let (_, _, _, _, assigned) = main_gate.combine(ctx, [term_0, term_1, term_2, term_3, unassigned_input], zero, combination_option)?;
                 Ok(assigned)
             }
         }
     }
 
-    #[cfg(not(feature = "no_lookup"))]
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         let table_values: Vec<F> = (0..1 << self.base_bit_len).map(|e| F::from(e)).collect();
 
@@ -247,7 +226,6 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         Ok(())
     }
 
-    #[cfg(not(feature = "no_lookup"))]
     fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         for overflow_table in self.config.fine_tune_tables.iter() {
             let bit_len = overflow_table.bit_len;
@@ -285,79 +263,73 @@ impl<F: FieldExt> RangeChip<F> {
 
     #[allow(unused_variables)]
     pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: &MainGateConfig, fine_tune_bit_lengths: Vec<usize>) -> RangeConfig {
-        #[cfg(not(feature = "no_lookup"))]
-        {
-            let mut fine_tune_bit_lengths = fine_tune_bit_lengths;
-            fine_tune_bit_lengths.sort();
-            fine_tune_bit_lengths.dedup();
-            let fine_tune_bit_lengths: Vec<usize> = fine_tune_bit_lengths.into_iter().filter(|e| *e != 0).collect();
+        let mut fine_tune_bit_lengths = fine_tune_bit_lengths;
+        fine_tune_bit_lengths.sort();
+        fine_tune_bit_lengths.dedup();
+        let fine_tune_bit_lengths: Vec<usize> = fine_tune_bit_lengths.into_iter().filter(|e| *e != 0).collect();
 
-            let (a, b, c, d) = (main_gate_config.a, main_gate_config.b, main_gate_config.c, main_gate_config.d);
+        let (a, b, c, d) = (main_gate_config.a, main_gate_config.b, main_gate_config.c, main_gate_config.d);
 
-            let s_dense_limb_range = meta.complex_selector();
-            let dense_limb_range_table = meta.lookup_table_column();
+        let s_dense_limb_range = meta.complex_selector();
+        let dense_limb_range_table = meta.lookup_table_column();
 
-            meta.lookup(|meta| {
-                let exp = meta.query_advice(a, Rotation::cur());
-                let s_range = meta.query_selector(s_dense_limb_range);
-                vec![(exp * s_range, dense_limb_range_table)]
-            });
+        meta.lookup(|meta| {
+            let exp = meta.query_advice(a, Rotation::cur());
+            let s_range = meta.query_selector(s_dense_limb_range);
+            vec![(exp * s_range, dense_limb_range_table)]
+        });
 
-            meta.lookup(|meta| {
-                let exp = meta.query_advice(b, Rotation::cur());
-                let s_range = meta.query_selector(s_dense_limb_range);
-                vec![(exp * s_range, dense_limb_range_table)]
-            });
+        meta.lookup(|meta| {
+            let exp = meta.query_advice(b, Rotation::cur());
+            let s_range = meta.query_selector(s_dense_limb_range);
+            vec![(exp * s_range, dense_limb_range_table)]
+        });
 
-            meta.lookup(|meta| {
-                let exp = meta.query_advice(c, Rotation::cur());
-                let s_range = meta.query_selector(s_dense_limb_range);
-                vec![(exp * s_range, dense_limb_range_table)]
-            });
+        meta.lookup(|meta| {
+            let exp = meta.query_advice(c, Rotation::cur());
+            let s_range = meta.query_selector(s_dense_limb_range);
+            vec![(exp * s_range, dense_limb_range_table)]
+        });
 
-            meta.lookup(|meta| {
-                let exp = meta.query_advice(d, Rotation::cur());
-                let s_range = meta.query_selector(s_dense_limb_range);
-                vec![(exp * s_range, dense_limb_range_table)]
-            });
+        meta.lookup(|meta| {
+            let exp = meta.query_advice(d, Rotation::cur());
+            let s_range = meta.query_selector(s_dense_limb_range);
+            vec![(exp * s_range, dense_limb_range_table)]
+        });
 
-            let fine_tune_tables = fine_tune_bit_lengths
-                .iter()
-                .map(|bit_len| {
-                    let selector = meta.complex_selector();
-                    let column = meta.lookup_table_column();
+        let fine_tune_tables = fine_tune_bit_lengths
+            .iter()
+            .map(|bit_len| {
+                let selector = meta.complex_selector();
+                let column = meta.lookup_table_column();
 
-                    meta.lookup(|meta| {
-                        let exp = meta.query_advice(b, Rotation::cur());
-                        let selector = meta.query_selector(selector);
-                        vec![(exp * selector, column)]
-                    });
+                meta.lookup(|meta| {
+                    let exp = meta.query_advice(b, Rotation::cur());
+                    let selector = meta.query_selector(selector);
+                    vec![(exp * selector, column)]
+                });
 
-                    TableConfig {
-                        selector,
-                        column,
-                        bit_len: *bit_len,
-                    }
-                })
-                .collect();
+                TableConfig {
+                    selector,
+                    column,
+                    bit_len: *bit_len,
+                }
+            })
+            .collect();
 
-            return RangeConfig {
-                main_gate_config: main_gate_config.clone(),
-                s_dense_limb_range,
-                dense_limb_range_table,
-                fine_tune_tables,
-            };
-        }
-
-        #[cfg(feature = "no_lookup")]
         RangeConfig {
             main_gate_config: main_gate_config.clone(),
+            s_dense_limb_range,
+            dense_limb_range_table,
+            fine_tune_tables,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use halo2wrong::RegionCtx;
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::halo2::arithmetic::FieldExt;
@@ -431,26 +403,23 @@ mod tests {
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
-                    let mut offset = 0;
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
 
                     for value in self.input.iter() {
                         let bit_len = value.0;
                         let value = value.1;
 
-                        let a_0 = main_gate.assign_value(&mut region, &UnassignedValue(value), &mut offset)?;
-
-                        let a_1 = range_chip.range_value(&mut region, &UnassignedValue(value), bit_len, &mut offset)?;
-
-                        main_gate.assert_equal(&mut region, a_0, a_1, &mut offset)?;
+                        let a_0 = main_gate.assign_value(ctx, &UnassignedValue(value))?;
+                        let a_1 = range_chip.range_value(ctx, &UnassignedValue(value), bit_len)?;
+                        main_gate.assert_equal(ctx, a_0, a_1)?;
                     }
 
                     Ok(())
                 },
             )?;
 
-            #[cfg(not(feature = "no_lookup"))]
             range_chip.load_limb_range_table(&mut layouter)?;
-            #[cfg(not(feature = "no_lookup"))]
             range_chip.load_overflow_range_tables(&mut layouter)?;
 
             Ok(())
@@ -460,10 +429,7 @@ mod tests {
     #[test]
     fn test_range_circuit() {
         let base_bit_len = TestCircuitConfig::base_bit_len();
-        #[cfg(not(feature = "no_lookup"))]
         let k: u32 = (base_bit_len + 1) as u32;
-        #[cfg(feature = "no_lookup")]
-        let k: u32 = 10;
 
         let min_bit_len = 1;
         let max_bit_len = base_bit_len * (NUMBER_OF_LOOKUP_LIMBS + 1) - 1;

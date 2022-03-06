@@ -1,9 +1,9 @@
 use crate::halo2;
 use crate::integer;
 use crate::maingate;
+use ecc::maingate::RegionCtx;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::{CurveAffine, FieldExt};
-use halo2::circuit::Region;
 use halo2::plonk::Error;
 use integer::rns::Integer;
 use integer::{AssignedInteger, IntegerInstructions};
@@ -67,14 +67,12 @@ impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
 }
 
 impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
-    // https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm
     pub fn verify(
         &self,
-        region: &mut Region<'_, N>,
+        ctx: &mut RegionCtx<'_, '_, N>,
         sig: &AssignedEcdsaSig<N>,
         pk: &AssignedPublicKey<N>,
         msg_hash: &AssignedInteger<N>,
-        offset: &mut usize,
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip();
         let scalar_chip = ecc_chip.scalar_field_chip();
@@ -83,32 +81,32 @@ impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
         // 1. check 0 < r, s < n
 
         // // since `assert_not_zero` already includes a in-field check, we can just call `assert_not_zero`
-        scalar_chip.assert_not_zero(region, &sig.r, offset)?;
-        scalar_chip.assert_not_zero(region, &sig.s, offset)?;
+        scalar_chip.assert_not_zero(ctx, &sig.r)?;
+        scalar_chip.assert_not_zero(ctx, &sig.s)?;
 
         // 2. w = s^(-1) (mod n)
-        let (s_inv, _) = scalar_chip.invert(region, &sig.s, offset)?;
+        let (s_inv, _) = scalar_chip.invert(ctx, &sig.s)?;
 
         // 3. u1 = m' * w (mod n)
-        let u1 = scalar_chip.mul(region, &msg_hash, &s_inv, offset)?;
+        let u1 = scalar_chip.mul(ctx, &msg_hash, &s_inv)?;
 
         // 4. u2 = r * w (mod n)
-        let u2 = scalar_chip.mul(region, &sig.r, &s_inv, offset)?;
+        let u2 = scalar_chip.mul(ctx, &sig.r, &s_inv)?;
 
         // 5. compute Q = u1*G + u2*pk
-        let e_gen = ecc_chip.assign_point(region, Some(E::generator()), offset)?;
-        let g1 = ecc_chip.mul(region, &e_gen, &u1, 2, offset)?;
-        let g2 = ecc_chip.mul(region, &pk.point, &u2, 2, offset)?;
-        let q = ecc_chip.add(region, &g1, &g2, offset)?;
+        let e_gen = ecc_chip.assign_point(ctx, Some(E::generator()))?;
+        let g1 = ecc_chip.mul(ctx, &e_gen, &u1, 2)?;
+        let g2 = ecc_chip.mul(ctx, &pk.point, &u2, 2)?;
+        let q = ecc_chip.add(ctx, &g1, &g2)?;
 
         // 6. reduce q_x in E::ScalarExt
         // assuming E::Base/E::ScalarExt have the same number of limbs
         let q_x = q.get_x();
-        let q_x_reduced_in_q = base_chip.reduce(region, &q_x, offset)?;
-        let q_x_reduced_in_r = scalar_chip.reduce(region, &q_x_reduced_in_q, offset)?;
+        let q_x_reduced_in_q = base_chip.reduce(ctx, &q_x)?;
+        let q_x_reduced_in_r = scalar_chip.reduce(ctx, &q_x_reduced_in_q)?;
 
         // 7. check if Q.x == r (mod n)
-        scalar_chip.assert_strict_equal(region, &q_x_reduced_in_r, &sig.r, offset)?;
+        scalar_chip.assert_strict_equal(ctx, &q_x_reduced_in_r, &sig.r)?;
 
         Ok(())
     }
@@ -121,6 +119,7 @@ mod tests {
     use crate::integer;
     use crate::maingate;
     use ecc::integer::UnassignedInteger;
+    use ecc::maingate::RegionCtx;
     use ecc::{EccConfig, GeneralEccChip};
     use group::ff::Field;
     use group::{prime::PrimeCurveAffine, Curve};
@@ -259,8 +258,10 @@ mod tests {
                 || "assign aux values",
                 |mut region| {
                     let offset = &mut 0;
-                    ecc_chip.assign_aux_generator(&mut region, Some(self.aux_generator), offset)?;
-                    ecc_chip.assign_aux(&mut region, self.window_size, 1, offset)?;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
                     Ok(())
                 },
             )?;
@@ -271,15 +272,16 @@ mod tests {
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let r_assigned = scalar_chip.assign_integer(&mut region, UnassignedInteger::new(Some(integer_r.clone())), offset)?;
-                    let s_assigned = scalar_chip.assign_integer(&mut region, UnassignedInteger::new(Some(integer_s.clone())), offset)?;
+                    let r_assigned = scalar_chip.assign_integer(ctx, UnassignedInteger::new(Some(integer_r.clone())))?;
+                    let s_assigned = scalar_chip.assign_integer(ctx, UnassignedInteger::new(Some(integer_s.clone())))?;
                     let sig = AssignedEcdsaSig { r: r_assigned, s: s_assigned };
 
-                    let pk_in_circuit = ecc_chip.assign_point(&mut region, Some(pk.into()), offset)?;
+                    let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
                     let pk_assigned = AssignedPublicKey { point: pk_in_circuit };
-                    let msg_hash = scalar_chip.assign_integer(&mut region, UnassignedInteger::new(Some(msg_hash.clone())), offset)?;
-                    ecdsa_chip.verify(&mut region, &sig, &pk_assigned, &msg_hash, offset)
+                    let msg_hash = scalar_chip.assign_integer(ctx, UnassignedInteger::new(Some(msg_hash.clone())))?;
+                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
                 },
             )?;
 

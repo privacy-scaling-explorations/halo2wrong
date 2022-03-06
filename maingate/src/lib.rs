@@ -9,7 +9,7 @@ use utils::decompose;
 mod main_gate;
 pub mod utils;
 
-pub use halo2wrong::halo2;
+pub use halo2wrong::{halo2, RegionCtx};
 pub use main_gate::*;
 pub use main_gate::{five, four};
 

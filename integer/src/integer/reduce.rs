@@ -2,18 +2,12 @@ use super::{IntegerChip, IntegerInstructions, Range};
 use crate::rns::MaybeReduced;
 use crate::{AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
-use halo2::circuit::Region;
 use halo2::plonk::Error;
 use maingate::five::range::RangeInstructions;
-use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, Term};
+use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn reduce_if_limb_values_exceeds_unreduced(
-        &self,
-        region: &mut Region<'_, N>,
-        a: &AssignedInteger<N>,
-        offset: &mut usize,
-    ) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn reduce_if_limb_values_exceeds_unreduced(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let exceeds_max_limb_value = a
             .limbs
             .iter()
@@ -21,40 +15,30 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         assert!(a.max_val() < self.rns.max_reducible_value);
         if exceeds_max_limb_value {
-            self.reduce(region, a, offset)
+            self.reduce(ctx, a)
         } else {
             Ok(a.clone())
         }
     }
 
-    pub(super) fn reduce_if_limb_values_exceeds_reduced(
-        &self,
-        region: &mut Region<'_, N>,
-        a: &AssignedInteger<N>,
-        offset: &mut usize,
-    ) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn reduce_if_limb_values_exceeds_reduced(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let exceeds_max_limb_value = a
             .limbs
             .iter()
             .fold(false, |must_reduce, limb| must_reduce | (limb.max_val() > self.rns.max_reduced_limb));
 
         if exceeds_max_limb_value {
-            self.reduce(region, a, offset)
+            self.reduce(ctx, a)
         } else {
             Ok(a.clone())
         }
     }
 
-    pub(super) fn reduce_if_max_operand_value_exceeds(
-        &self,
-        region: &mut Region<'_, N>,
-        a: &AssignedInteger<N>,
-        offset: &mut usize,
-    ) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn reduce_if_max_operand_value_exceeds(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let exceeds_max_value = a.max_val() > self.rns.max_operand;
 
         if exceeds_max_value {
-            self.reduce(region, a, offset)
+            self.reduce(ctx, a)
         } else {
             Ok(a.clone())
         }
@@ -68,7 +52,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         self.rns.bit_len_limb + self.rns.red_v1_overflow
     }
 
-    pub(super) fn _reduce(&self, region: &mut Region<'_, N>, a: &AssignedInteger<N>, offset: &mut usize) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _reduce(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
@@ -82,10 +66,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         // Apply ranges
         let range_chip = self.range_chip();
-        let result = &self.range_assign_integer(region, result.into(), Range::Remainder, offset)?;
-        let quotient = &range_chip.range_value(region, &quotient.into(), self.rns.bit_len_limb, offset)?;
-        let v_0 = &range_chip.range_value(region, &v_0.into(), self.red_v0_range_tune(), offset)?;
-        let v_1 = &range_chip.range_value(region, &v_1.into(), self.red_v1_range_tune(), offset)?;
+        let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
+        let quotient = &range_chip.range_value(ctx, &quotient.into(), self.rns.bit_len_limb)?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.red_v0_range_tune())?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.red_v1_range_tune())?;
 
         // | A   | B | C   | D |
         // | --- | - | --- | - |
@@ -95,7 +79,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | a_3 | q | t_3 | - |
 
         let (_, _, t_0, _, _) = main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&a.limb(0), one),
                 Term::Assigned(quotient, negative_wrong_modulus[0]),
@@ -104,12 +88,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         let (_, _, t_1, _, _) = main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&a.limb(1), one),
                 Term::Assigned(quotient, negative_wrong_modulus[1]),
@@ -118,12 +101,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         let (_, _, t_2, _, _) = main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&a.limb(2), one),
                 Term::Assigned(quotient, negative_wrong_modulus[2]),
@@ -132,12 +114,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         let (_, _, t_3, _, _) = main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&a.limb(3), one),
                 Term::Assigned(quotient, negative_wrong_modulus[3]),
@@ -146,7 +127,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
@@ -162,7 +142,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | -   | -   | v_0 | u_0   |
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&t_0, one),
                 Term::Assigned(&t_1, left_shifter_r),
@@ -171,12 +151,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Zero,
                 Term::Zero,
@@ -185,7 +164,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Unassigned(u_0, -one),
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
@@ -198,7 +176,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | -   | v_1 | v_0 | u_1   |
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&t_2, one),
                 Term::Assigned(&t_3, left_shifter_r),
@@ -207,12 +185,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
             ],
             zero,
-            offset,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Zero,
                 Term::Assigned(v_1, left_shifter_2r),
@@ -221,14 +198,13 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Unassigned(u_1, -one),
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
         // update native value
 
         main_gate.combine(
-            region,
+            ctx,
             [
                 Term::Assigned(&a.native(), -one),
                 Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
@@ -237,7 +213,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 Term::Zero,
             ],
             zero,
-            offset,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
