@@ -273,29 +273,27 @@ impl<F: FieldExt> RangeChip<F> {
         let s_dense_limb_range = meta.complex_selector();
         let dense_limb_range_table = meta.lookup_table_column();
 
-        meta.lookup(|meta| {
-            let exp = meta.query_advice(a, Rotation::cur());
-            let s_range = meta.query_selector(s_dense_limb_range);
-            vec![(exp * s_range, dense_limb_range_table)]
-        });
+        macro_rules! meta_lookup {
+            ($column:expr, $annotation:expr) => {
+                #[cfg(not(feature = "kzg"))]
+                meta.lookup(|meta| {
+                    let exp = meta.query_advice($column, Rotation::cur());
+                    let s_range = meta.query_selector(s_dense_limb_range);
+                    vec![(exp * s_range, dense_limb_range_table)]
+                });
+                #[cfg(feature = "kzg")]
+                meta.lookup(stringify!($column), |meta| {
+                    let exp = meta.query_advice(a, Rotation::cur());
+                    let s_range = meta.query_selector(s_dense_limb_range);
+                    vec![(exp * s_range, dense_limb_range_table)]
+                });
+            };
+        }
 
-        meta.lookup(|meta| {
-            let exp = meta.query_advice(b, Rotation::cur());
-            let s_range = meta.query_selector(s_dense_limb_range);
-            vec![(exp * s_range, dense_limb_range_table)]
-        });
-
-        meta.lookup(|meta| {
-            let exp = meta.query_advice(c, Rotation::cur());
-            let s_range = meta.query_selector(s_dense_limb_range);
-            vec![(exp * s_range, dense_limb_range_table)]
-        });
-
-        meta.lookup(|meta| {
-            let exp = meta.query_advice(d, Rotation::cur());
-            let s_range = meta.query_selector(s_dense_limb_range);
-            vec![(exp * s_range, dense_limb_range_table)]
-        });
+        meta_lookup!(a, "a");
+        meta_lookup!(b, "b");
+        meta_lookup!(c, "c");
+        meta_lookup!(d, "d");
 
         let fine_tune_tables = fine_tune_bit_lengths
             .iter()
@@ -303,11 +301,7 @@ impl<F: FieldExt> RangeChip<F> {
                 let selector = meta.complex_selector();
                 let column = meta.lookup_table_column();
 
-                meta.lookup(|meta| {
-                    let exp = meta.query_advice(b, Rotation::cur());
-                    let selector = meta.query_selector(selector);
-                    vec![(exp * selector, column)]
-                });
+                meta_lookup!(b, "fine_tune");
 
                 TableConfig {
                     selector,
