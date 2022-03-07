@@ -641,8 +641,15 @@ macro_rules! new_curve_impl {
             }
 
             fn coordinates(&self) -> CtOption<Coordinates<Self>> {
-                // CtOption::new(Coordinates { x: self.x, y: self.y }, !self.is_identity())
-                unimplemented!()
+                #[cfg(feature = "kzg")]
+                {
+                    CtOption::new(Coordinates::new(self.x, self.y), !self.is_identity())
+
+                }
+                #[cfg(not(feature = "kzg"))]
+                {
+                    unimplemented!()
+                }
             }
 
             fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {

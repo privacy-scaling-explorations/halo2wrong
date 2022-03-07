@@ -631,7 +631,7 @@ impl SqrtRatio for Fp {
         tmp.0[0] as u32
     }
 
-    fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+    fn sqrt_ratio(_: &Self, _: &Self) -> (Choice, Self) {
         unimplemented!();
     }
 
