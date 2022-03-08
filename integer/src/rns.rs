@@ -177,11 +177,11 @@ pub struct Rns<W: WrongExt, N: FieldExt> {
     pub max_most_significant_unreduced_limb: big_uint,
     pub max_most_significant_mul_quotient_limb: big_uint,
 
-    pub mul_v0_overflow: usize,
-    pub mul_v1_overflow: usize,
+    pub mul_v0_bit_len: usize,
+    pub mul_v1_bit_len: usize,
 
-    pub red_v0_overflow: usize,
-    pub red_v1_overflow: usize,
+    pub red_v0_bit_len: usize,
+    pub red_v1_bit_len: usize,
 
     two_limb_mask: big_uint,
 
@@ -318,8 +318,8 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
 
             (v0, v1)
         };
-        let mul_v0_overflow = mul_v0_max.bits() as usize - bit_len_limb;
-        let mul_v1_overflow = mul_v1_max.bits() as usize - bit_len_limb;
+        let mul_v0_bit_len = std::cmp::max(mul_v0_max.bits() as usize, bit_len_limb);
+        let mul_v1_bit_len = std::cmp::max(mul_v1_max.bits() as usize, bit_len_limb);
 
         // emulate reduction to find out max residue overflows
         let (red_v0_max, red_v1_max) = {
@@ -346,8 +346,8 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
 
             (v0, v1)
         };
-        let red_v0_overflow = red_v0_max.bits() as usize - bit_len_limb;
-        let red_v1_overflow = red_v1_max.bits() as usize - bit_len_limb;
+        let red_v0_bit_len = std::cmp::max(red_v0_max.bits() as usize, bit_len_limb);
+        let red_v1_bit_len = std::cmp::max(red_v1_max.bits() as usize, bit_len_limb);
 
         let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
         assert!(bit_len_lookup * NUMBER_OF_LOOKUP_LIMBS == bit_len_limb);
@@ -407,10 +407,10 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
             max_most_significant_unreduced_limb: max_most_significant_unreduced_limb.clone(),
             max_most_significant_mul_quotient_limb: max_most_significant_mul_quotient_limb.clone(),
 
-            mul_v0_overflow,
-            mul_v1_overflow,
-            red_v0_overflow,
-            red_v1_overflow,
+            mul_v0_bit_len,
+            mul_v1_bit_len,
+            red_v0_bit_len,
+            red_v1_bit_len,
 
             two_limb_mask,
             _marker_wrong: PhantomData,
@@ -470,10 +470,10 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         let max_most_significant_operand_limb_size = self.max_most_significant_operand_limb.bits() as usize % self.bit_len_lookup;
         let max_most_significant_reduced_limb_size = self.max_most_significant_reduced_limb.bits() as usize % self.bit_len_lookup;
         vec![
-            self.mul_v0_overflow,
-            self.mul_v1_overflow,
-            self.red_v0_overflow,
-            self.red_v1_overflow,
+            self.mul_v0_bit_len % self.bit_len_lookup,
+            self.mul_v1_bit_len % self.bit_len_lookup,
+            self.red_v0_bit_len % self.bit_len_lookup,
+            self.red_v1_bit_len % self.bit_len_lookup,
             max_most_significant_mul_quotient_limb_size,
             max_most_significant_operand_limb_size,
             max_most_significant_reduced_limb_size,

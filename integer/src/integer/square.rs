@@ -25,8 +25,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.mul_v0_range_tune())?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.mul_v1_range_tune())?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Constaints:
         // t_0 =  a_0 * b_0

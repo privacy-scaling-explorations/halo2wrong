@@ -44,14 +44,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         }
     }
 
-    fn red_v0_range_tune(&self) -> usize {
-        self.rns.bit_len_limb + self.rns.red_v0_overflow
-    }
-
-    fn red_v1_range_tune(&self) -> usize {
-        self.rns.bit_len_limb + self.rns.red_v1_overflow
-    }
-
     pub(super) fn _reduce(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
@@ -68,8 +60,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let range_chip = self.range_chip();
         let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
         let quotient = &range_chip.range_value(ctx, &quotient.into(), self.rns.bit_len_limb)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.red_v0_range_tune())?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.red_v1_range_tune())?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.red_v0_bit_len)?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.red_v1_bit_len)?;
 
         // | A   | B | C   | D |
         // | --- | - | --- | - |

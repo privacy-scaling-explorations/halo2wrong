@@ -7,14 +7,6 @@ use maingate::five::range::RangeInstructions;
 use maingate::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn mul_v0_range_tune(&self) -> usize {
-        self.rns.bit_len_limb + self.rns.mul_v0_overflow
-    }
-
-    pub(super) fn mul_v1_range_tune(&self) -> usize {
-        self.rns.bit_len_limb + self.rns.mul_v1_overflow
-    }
-
     pub(super) fn _mul(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
@@ -40,8 +32,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.mul_v0_range_tune())?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.mul_v1_range_tune())?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Constaints:
 
@@ -232,8 +224,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.mul_v0_range_tune())?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.mul_v1_range_tune())?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Witness layout:
         // | A   | B   | C   | D     |
@@ -514,8 +506,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.mul_v0_range_tune())?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.mul_v1_range_tune())?;
+        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Constaints:
 
