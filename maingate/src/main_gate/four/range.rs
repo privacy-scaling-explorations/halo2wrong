@@ -277,26 +277,26 @@ impl<F: FieldExt> RangeChip<F> {
             let dense_limb_range_table = meta.lookup_table_column();
 
             macro_rules! meta_lookup {
-                ($column:expr, $annotation:expr) => {
+                ($column:expr, $selector:expr,$table:expr) => {
                     #[cfg(not(feature = "kzg"))]
                     meta.lookup(|meta| {
                         let exp = meta.query_advice($column, Rotation::cur());
-                        let s_range = meta.query_selector(s_dense_limb_range);
-                        vec![(exp * s_range, dense_limb_range_table)]
+                        let s = meta.query_selector($selector);
+                        vec![(exp * s, $table)]
                     });
                     #[cfg(feature = "kzg")]
                     meta.lookup(stringify!($column), |meta| {
                         let exp = meta.query_advice(a, Rotation::cur());
-                        let s_range = meta.query_selector(s_dense_limb_range);
-                        vec![(exp * s_range, dense_limb_range_table)]
+                        let s = meta.query_selector($selector);
+                        vec![(exp * s, $table)]
                     });
                 };
             }
 
-            meta_lookup!(a, "a");
-            meta_lookup!(b, "b");
-            meta_lookup!(c, "c");
-            meta_lookup!(d, "d");
+            meta_lookup!(a, s_dense_limb_range, dense_limb_range_table);
+            meta_lookup!(b, s_dense_limb_range, dense_limb_range_table);
+            meta_lookup!(c, s_dense_limb_range, dense_limb_range_table);
+            meta_lookup!(d, s_dense_limb_range, dense_limb_range_table);
 
             let fine_tune_tables = fine_tune_bit_lengths
                 .iter()
@@ -304,7 +304,7 @@ impl<F: FieldExt> RangeChip<F> {
                     let selector = meta.complex_selector();
                     let column = meta.lookup_table_column();
 
-                    meta_lookup!(b, "fine_tune");
+                    meta_lookup!(b, selector, column);
 
                     TableConfig {
                         selector,
