@@ -398,15 +398,17 @@ mod tests {
     use maingate::utils::fe_to_big;
     use maingate::{decompose_big, halo2, AssignedCondition};
     use maingate::{MainGateInstructions, RegionCtx};
+    use secp256k1::Fp as Secp256k1_Fp;
+    use secp256k1::Fq as Secp256k1_Fq;
 
-    cfg_if::cfg_if! {
-      if #[cfg(feature = "kzg")] {
-        use halo2::pairing::bn256::Fq as Wrong;
-        use halo2::pairing::bn256::Fr as Native;
-      } else {
-        use halo2::pasta::Fp as Wrong;
-        use halo2::pasta::Fq as Native;
-      }
+    fn rns<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>() -> Rns<W, N> {
+        Rns::<W, N>::construct(BIT_LEN_LIMB)
+    }
+
+    fn setup<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>() -> (Rns<W, N>, u32) {
+        let rns = rns::<_, _, BIT_LEN_LIMB>();
+        let k: u32 = (rns.bit_len_lookup + 1) as u32;
+        (rns, k)
     }
 
     impl<'a, W: WrongExt, N: FieldExt> From<Integer<'a, W, N>> for UnassignedInteger<'a, W, N> {
@@ -420,17 +422,6 @@ mod tests {
             self._assign_integer(ctx, integer, false)
         }
     }
-    const BIT_LEN_LIMB: usize = 68;
-
-    fn rns<W: WrongExt, N: FieldExt>() -> Rns<W, N> {
-        Rns::<W, N>::construct(BIT_LEN_LIMB)
-    }
-
-    fn setup<W: WrongExt, N: FieldExt>() -> (Rns<W, N>, u32) {
-        let rns = rns();
-        let k: u32 = (rns.bit_len_lookup + 1) as u32;
-        (rns, k)
-    }
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
@@ -439,10 +430,10 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<W: WrongExt, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
+        fn new<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(meta: &mut ConstraintSystem<N>) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
 
-            let overflow_bit_lengths = rns::<W, N>().overflow_lengths();
+            let overflow_bit_lengths = rns::<W, N, BIT_LEN_LIMB>().overflow_lengths();
             let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
             TestCircuitConfig {
@@ -458,8 +449,8 @@ mod tests {
             }
         }
 
-        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
-            let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>, bit_len_limb: usize) -> Result<(), Error> {
+            let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
             let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
             range_chip.load_limb_range_table(layouter)?;
             range_chip.load_overflow_range_tables(layouter)?;
@@ -468,158 +459,94 @@ mod tests {
         }
     }
 
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitRange<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
+    macro_rules! impl_circuit {
+        ($circuit_name:ident, $( $synth:tt )*) => {
+            #[derive(Default, Clone, Debug)]
+            struct $circuit_name<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+                rns: Rns<W, N>,
+            }
+
+            impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
+                type Config = TestCircuitConfig;
+                type FloorPlanner = SimpleFloorPlanner;
+
+                fn without_witnesses(&self) -> Self {
+                    Self::default()
+                }
+
+                fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+                    TestCircuitConfig::new::<W, N, BIT_LEN_LIMB>(meta)
+                }
+
+                $( $synth )*
+            }
+        };
     }
 
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitRange<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitRange,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
-
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-
                     let a = rns.new_from_big(rns.max_remainder.clone());
                     integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
-
                     // should fail
                     // let a = rns.new_from_big(rns.max_remainder.clone() + 1usize);
                     // integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
-
                     let a = rns.new_from_big(rns.max_operand.clone());
                     integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
-
                     // should fail
                     // let a = rns.new_from_big(rns.max_operand.clone() + 1usize);
-                    // integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
-
+                    // integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_circuit_range() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitRange::<Wrong, Native> { rns };
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitReduction<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitReduction<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitReduction,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
-
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-
                     let overflows = rns.rand_with_limb_bit_size(rns.bit_len_limb + 5);
                     let unreduced = overflows.clone();
                     let reduced = overflows.reduce();
                     let reduced = reduced.result;
-
                     let overflows = &integer_chip.assign_integer_no_check(ctx, Some(unreduced).into())?;
                     let reduced_0 = &integer_chip.range_assign_integer(ctx, Some(reduced).into(), Range::Remainder)?;
                     let reduced_1 = &integer_chip.reduce(ctx, overflows)?;
                     assert_eq!(reduced_1.max_val(), rns.max_remainder);
-
                     integer_chip.assert_equal(ctx, reduced_0, reduced_1)?;
                     integer_chip.assert_strict_equal(ctx, reduced_0, reduced_1)?;
-
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_reduction_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitReduction::<Wrong, Native> { rns };
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitEquality<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitEquality<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitEquality,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
-
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-
                     let a = rns.rand_in_operand_range();
                     let b = rns.rand_in_operand_range();
                     let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
@@ -627,51 +554,18 @@ mod tests {
                     integer_chip.assert_not_equal(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, a, a)?;
                     integer_chip.assert_not_zero(ctx, a)?;
-
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_equality_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitReduction::<Wrong, Native> { rns };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitMultiplication<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitMultiplication<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitMultiplication,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
-
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
@@ -739,42 +633,12 @@ mod tests {
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_multiplication_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitMultiplication::<Wrong, Native> { rns };
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitSquaring<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitSquaring<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitSquaring,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
@@ -812,42 +676,12 @@ mod tests {
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_squaring_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitSquaring::<Wrong, Native> { rns };
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitInField<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitInField<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitInField,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
@@ -857,55 +691,22 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-
                     let a = rns.rand_in_field();
                     let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
                     integer_chip.assert_in_field(ctx, a)?;
-
                     // must fail
                     // let a = rns.new_from_big(rns.wrong_modulus.clone());
                     // let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
                     // integer_chip.assert_in_field(ctx, a)?;
-
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_assert_in_field_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitInField::<Wrong, Native> { rns };
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitNonDeterministic<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitNonDeterministic<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitNonDeterministic,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
@@ -989,42 +790,14 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter)?;
+            config.config_range(&mut layouter, BIT_LEN_LIMB)?;
 
             Ok(())
         }
-    }
+    );
 
-    #[test]
-    fn test_non_deterministic_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitNonDeterministic::<Wrong, Native> { rns };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitAddition<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitAddition<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitAddition,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let rns = self.rns.clone();
@@ -1052,6 +825,7 @@ mod tests {
                         let c_1 = integer_chip.assign_integer_no_check(ctx, c.into())?;
 
                         assert_eq!(a.max_val() + b.max_val(), c_0.max_val());
+
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
 
                         // reduce and enfoce strict equality
@@ -1229,43 +1003,12 @@ mod tests {
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_addition() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitAddition::<Wrong, Native> { rns };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitConditionals<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitConditionals<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitConditionals,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
@@ -1341,54 +1084,21 @@ mod tests {
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
-    }
+    );
 
-    #[test]
-    fn test_condition_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitConditionals::<Wrong, Native> { rns };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
-    }
-
-    #[derive(Default, Clone, Debug)]
-    struct TestCircuitDecomposition<W: WrongExt, N: FieldExt> {
-        rns: Rns<W, N>,
-    }
-
-    impl<W: WrongExt, N: FieldExt> Circuit<N> for TestCircuitDecomposition<W, N> {
-        type Config = TestCircuitConfig;
-        type FloorPlanner = SimpleFloorPlanner;
-
-        fn without_witnesses(&self) -> Self {
-            Self::default()
-        }
-
-        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-            TestCircuitConfig::new::<W, N>(meta)
-        }
-
+    impl_circuit!(
+        TestCircuitDecomposition,
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
             let integer_chip = IntegerChip::<W, N>::new(config.integer_chip_config(), self.rns.clone());
             let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
             let rns = self.rns.clone();
-
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-
                     let integer = rns.rand_in_field();
                     let integer_big = integer.value();
                     let assigned = integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
@@ -1405,23 +1115,90 @@ mod tests {
                     Ok(())
                 },
             )?;
-
-            config.config_range(&mut layouter)?;
-
-            Ok(())
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
         }
+    );
+
+    macro_rules! test_circuit_runner {
+        (
+            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $bit_len_limb:expr]),*
+        ) => {
+            $(
+                let (rns, k) = setup::<_, _, $bit_len_limb>();
+                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns };
+                let public_inputs = vec![vec![]];
+                let prover = match MockProver::run(k, &circuit, public_inputs) {
+                    Ok(prover) => prover,
+                    Err(e) => panic!("{:#?}", e),
+                };
+                assert_eq!(prover.verify(), Ok(()));
+            )*
+        };
+    }
+
+    macro_rules! test_circuit {
+        (
+            $circuit:ident
+        ) => {
+            #[cfg(not(feature = "kzg"))]
+            {
+                use halo2::pasta::{Fp as Pasta_Fp, Fq as Pasta_Fq};
+                test_circuit_runner!(
+                    $circuit,
+                    [Pasta_Fp, Pasta_Fq, 68],
+                    [Pasta_Fq, Pasta_Fp, 68],
+                    [Secp256k1_Fp, Pasta_Fq, 68],
+                    [Secp256k1_Fp, Pasta_Fp, 68],
+                    [Secp256k1_Fq, Pasta_Fq, 68],
+                    [Secp256k1_Fq, Pasta_Fp, 68]
+                );
+            }
+            #[cfg(feature = "kzg")]
+            {
+                use halo2::pairing::bn256::{Fq, Fr};
+                test_circuit_runner!($circuit, [Fq, Fr, 68], [Fr, Fr, 68], [Secp256k1_Fp, Fr, 68], [Secp256k1_Fq, Fr, 68]);
+            }
+        };
     }
 
     #[test]
-    fn test_decomposition_circuit() {
-        let (rns, k) = setup();
-        let circuit = TestCircuitDecomposition::<Wrong, Native> { rns };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-        assert_eq!(prover.verify(), Ok(()));
+    fn test_integer_circuit_range() {
+        test_circuit!(TestCircuitRange);
+    }
+    #[test]
+    fn test_integer_circuit_reduction() {
+        test_circuit!(TestCircuitReduction);
+    }
+    #[test]
+    fn test_integer_circuit_multiplication() {
+        test_circuit!(TestCircuitMultiplication);
+    }
+    #[test]
+    fn test_integer_circuit_squaring() {
+        test_circuit!(TestCircuitSquaring);
+    }
+    #[test]
+    fn test_integer_circuit_infield() {
+        test_circuit!(TestCircuitInField);
+    }
+    #[test]
+    fn test_integer_circuit_nondeterministic() {
+        test_circuit!(TestCircuitNonDeterministic);
+    }
+    #[test]
+    fn test_integer_circuit_equality() {
+        test_circuit!(TestCircuitEquality);
+    }
+    #[test]
+    fn test_integer_circuit_addition() {
+        test_circuit!(TestCircuitAddition);
+    }
+    #[test]
+    fn test_integer_circuit_conditionals() {
+        test_circuit!(TestCircuitConditionals);
+    }
+    #[test]
+    fn test_integer_circuit_decomposition() {
+        test_circuit!(TestCircuitDecomposition);
     }
 }
