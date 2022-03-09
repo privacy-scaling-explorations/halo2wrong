@@ -9,9 +9,6 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use crate::arithmetic::{adc, mac, sbb};
 use halo2wrong::halo2::arithmetic::{FieldExt, Group};
 
-#[cfg(feature = "kzg")]
-use alloc::vec::Vec;
-
 #[cfg(feature = "bits")]
 use ff::{FieldBits, PrimeFieldBits};
 
@@ -660,32 +657,18 @@ impl SqrtRatio for Fq {
 impl BaseExt for Fq {
     const MODULUS: &'static str = MODULUS_STR;
 
+    /// Writes this element in its normalized, little endian form into a buffer.
     fn write<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        let limb_bytes: Vec<[u8; 8]> = self.0.iter().map(|limb| u64::to_le_bytes(*limb)).collect();
-        let mut result: [u8; 32] = [0 as u8; 32];
-        let mut index = 0;
-        limb_bytes.iter().for_each(|bytes| {
-            for byte in bytes.iter() {
-                result[index] = *byte;
-                index += 1
-            }
-        });
-        writer.write(&result)?;
-        Ok(())
+        let bytes = self.to_repr();
+        writer.write_all(&bytes[..])
     }
 
     /// Reads a normalized, little endian represented field element from a
     /// buffer.
     fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
-        let mut bytes = [0u8; 32];
-        reader.read_exact(&mut bytes[..])?;
-        let result = Self::from_raw([
-            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
-            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        ]);
-        Ok(result)
+        let mut compressed = [0u8; 32];
+        reader.read_exact(&mut compressed[..])?;
+        Option::from(Self::from_repr(compressed)).ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
     }
 
     fn from_bytes_wide(bytes: &[u8; 64]) -> Self {
