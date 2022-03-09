@@ -3,9 +3,9 @@ use crate::rns::{Common, Integer, Rns};
 use crate::{WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::five::main_gate::{MainGate, MainGateConfig};
-use maingate::five::range::{RangeChip, RangeConfig};
 use maingate::{halo2, AssignedCondition, AssignedValue, MainGateInstructions, RegionCtx};
+use maingate::{MainGate, MainGateConfig};
+use maingate::{RangeChip, RangeConfig};
 
 mod add;
 mod assert_in_field;
@@ -393,11 +393,10 @@ mod tests {
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
-    use maingate::five::main_gate::{MainGate, MainGateConfig};
-    use maingate::five::range::{RangeChip, RangeConfig, RangeInstructions};
-    use maingate::utils::fe_to_big;
-    use maingate::{decompose_big, halo2, AssignedCondition};
-    use maingate::{MainGateInstructions, RegionCtx};
+    use maingate::{
+        decompose_big, fe_to_big, halo2, AssignedCondition, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
+        RegionCtx,
+    };
     use secp256k1::Fp as Secp256k1_Fp;
     use secp256k1::Fq as Secp256k1_Fq;
 
@@ -1099,17 +1098,19 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let integer = rns.rand_in_field();
-                    let integer_big = integer.value();
-                    let assigned = integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
-                    let decomposed = integer_chip.decompose(ctx, &assigned)?;
-                    let expected = decompose_big::<W>(integer_big, rns.bit_len_wrong_modulus, 1);
-                    assert_eq!(expected.len(), decomposed.len());
-                    for (c, expected) in decomposed.iter().zip(expected.into_iter()) {
-                        if expected != W::zero() {
-                            main_gate.assert_one(ctx, c)?;
-                        } else {
-                            main_gate.assert_zero(ctx, c)?;
+                    for _ in 0..2 {
+                        let integer = rns.rand_in_field();
+                        let integer_big = integer.value();
+                        let assigned = integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
+                        let decomposed = integer_chip.decompose(ctx, &assigned)?;
+                        let expected = decompose_big::<W>(integer_big, rns.bit_len_wrong_modulus, 1);
+                        assert_eq!(expected.len(), decomposed.len());
+                        for (c, expected) in decomposed.iter().zip(expected.into_iter()) {
+                            if expected != W::zero() {
+                                main_gate.assert_one(ctx, c)?;
+                            } else {
+                                main_gate.assert_zero(ctx, c)?;
+                            }
                         }
                     }
                     Ok(())

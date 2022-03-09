@@ -3,8 +3,7 @@ use crate::rns::Common;
 use crate::{AssignedInteger, AssignedLimb, UnassignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::five::range::RangeInstructions;
-use maingate::{fe_to_big, halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
+use maingate::{fe_to_big, halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 

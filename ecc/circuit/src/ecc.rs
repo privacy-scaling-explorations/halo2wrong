@@ -1,9 +1,7 @@
 use crate::halo2::arithmetic::CurveAffine;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::AssignedInteger;
-use crate::maingate::five::main_gate::MainGateConfig;
-use crate::maingate::five::range::RangeConfig;
-use crate::maingate::{big_to_fe, halo2, Assigned, AssignedCondition};
+use crate::maingate::{big_to_fe, halo2, Assigned, AssignedCondition, MainGateConfig, RangeConfig};
 use crate::WrongExt;
 use group::Curve;
 use halo2::arithmetic::FieldExt;

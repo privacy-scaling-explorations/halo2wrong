@@ -8,8 +8,7 @@ use halo2::circuit::Layouter;
 use halo2::plonk::Error;
 use halo2::plonk::{Column, Instance};
 use integer::maingate::RegionCtx;
-use maingate::five::main_gate::MainGate;
-use maingate::{Assigned, AssignedCondition};
+use maingate::{Assigned, AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 
 mod add;
@@ -82,18 +81,11 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     fn get_mul_aux(&self, window_size: usize, number_of_pairs: usize) -> Result<MulAux<N>, Error> {
         let to_add = match self.aux_generator.clone() {
             Some((assigned, _)) => Ok(assigned),
-            None => {
-                println!("x1 {} {}", window_size, number_of_pairs);
-                Err(Error::Synthesis)
-            }
+            None => Err(Error::Synthesis),
         }?;
         let to_sub = match self.aux_registry.get(&(window_size, number_of_pairs)) {
             Some(aux) => Ok(aux.clone()),
-            None => {
-                println!("x0 {} {}", window_size, number_of_pairs);
-
-                Err(Error::Synthesis)
-            }
+            None => Err(Error::Synthesis),
         }?;
         Ok(MulAux::new(to_add, to_sub))
     }
@@ -159,11 +151,7 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
                 Ok(())
             }
             // aux generator is not assigned yet
-            None => {
-                println!("ee {} {}", window_size, number_of_pairs);
-
-                Err(Error::Synthesis)
-            }
+            None => Err(Error::Synthesis),
         }
     }
 
@@ -266,25 +254,8 @@ mod tests {
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
-    use integer::maingate::RegionCtx;
-    use maingate::five::main_gate::{MainGate, MainGateConfig};
-    use maingate::five::range::{RangeChip, RangeConfig, RangeInstructions};
+    use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx};
     use rand::thread_rng;
-
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "kzg")] {
-            use halo2::pairing::bn256::Fq as Field;
-            use halo2::pairing::bn256::G1Affine as Curve;
-            use halo2::pairing::bn256::G1 as CurveProjective;
-        } else {
-            use secp256k1::Fp as Field;
-            use secp256k1::Secp256k1 as CurveProjective;
-            use secp256k1::Secp256k1Affine as Curve;
-            // use halo2::pasta::EqAffine as Curve;
-            // use halo2::pasta::Eq as CurveProjective;
-            // use halo2::pasta::Fp as Field;
-        }
-    }
 
     const BIT_LEN_LIMB: usize = 68;
 

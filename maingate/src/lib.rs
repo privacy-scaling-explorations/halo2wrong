@@ -6,14 +6,15 @@ use halo2::{
 use std::marker::PhantomData;
 use utils::decompose;
 
+mod instructions;
 mod main_gate;
+mod range;
+
 pub mod utils;
-
 pub use halo2wrong::{halo2, RegionCtx};
+pub use instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use main_gate::*;
-pub use main_gate::{five, four};
-
-pub use main_gate::{CombinationOptionCommon, MainGateInstructions, Term};
+pub use range::*;
 pub use utils::*;
 
 pub trait Assigned<F: FieldExt> {

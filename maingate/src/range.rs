@@ -1,14 +1,15 @@
 use super::main_gate::{MainGate, MainGateColumn, MainGateConfig};
-use super::NUMBER_OF_LOOKUP_LIMBS;
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
 use crate::halo2::circuit::Layouter;
 use crate::halo2::plonk::{ConstraintSystem, Error};
 use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
-use crate::main_gate::{CombinationOptionCommon, MainGateInstructions, Term};
+use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedValue, UnassignedValue};
 use halo2wrong::RegionCtx;
+
+const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct TableConfig {
@@ -283,7 +284,7 @@ impl<F: FieldExt> RangeChip<F> {
                 });
                 #[cfg(feature = "kzg")]
                 meta.lookup(stringify!($column), |meta| {
-                    let exp = meta.query_advice(a, Rotation::cur());
+                    let exp = meta.query_advice($column, Rotation::cur());
                     let s = meta.query_selector($selector);
                     vec![(exp * s, $table)]
                 });
@@ -330,15 +331,14 @@ mod tests {
     use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
     use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
-    use crate::main_gate::five::main_gate::MainGate;
-    use crate::main_gate::five::NUMBER_OF_LOOKUP_LIMBS;
+    use crate::main_gate::MainGate;
+    use crate::range::NUMBER_OF_LOOKUP_LIMBS;
     use crate::{MainGateInstructions, UnassignedValue};
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "kzg")] {
             use crate::halo2::pairing::bn256::Fr as Fp;
         } else {
-            // default feature
             use crate::halo2::pasta::Fp;
         }
     }

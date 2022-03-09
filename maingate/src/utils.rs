@@ -6,7 +6,6 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "kzg")] {
         use crate::halo2::arithmetic::BaseExt as Field;
     } else {
-        // default feature
         use crate::halo2::arithmetic::FieldExt as Field;
     }
 }
@@ -26,7 +25,6 @@ pub fn big_to_fe<F: Field>(e: big_uint) -> F {
             let mut bytes = &bytes[..];
             F::read(&mut bytes).unwrap()
         } else {
-            // default feature
             F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
         }
     }
@@ -39,7 +37,6 @@ pub fn fe_to_big<F: Field>(fe: F) -> big_uint {
             fe.write(&mut bytes).unwrap();
             big_uint::from_bytes_le(&bytes[..])
         } else {
-            // default feature
             big_uint::from_bytes_le(fe.to_repr().as_ref())
         }
     }
@@ -81,7 +78,6 @@ fn test_round_trip() {
         if #[cfg(feature = "kzg")] {
             use crate::halo2::pairing::bn256::Fr as Fp;
         } else {
-            // default feature
             use crate::halo2::pasta::Fp;
         }
     }
@@ -114,7 +110,6 @@ fn test_bit_decomposition() {
         if #[cfg(feature = "kzg")] {
             use crate::halo2::pairing::bn256::Fr as Fp;
         } else {
-            // default feature
             use crate::halo2::pasta::Fp;
         }
     }

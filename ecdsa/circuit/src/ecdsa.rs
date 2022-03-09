@@ -7,8 +7,7 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
 use integer::rns::Integer;
 use integer::{AssignedInteger, IntegerInstructions};
-use maingate::five::main_gate::MainGateConfig;
-use maingate::five::range::RangeConfig;
+use maingate::{MainGateConfig, RangeConfig};
 
 use super::integer::{IntegerChip, IntegerConfig};
 
@@ -129,9 +128,8 @@ mod tests {
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
-    use maingate::five::main_gate::{MainGate, MainGateConfig};
-    use maingate::five::range::RangeInstructions;
-    use maingate::five::range::{RangeChip, RangeConfig};
+    use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
+
     use rand::thread_rng;
     use std::marker::PhantomData;
 
@@ -215,8 +213,6 @@ mod tests {
             let randomness_inv = randomness.invert().unwrap();
             let sig_point = generator * randomness;
             let x = sig_point.to_affine().coordinates().unwrap().x().clone();
-            println!("E char = {}", E::ScalarExt::MODULUS);
-            println!("x coord = {:?}", x);
 
             cfg_if::cfg_if! {
                 if #[cfg(feature = "kzg")] {
@@ -233,7 +229,6 @@ mod tests {
 
             let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
             let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
-            println!("sig.r on Emulated = {:?}", x_bytes_on_n.clone());
 
             // verify with Emulated
             {
@@ -244,7 +239,6 @@ mod tests {
                 let g2 = pk.mul(u2);
                 let q = g1 + g2;
                 let q = q.to_affine();
-                println!("q on Emulated = {:?}", q);
             }
 
             let rns_scalar = ecc_chip.rns_scalar();

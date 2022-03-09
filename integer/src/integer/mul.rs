@@ -3,8 +3,7 @@ use crate::rns::{Common, Integer, MaybeReduced};
 use crate::{AssignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::five::range::RangeInstructions;
-use maingate::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
+use maingate::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _mul(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
@@ -497,8 +496,6 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         .into();
 
         let quotient = reduction_witness.long();
-        // TODO: consider assertion of result equals to 0
-        let _ = reduction_witness.result();
         let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
         let intermediate_values = vec![t_0, t_1, t_2, t_3];
         let (_, _, v_0, v_1) = reduction_witness.residues();

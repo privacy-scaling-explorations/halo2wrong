@@ -8,8 +8,7 @@ use halo2::plonk::Error;
 use halo2::plonk::{Column, Instance};
 use integer::maingate::RegionCtx;
 use integer::UnassignedInteger;
-use maingate::five::main_gate::MainGate;
-use maingate::{Assigned, AssignedCondition};
+use maingate::{Assigned, AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 
 mod add;
@@ -252,9 +251,7 @@ mod tests {
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::maingate::RegionCtx;
-    use maingate::five::main_gate::{MainGate, MainGateConfig};
-    use maingate::five::range::{RangeChip, RangeConfig, RangeInstructions};
-    use maingate::{AssignedValue, MainGateInstructions};
+    use maingate::{AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions};
     use rand::thread_rng;
 
     cfg_if::cfg_if! {

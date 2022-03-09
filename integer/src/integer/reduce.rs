@@ -3,8 +3,7 @@ use crate::rns::MaybeReduced;
 use crate::{AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::five::range::RangeInstructions;
-use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
+use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn reduce_if_limb_values_exceeds_unreduced(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
