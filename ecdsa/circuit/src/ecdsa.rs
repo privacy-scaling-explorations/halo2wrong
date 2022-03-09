@@ -287,29 +287,32 @@ mod tests {
 
     #[test]
     fn test_ecdsa_verifier() {
-        use group::Group;
-        use secp256k1::Fp as Field;
-        use secp256k1::Secp256k1 as CurveProjective;
-        use secp256k1::Secp256k1Affine as Curve;
+        fn run<C: CurveAffine, N: FieldExt>() {
+            use group::Group;
+            let k = 20;
+            let mut rng = thread_rng();
+            let aux_generator = C::CurveExt::random(&mut rng).to_affine();
+            let circuit = TestCircuitEcdsaVerify::<C, N> {
+                aux_generator,
+                window_size: 2,
+                _marker: PhantomData,
+            };
 
-        let k = 20;
+            let public_inputs = vec![vec![]];
+            let prover = match MockProver::run(k, &circuit, public_inputs) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
 
-        let mut rng = thread_rng();
-        let aux_generator = CurveProjective::random(&mut rng).to_affine();
-
-        // testcase: normal
-        let circuit = TestCircuitEcdsaVerify::<Curve, Field> {
-            aux_generator,
-            window_size: 2,
-            _marker: PhantomData,
-        };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_eq!(prover.verify(), Ok(()));
+        #[cfg(not(feature = "kzg"))]
+        {}
+        #[cfg(feature = "kzg")]
+        {
+            use halo2::pairing::bn256::Fr;
+            use secp256k1::Secp256k1Affine as Secp256;
+            run::<Secp256, Fr>();
+        }
     }
 }

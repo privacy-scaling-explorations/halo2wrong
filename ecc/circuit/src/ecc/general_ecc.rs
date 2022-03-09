@@ -390,17 +390,32 @@ mod tests {
 
     #[test]
     fn test_general_ecc_addition_circuit() {
-        let (rns_base, rns_scalar, k) = setup::<Curve, Field>(0);
+        fn run<C: CurveAffine, N: FieldExt>() {
+            let (rns_base, rns_scalar, k) = setup::<C, N>(0);
+            let circuit = TestEccAddition::<C, N> { rns_base, rns_scalar };
+            let public_inputs = vec![vec![]];
+            let prover = match MockProver::run(k, &circuit, public_inputs) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
 
-        let circuit = TestEccAddition::<Curve, Field> { rns_base, rns_scalar };
-
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_eq!(prover.verify(), Ok(()));
+        #[cfg(not(feature = "kzg"))]
+        {
+            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
+            run::<EpAffine, Fq>();
+            run::<EqAffine, Fq>();
+            run::<EpAffine, Fp>();
+            run::<EqAffine, Fp>();
+        }
+        #[cfg(feature = "kzg")]
+        {
+            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
+            use secp256k1::Secp256k1Affine as Secp256;
+            run::<Secp256, Fr>();
+            run::<Bn256, Fr>();
+        }
     }
 
     #[derive(Default, Clone, Debug)]
@@ -464,32 +479,46 @@ mod tests {
 
     #[test]
     fn test_general_ecc_public_input() {
-        let (rns_base, _, k) = setup::<Curve, Field>(0);
-        use rand::thread_rng;
-        let mut rng = thread_rng();
+        fn run<C: CurveAffine, N: FieldExt>() {
+            let mut rng = thread_rng();
+            let (rns_base, _, k) = setup::<C, N>(0);
 
-        let a = CurveProjective::random(&mut rng).to_affine();
-        let b = CurveProjective::random(&mut rng).to_affine();
+            let a = C::CurveExt::random(&mut rng).to_affine();
+            let b = C::CurveExt::random(&mut rng).to_affine();
 
-        let c0: Curve = (a + b).into();
-        let c0 = Point::from(&rns_base, c0);
-        let mut public_data = c0.public();
-        let c1: Curve = (a + a).into();
-        let c1 = Point::from(&rns_base, c1);
-        public_data.extend(c1.public());
+            let c0: C = (a + b).into();
+            let c0 = Point::from(&rns_base, c0);
+            let mut public_data = c0.public();
+            let c1: C = (a + a).into();
+            let c1 = Point::from(&rns_base, c1);
+            public_data.extend(c1.public());
+            let circuit = TestEccPublicInput::<C, N> {
+                a: Some(a),
+                b: Some(b),
+                _marker: PhantomData,
+            };
+            let prover = match MockProver::run(k, &circuit, vec![public_data]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
 
-        let circuit = TestEccPublicInput::<Curve, Field> {
-            a: Some(a),
-            b: Some(b),
-            _marker: PhantomData,
-        };
-
-        let prover = match MockProver::run(k, &circuit, vec![public_data]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
-
-        assert_eq!(prover.verify(), Ok(()));
+        #[cfg(not(feature = "kzg"))]
+        {
+            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
+            run::<EpAffine, Fq>();
+            run::<EqAffine, Fq>();
+            run::<EpAffine, Fp>();
+            run::<EqAffine, Fp>();
+        }
+        #[cfg(feature = "kzg")]
+        {
+            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
+            use secp256k1::Secp256k1Affine as Secp256;
+            run::<Secp256, Fr>();
+            run::<Bn256, Fr>();
+        }
     }
 
     #[derive(Default, Clone, Debug)]
@@ -515,8 +544,6 @@ mod tests {
             let ecc_chip_config = config.ecc_chip_config();
             let mut ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, BIT_LEN_LIMB);
             let scalar_chip = ecc_chip.scalar_field_chip();
-            // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
-            // main_gate.break_here(ctx)?;
 
             layouter.assign_region(
                 || "assign aux values",
@@ -562,23 +589,41 @@ mod tests {
 
     #[test]
     fn test_general_ecc_mul_circuit() {
-        let (_, _, k) = setup::<Curve, Field>(20);
-        for window_size in 1..5 {
-            let mut rng = thread_rng();
-            let aux_generator = CurveProjective::random(&mut rng).to_affine();
+        fn run<C: CurveAffine, N: FieldExt>() {
+            let (_, _, k) = setup::<C, N>(20);
+            for window_size in 1..5 {
+                let mut rng = thread_rng();
+                let aux_generator = C::CurveExt::random(&mut rng).to_affine();
 
-            let circuit = TestEccMul::<Curve, Field> {
-                aux_generator,
-                window_size,
-                _marker: PhantomData,
-            };
+                let circuit = TestEccMul::<C, N> {
+                    aux_generator,
+                    window_size,
+                    _marker: PhantomData,
+                };
 
-            let public_inputs = vec![vec![]];
-            let prover = match MockProver::run(k, &circuit, public_inputs) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-            assert_eq!(prover.verify(), Ok(()));
+                let public_inputs = vec![vec![]];
+                let prover = match MockProver::run(k, &circuit, public_inputs) {
+                    Ok(prover) => prover,
+                    Err(e) => panic!("{:#?}", e),
+                };
+                assert_eq!(prover.verify(), Ok(()));
+            }
+        }
+
+        #[cfg(not(feature = "kzg"))]
+        {
+            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
+            run::<EpAffine, Fq>();
+            run::<EqAffine, Fq>();
+            run::<EpAffine, Fp>();
+            run::<EqAffine, Fp>();
+        }
+        #[cfg(feature = "kzg")]
+        {
+            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
+            use secp256k1::Secp256k1Affine as Secp256;
+            run::<Secp256, Fr>();
+            run::<Bn256, Fr>();
         }
     }
 
@@ -606,8 +651,6 @@ mod tests {
             let ecc_chip_config = config.ecc_chip_config();
             let mut ecc_chip = GeneralEccChip::<C, N>::new(ecc_chip_config, BIT_LEN_LIMB);
             let scalar_chip = ecc_chip.scalar_field_chip();
-            // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
-            // main_gate.break_here(ctx)?;
 
             layouter.assign_region(
                 || "assign aux values",
@@ -658,26 +701,44 @@ mod tests {
 
     #[test]
     fn test_general_ecc_mul_batch_circuit() {
-        let (_, _, k) = setup::<Curve, Field>(20);
-        for number_of_pairs in 4..5 {
-            for window_size in 1..3 {
-                let mut rng = thread_rng();
-                let aux_generator = CurveProjective::random(&mut rng).to_affine();
+        fn run<C: CurveAffine, N: FieldExt>() {
+            let (_, _, k) = setup::<C, N>(20);
+            for number_of_pairs in 5..7 {
+                for window_size in 1..3 {
+                    let mut rng = thread_rng();
+                    let aux_generator = C::CurveExt::random(&mut rng).to_affine();
 
-                let circuit = TestEccBatchMul::<Curve, Field> {
-                    aux_generator,
-                    window_size,
-                    number_of_pairs,
-                    _marker: PhantomData,
-                };
+                    let circuit = TestEccBatchMul::<C, N> {
+                        aux_generator,
+                        window_size,
+                        number_of_pairs,
+                        _marker: PhantomData,
+                    };
 
-                let public_inputs = vec![vec![]];
-                let prover = match MockProver::run(k, &circuit, public_inputs) {
-                    Ok(prover) => prover,
-                    Err(e) => panic!("{:#?}", e),
-                };
-                assert_eq!(prover.verify(), Ok(()));
+                    let public_inputs = vec![vec![]];
+                    let prover = match MockProver::run(k, &circuit, public_inputs) {
+                        Ok(prover) => prover,
+                        Err(e) => panic!("{:#?}", e),
+                    };
+                    assert_eq!(prover.verify(), Ok(()));
+                }
             }
+        }
+
+        #[cfg(not(feature = "kzg"))]
+        {
+            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
+            run::<EpAffine, Fq>();
+            run::<EqAffine, Fq>();
+            run::<EpAffine, Fp>();
+            run::<EqAffine, Fp>();
+        }
+        #[cfg(feature = "kzg")]
+        {
+            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
+            use secp256k1::Secp256k1Affine as Secp256;
+            run::<Bn256, Fr>();
+            run::<Secp256, Fr>();
         }
     }
 }
