@@ -314,11 +314,14 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn div_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => match b.invert().into() {
-                Some(b_inverted) => Some(a * &b_inverted),
-                // Non inversion case will never be verified
-                _ => Some(F::zero()),
-            },
+            (Some(a), Some(b)) => {
+                let b_maybe_inverted: Option<F> = b.invert().into();
+                match b_maybe_inverted {
+                    Some(b_inverted) => Some(a * b_inverted),
+                    // Non inversion case will never be verified
+                    _ => Some(F::zero()),
+                }
+            }
             _ => None,
         };
 

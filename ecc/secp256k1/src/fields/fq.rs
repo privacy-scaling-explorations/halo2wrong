@@ -126,7 +126,7 @@ const MODULUS_LIMBS_32: [u32; 8] = [
 ];
 
 ///Constant representing the modulus as static str
-const MODULUS_STR: &'static str = "0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141";
+const MODULUS_STR: &str = "0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141";
 
 impl<'a> Neg for &'a Fq {
     type Output = Fq;
@@ -750,14 +750,13 @@ mod test {
 
     #[cfg(test)]
     fn fp_to_big(fe: Fq) -> BigUint {
-        let u: [u8; 32] = fe.to_repr().into();
+        let u: [u8; 32] = fe.to_repr();
         BigUint::from_bytes_le(&u[..])
     }
 
     #[cfg(test)]
     fn big_modulus() -> BigUint {
-        let modulus_big = BigUint::from_str_radix("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16).unwrap();
-        modulus_big
+        BigUint::from_str_radix("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16).unwrap()
     }
 
     #[test]

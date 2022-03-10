@@ -123,7 +123,7 @@ const MODULUS_LIMBS_32: [u32; 8] = [
 ];
 
 /// Constant representing the modolus as static str
-const MODULUS_STR: &'static str = "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f";
+const MODULUS_STR: &str = "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f";
 
 impl<'a> Neg for &'a Fp {
     type Output = Fp;
@@ -740,14 +740,13 @@ mod test {
 
     #[cfg(test)]
     fn fp_to_big(fe: Fp) -> BigUint {
-        let u: [u8; 32] = fe.to_repr().into();
+        let u: [u8; 32] = fe.to_repr();
         BigUint::from_bytes_le(&u[..])
     }
 
     #[cfg(test)]
     fn big_modulus() -> BigUint {
-        let modulus_big = BigUint::from_str_radix("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f", 16).unwrap();
-        modulus_big
+        BigUint::from_str_radix("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f", 16).unwrap()
     }
 
     #[test]
