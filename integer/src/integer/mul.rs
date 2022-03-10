@@ -3,19 +3,17 @@ use crate::rns::{Common, Integer, MaybeReduced};
 use crate::{AssignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
+use maingate::Assigned;
 use maingate::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _mul(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _mul(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>, b: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let a_int = self.rns.to_integer(a);
-        let b_int = self.rns.to_integer(b);
-
-        let reduction_witness: MaybeReduced<W, N> = match (a_int, b_int) {
+        let reduction_witness: MaybeReduced<W, N> = match (a.integer(), b.integer()) {
             (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
             _ => None,
         }
@@ -108,9 +106,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
                 // update running temp value
                 intermediate_value = intermediate_value.map(|t| {
-                    let a = a.limb_value(j).unwrap();
-                    let b = b.limb_value(k).unwrap();
-                    let q = quotient.limb_value(k).unwrap();
+                    let a = a.limb(j).value().unwrap();
+                    let b = b.limb(k).value().unwrap();
+                    let q = quotient.limb(k).value().unwrap();
                     let p = negative_wrong_modulus[j];
                     t - (a * b + q * p)
                 });
@@ -206,13 +204,13 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(result.clone())
     }
 
-    pub(crate) fn _mul_constant(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>, b: &Integer<W, N>) -> Result<AssignedInteger<N>, Error> {
+    pub(crate) fn _mul_constant(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>, b: &Integer<W, N>) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let a_int = self.rns.to_integer(a);
+        let a_int = a.integer();
         let reduction_witness: MaybeReduced<W, N> = a_int.map(|a_int| a_int.mul(b)).into();
         let quotient = reduction_witness.long();
         let result = reduction_witness.result();
@@ -294,9 +292,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         let tmp = t_2.map(|_| {
             let p = negative_wrong_modulus.clone();
-            let q_0 = quotient.limb_value(0).unwrap();
-            let q_1 = quotient.limb_value(1).unwrap();
-            let q_2 = quotient.limb_value(2).unwrap();
+            let q_0 = quotient.limb(0).value().unwrap();
+            let q_1 = quotient.limb(1).value().unwrap();
+            let q_2 = quotient.limb(2).value().unwrap();
 
             q_0 * p[2] + q_1 * p[1] + q_2 * p[0]
         });
@@ -336,17 +334,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let (tmp_a, tmp_b) = match t_3 {
             Some(t_3) => {
                 let p = negative_wrong_modulus.clone();
-                let a_0 = a.limb_value(0).unwrap();
-                let a_1 = a.limb_value(1).unwrap();
-                let a_2 = a.limb_value(2).unwrap();
-                let a_3 = a.limb_value(3).unwrap();
-                let q_0 = quotient.limb_value(0).unwrap();
-                let q_1 = quotient.limb_value(1).unwrap();
-                // let q_2 = quotient.limb_value(2).unwrap();
-                // let q_3 = quotient.limb_value(3).unwrap();
-
-                let tmp_a = t_3 - a_0 * b[3] - a_1 * b[2] - a_2 * b[1];
-                let tmp_b = tmp_a - a_3 * b[0] - q_0 * p[3] - q_1 * p[2];
+                let a = a.integer().unwrap().limbs();
+                let q = quotient.integer().unwrap().limbs();
+                let tmp_a = t_3 - a[0] * b[3] - a[1] * b[2] - a[2] * b[1];
+                let tmp_b = tmp_a - a[3] * b[0] - q[0] * p[3] - q[1] * p[2];
 
                 (Some(tmp_a), Some(tmp_b))
             }
@@ -480,16 +471,13 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(result.clone())
     }
 
-    pub(crate) fn _mul_into_one(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>, b: &AssignedInteger<N>) -> Result<(), Error> {
+    pub(crate) fn _mul_into_one(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>, b: &AssignedInteger<W, N>) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let a_int = self.rns.to_integer(a);
-        let b_int = self.rns.to_integer(b);
-
-        let reduction_witness: MaybeReduced<W, N> = match (a_int, b_int) {
+        let reduction_witness: MaybeReduced<W, N> = match (a.integer(), b.integer()) {
             (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
             _ => None,
         }
@@ -580,9 +568,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
                 // update running temp value
                 t = t.map(|t| {
-                    let a = a.limb_value(j).unwrap();
-                    let b = b.limb_value(k).unwrap();
-                    let q = quotient.limb_value(k).unwrap();
+                    let a = a.limb(j).value().unwrap();
+                    let b = b.limb(k).value().unwrap();
+                    let q = quotient.limb(k).value().unwrap();
                     let p = negative_wrong_modulus[j];
                     t - (a * b + q * p)
                 });

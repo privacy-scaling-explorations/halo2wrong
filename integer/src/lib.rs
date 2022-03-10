@@ -1,14 +1,16 @@
 #![allow(dead_code)]
 #![feature(trait_alias)]
 
+use std::rc::Rc;
+
 use crate::rns::{Common, Integer, Limb};
-use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Cell};
-use maingate::{compose, fe_to_big, Assigned, AssignedValue, UnassignedValue};
+use maingate::{big_to_fe, compose, fe_to_big, Assigned, AssignedValue, UnassignedValue};
 use num_bigint::BigUint as big_uint;
 
 pub use maingate;
 pub use maingate::halo2;
+use rns::Rns;
 pub mod integer;
 pub use crate::integer::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
 pub mod rns;
@@ -98,27 +100,27 @@ impl<F: FieldExt> AssignedLimb<F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UnassignedInteger<'a, W: WrongExt, F: FieldExt>(Option<Integer<'a, W, F>>);
+pub struct UnassignedInteger<W: WrongExt, F: FieldExt>(Option<Integer<W, F>>);
 
-impl<'a, W: WrongExt, F: FieldExt> UnassignedInteger<'a, W, F> {
-    pub fn new(int: Option<Integer<'a, W, F>>) -> Self {
+impl<W: WrongExt, F: FieldExt> UnassignedInteger<W, F> {
+    pub fn new(int: Option<Integer<W, F>>) -> Self {
         Self(int)
     }
 }
 
-impl<'a, W: WrongExt, F: FieldExt> From<Option<Integer<'a, W, F>>> for UnassignedInteger<'a, W, F> {
-    fn from(integer: Option<Integer<'a, W, F>>) -> Self {
+impl<'a, W: WrongExt, F: FieldExt> From<Option<Integer<W, F>>> for UnassignedInteger<W, F> {
+    fn from(integer: Option<Integer<W, F>>) -> Self {
         UnassignedInteger(integer)
     }
 }
 
-impl<'a, W: WrongExt, F: FieldExt> UnassignedInteger<'a, W, F> {
+impl<W: WrongExt, F: FieldExt> UnassignedInteger<W, F> {
     fn value(&self) -> Option<big_uint> {
         self.0.as_ref().map(|e| e.value())
     }
 
     fn limb(&self, idx: usize) -> UnassignedValue<F> {
-        self.0.as_ref().map(|e| e.limb_value(idx)).into()
+        self.0.as_ref().map(|e| e.limb(idx).fe()).into()
     }
 
     fn native(&self) -> UnassignedValue<F> {
@@ -127,49 +129,59 @@ impl<'a, W: WrongExt, F: FieldExt> UnassignedInteger<'a, W, F> {
 }
 
 #[derive(Debug, Clone)]
-pub struct AssignedInteger<F: FieldExt> {
-    pub limbs: Vec<AssignedLimb<F>>,
-    native_value: AssignedValue<F>,
-    bit_len_limb: usize,
+pub struct AssignedInteger<W: WrongExt, N: FieldExt> {
+    limbs: Vec<AssignedLimb<N>>,
+    native_value: AssignedValue<N>,
+    rns: Rc<Rns<W, N>>,
 }
 
-impl<F: FieldExt> AssignedInteger<F> {
-    pub fn new(limbs: Vec<AssignedLimb<F>>, native_value: AssignedValue<F>, bit_len_limb: usize) -> Self {
-        AssignedInteger {
-            limbs,
-            native_value,
-            bit_len_limb,
-        }
+impl<'a, W: WrongExt, N: FieldExt> AssignedInteger<W, N> {
+    pub fn new(rns: Rc<Rns<W, N>>, limbs: Vec<AssignedLimb<N>>, native_value: AssignedValue<N>) -> Self {
+        AssignedInteger { limbs, native_value, rns }
     }
 
     fn max_val(&self) -> big_uint {
-        compose(self.max_vals(), self.bit_len_limb)
+        compose(self.max_vals(), self.rns.bit_len_limb)
     }
 
     fn max_vals(&self) -> Vec<big_uint> {
         self.limbs.iter().map(|limb| limb.max_val()).collect()
     }
 
-    fn limb_value(&self, idx: usize) -> Result<F, Error> {
-        Ok(self.limbs[idx].value.as_ref().ok_or(Error::Synthesis)?.fe())
-    }
-
-    fn limb(&self, idx: usize) -> AssignedLimb<F> {
+    fn limb(&self, idx: usize) -> AssignedLimb<N> {
         self.limbs[idx].clone()
     }
 
-    fn limbs(&self) -> Option<Vec<Limb<F>>> {
-        self.has_value().map(|_| {
-            let limbs = self.limbs.iter().map(|limb| limb.limb().unwrap()).collect();
-            limbs
-        })
+    pub fn limbs(&self) -> Vec<AssignedLimb<N>> {
+        self.limbs.clone()
     }
 
-    pub fn native(&self) -> AssignedValue<F> {
+    pub fn native(&self) -> AssignedValue<N> {
         self.native_value.clone()
     }
 
-    fn has_value(&self) -> Option<()> {
-        self.limbs[0].value.clone().map(|_| ())
+    pub fn integer(&self) -> Option<Integer<W, N>> {
+        let has_value = self.limbs[0].value.clone().map(|_| ());
+        let limbs: Option<Vec<Limb<N>>> = has_value.map(|_| {
+            let limbs = self.limbs.iter().map(|limb| limb.limb().unwrap()).collect();
+            limbs
+        });
+        limbs.map(|limbs| Integer::new(limbs, Rc::clone(&self.rns)))
+    }
+
+    pub fn make_aux(&self) -> Integer<W, N> {
+        let mut max_shift = 0usize;
+        let max_vals = self.max_vals();
+        for (max_val, aux) in max_vals.iter().zip(self.rns.base_aux.iter()) {
+            let mut shift = 1;
+            let mut aux = aux.clone();
+            while *max_val > aux {
+                aux <<= 1usize;
+                max_shift = std::cmp::max(shift, max_shift);
+                shift += 1;
+            }
+        }
+        let limbs = self.rns.base_aux.iter().map(|aux_limb| big_to_fe(aux_limb << max_shift)).collect();
+        Integer::from_limbs(limbs, Rc::clone(&self.rns))
     }
 }

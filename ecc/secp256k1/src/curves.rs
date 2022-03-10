@@ -881,7 +881,7 @@ impl GroupEncoding for Secp256k1Affine {
         let y = Fp::from_repr(y_bytes);
 
         if (x.is_none() | y.is_none()).into() {
-            return invalid;
+            invalid
         } else {
             let res = Secp256k1Affine {
                 x: x.unwrap(),

@@ -8,14 +8,14 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
-impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
-    fn pad(&self, region: &mut RegionCtx<'_, '_, F>, bits: &mut Vec<AssignedCondition<F>>, window_size: usize) -> Result<(), Error> {
+impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
+    fn pad(&self, region: &mut RegionCtx<'_, '_, N>, bits: &mut Vec<AssignedCondition<N>>, window_size: usize) -> Result<(), Error> {
         assert_eq!(bits.len(), Emulated::ScalarExt::NUM_BITS as usize);
 
         // TODO: This is a tmp workaround. Instead of padding with zeros we can use a shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
-        let zeros: Vec<AssignedCondition<F>> = (0..padding_offset)
-            .map(|_| Ok(self.main_gate().assign_constant(region, F::zero())?.into()))
+        let zeros: Vec<AssignedCondition<N>> = (0..padding_offset)
+            .map(|_| Ok(self.main_gate().assign_constant(region, N::zero())?.into()))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();
@@ -23,13 +23,13 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         Ok(())
     }
 
-    fn window(bits: Vec<AssignedCondition<F>>, window_size: usize) -> Windowed<F> {
+    fn window(bits: Vec<AssignedCondition<N>>, window_size: usize) -> Windowed<N> {
         assert_eq!(bits.len() % window_size, 0);
         let number_of_windows = bits.len() / window_size;
         Windowed(
             (0..number_of_windows)
                 .map(|i| {
-                    let mut selector: Vec<AssignedCondition<F>> = (0..window_size).map(|j| bits[i * window_size + j].clone()).collect();
+                    let mut selector: Vec<AssignedCondition<N>> = (0..window_size).map(|j| bits[i * window_size + j].clone()).collect();
                     selector.reverse();
                     Selector(selector)
                 })
@@ -39,11 +39,11 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
     fn make_incremental_table(
         &self,
-        region: &mut RegionCtx<'_, '_, F>,
-        aux: &AssignedPoint<F>,
-        point: &AssignedPoint<F>,
+        region: &mut RegionCtx<'_, '_, N>,
+        aux: &AssignedPoint<Emulated::Base, N>,
+        point: &AssignedPoint<Emulated::Base, N>,
         window_size: usize,
-    ) -> Result<Table<F>, Error> {
+    ) -> Result<Table<Emulated::Base, N>, Error> {
         let table_size = 1 << window_size;
         let mut table = vec![aux.clone()];
         for i in 0..(table_size - 1) {
@@ -52,7 +52,12 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         Ok(Table(table))
     }
 
-    fn select_multi(&self, region: &mut RegionCtx<'_, '_, F>, selector: &Selector<F>, table: &Table<F>) -> Result<AssignedPoint<F>, Error> {
+    fn select_multi(
+        &self,
+        region: &mut RegionCtx<'_, '_, N>,
+        selector: &Selector<N>,
+        table: &Table<Emulated::Base, N>,
+    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         let number_of_points = table.0.len();
         let number_of_selectors = selector.0.len();
         assert_eq!(number_of_points, 1 << number_of_selectors);
@@ -70,11 +75,11 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
     pub fn mul(
         &self,
-        region: &mut RegionCtx<'_, '_, F>,
-        point: &AssignedPoint<F>,
-        scalar: &AssignedInteger<F>,
+        region: &mut RegionCtx<'_, '_, N>,
+        point: &AssignedPoint<Emulated::Base, N>,
+        scalar: &AssignedInteger<Emulated::Scalar, N>,
         window_size: usize,
-    ) -> Result<AssignedPoint<F>, Error> {
+    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         assert!(window_size > 0);
         let aux = self.get_mul_aux(window_size, 1)?;
 
@@ -101,16 +106,16 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
     pub fn mul_batch_1d_horizontal(
         &self,
-        region: &mut RegionCtx<'_, '_, F>,
-        pairs: Vec<(AssignedPoint<F>, AssignedInteger<F>)>,
+        region: &mut RegionCtx<'_, '_, N>,
+        pairs: Vec<(AssignedPoint<Emulated::Base, N>, AssignedInteger<Emulated::Scalar, N>)>,
         window_size: usize,
-    ) -> Result<AssignedPoint<F>, Error> {
+    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         assert!(window_size > 0);
         assert!(pairs.len() > 0);
         let aux = self.get_mul_aux(window_size, pairs.len())?;
 
         let scalar_chip = self.scalar_field_chip();
-        let mut decomposed_scalars: Vec<Vec<AssignedCondition<F>>> = pairs
+        let mut decomposed_scalars: Vec<Vec<AssignedCondition<N>>> = pairs
             .iter()
             .map(|(_, scalar)| scalar_chip.decompose(region, scalar))
             .collect::<Result<_, Error>>()?;
@@ -119,14 +124,14 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
             self.pad(region, decomposed, window_size)?;
         }
 
-        let windowed_scalars: Vec<Windowed<F>> = decomposed_scalars
+        let windowed_scalars: Vec<Windowed<N>> = decomposed_scalars
             .iter()
             .map(|decomposed| Self::window(decomposed.to_vec(), window_size))
             .collect();
         let number_of_windows = windowed_scalars[0].0.len();
 
         let mut binary_aux = aux.to_add.clone();
-        let tables: Vec<Table<F>> = pairs
+        let tables: Vec<Table<Emulated::Base, N>> = pairs
             .iter()
             .enumerate()
             .map(|(i, (point, _))| {

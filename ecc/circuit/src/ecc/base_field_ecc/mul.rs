@@ -7,15 +7,15 @@ use halo2::arithmetic::CurveAffine;
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
-impl<C: CurveAffine> BaseFieldEccChip<C> {
-    fn pad(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, bits: &mut Vec<AssignedCondition<C::ScalarExt>>, window_size: usize) -> Result<(), Error> {
+impl< C: CurveAffine> BaseFieldEccChip< C> {
+    fn pad(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, bits: &mut Vec<AssignedCondition<C::Scalar>>, window_size: usize) -> Result<(), Error> {
         use group::ff::Field;
-        assert_eq!(bits.len(), C::ScalarExt::NUM_BITS as usize);
+        assert_eq!(bits.len(), C::Scalar::NUM_BITS as usize);
 
         // TODO: This is a tmp workaround. Instead of padding with zeros we can use a shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
-        let zeros: Vec<AssignedCondition<C::ScalarExt>> = (0..padding_offset)
-            .map(|_| Ok(self.main_gate().assign_constant(ctx, C::ScalarExt::zero())?.into()))
+        let zeros: Vec<AssignedCondition<C::Scalar>> = (0..padding_offset)
+            .map(|_| Ok(self.main_gate().assign_constant(ctx, C::Scalar::zero())?.into()))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();
@@ -23,13 +23,13 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
-    fn window(bits: Vec<AssignedCondition<C::ScalarExt>>, window_size: usize) -> Windowed<C::ScalarExt> {
+    fn window(bits: Vec<AssignedCondition<C::Scalar>>, window_size: usize) -> Windowed<C::Scalar> {
         assert_eq!(bits.len() % window_size, 0);
         let number_of_windows = bits.len() / window_size;
         Windowed(
             (0..number_of_windows)
                 .map(|i| {
-                    let mut selector: Vec<AssignedCondition<C::ScalarExt>> = (0..window_size).map(|j| bits[i * window_size + j].clone()).collect();
+                    let mut selector: Vec<AssignedCondition<C::Scalar>> = (0..window_size).map(|j| bits[i * window_size + j].clone()).collect();
                     selector.reverse();
                     Selector(selector)
                 })
@@ -39,11 +39,11 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     fn make_incremental_table(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        aux: &AssignedPoint<C::ScalarExt>,
-        point: &AssignedPoint<C::ScalarExt>,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        aux: &AssignedPoint< C::Base, C::Scalar>,
+        point: &AssignedPoint< C::Base, C::Scalar>,
         window_size: usize,
-    ) -> Result<Table<C::ScalarExt>, Error> {
+    ) -> Result<Table< C::Base, C::Scalar>, Error> {
         let table_size = 1 << window_size;
         let mut table = vec![aux.clone()];
         for i in 0..(table_size - 1) {
@@ -54,10 +54,10 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     fn select_multi(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        selector: &Selector<C::ScalarExt>,
-        table: &Table<C::ScalarExt>,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        selector: &Selector<C::Scalar>,
+        table: &Table< C::Base, C::Scalar>,
+    ) -> Result<AssignedPoint< C::Base, C::Scalar>, Error> {
         let number_of_points = table.0.len();
         let number_of_selectors = selector.0.len();
         assert_eq!(number_of_points, 1 << number_of_selectors);
@@ -75,16 +75,16 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     pub(super) fn mul(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        point: &AssignedPoint<C::ScalarExt>,
-        scalar: &AssignedValue<C::ScalarExt>,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        point: &AssignedPoint< C::Base, C::Scalar>,
+        scalar: &AssignedValue<C::Scalar>,
         window_size: usize,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    ) -> Result<AssignedPoint< C::Base, C::Scalar>, Error> {
         assert!(window_size > 0);
         let aux = self.get_mul_aux(window_size, 1)?;
 
         let main_gate = self.main_gate();
-        let decomposed = &mut main_gate.decompose(ctx, scalar, C::ScalarExt::NUM_BITS as usize)?;
+        let decomposed = &mut main_gate.decompose(ctx, scalar, C::Scalar::NUM_BITS as usize)?;
 
         self.pad(ctx, decomposed, window_size)?;
         let windowed = Self::window(decomposed.to_vec(), window_size);
@@ -107,33 +107,33 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     pub(super) fn mul_batch_1d_horizontal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        pairs: Vec<(AssignedPoint<C::ScalarExt>, AssignedValue<C::ScalarExt>)>,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        pairs: Vec<(AssignedPoint< C::Base, C::Scalar>, AssignedValue<C::Scalar>)>,
         window_size: usize,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    ) -> Result<AssignedPoint< C::Base, C::Scalar>, Error> {
         assert!(window_size > 0);
         assert!(pairs.len() > 0);
         let aux = self.get_mul_aux(window_size, pairs.len())?;
 
         let main_gate = self.main_gate();
 
-        let mut decomposed_scalars: Vec<Vec<AssignedCondition<C::ScalarExt>>> = pairs
+        let mut decomposed_scalars: Vec<Vec<AssignedCondition<C::Scalar>>> = pairs
             .iter()
-            .map(|(_, scalar)| main_gate.decompose(ctx, scalar, C::ScalarExt::NUM_BITS as usize))
+            .map(|(_, scalar)| main_gate.decompose(ctx, scalar, C::Scalar::NUM_BITS as usize))
             .collect::<Result<_, Error>>()?;
 
         for decomposed in decomposed_scalars.iter_mut() {
             self.pad(ctx, decomposed, window_size)?;
         }
 
-        let windowed_scalars: Vec<Windowed<C::ScalarExt>> = decomposed_scalars
+        let windowed_scalars: Vec<Windowed<C::Scalar>> = decomposed_scalars
             .iter()
             .map(|decomposed| Self::window(decomposed.to_vec(), window_size))
             .collect();
         let number_of_windows = windowed_scalars[0].0.len();
 
         let mut binary_aux = aux.to_add.clone();
-        let tables: Vec<Table<C::ScalarExt>> = pairs
+        let tables: Vec<Table<C::Base, C::Scalar>> = pairs
             .iter()
             .enumerate()
             .map(|(i, (point, _))| {

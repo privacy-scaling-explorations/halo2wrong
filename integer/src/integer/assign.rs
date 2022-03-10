@@ -1,5 +1,7 @@
+use std::rc::Rc;
+
 use super::{IntegerChip, Range};
-use crate::rns::Common;
+use crate::rns::{Common, Integer};
 use crate::{AssignedInteger, AssignedLimb, UnassignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
@@ -13,7 +15,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: UnassignedInteger<W, N>,
         range: Range,
-    ) -> Result<AssignedInteger<N>, Error> {
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let range_chip = self.range_chip();
         let max_val = (big_uint::one() << self.rns.bit_len_limb) - 1usize;
 
@@ -60,8 +62,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
     }
 
-    pub(super) fn _assign_constant(&self, ctx: &mut RegionCtx<'_, '_, N>, integer: W) -> Result<AssignedInteger<N>, Error> {
-        let integer = self.rns.new(integer);
+    pub(super) fn _assign_constant(&self, ctx: &mut RegionCtx<'_, '_, N>, integer: W) -> Result<AssignedInteger<W, N>, Error> {
+        let integer = Integer::from_fe(integer, Rc::clone(&self.rns));
+
         let main_gate = self.main_gate();
 
         let limbs = integer.limbs();
@@ -71,7 +74,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             assigned_limbs.push(AssignedLimb::from(assigned, fe_to_big(*limb)));
         }
         let native = main_gate.assign_constant(ctx, integer.native())?;
-        Ok(AssignedInteger::new(assigned_limbs, native, self.rns.bit_len_limb))
+
+        Ok(self.new_assigned_integer(assigned_limbs, native))
     }
 
     pub(super) fn _assign_integer(
@@ -79,7 +83,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: UnassignedInteger<W, N>,
         should_be_in_remainder_range: bool,
-    ) -> Result<AssignedInteger<N>, Error> {
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         if let Some(value) = integer.value() {

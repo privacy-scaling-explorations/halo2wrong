@@ -5,7 +5,7 @@ use halo2::plonk::Error;
 use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _assert_in_field(&self, ctx: &mut RegionCtx<'_, '_, N>, input: &AssignedInteger<N>) -> Result<(), Error> {
+    pub(super) fn _assert_in_field(&self, ctx: &mut RegionCtx<'_, '_, N>, input: &AssignedInteger<W, N>) -> Result<(), Error> {
         // Constraints:
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
@@ -25,7 +25,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // to make a=p case not passing compare with p-1
         let modulus_minus_one = &self.rns.wrong_modulus_minus_one.clone();
 
-        let integer = self.rns.to_integer(input);
+        let integer = input.integer();
         // result containts borrows must be bits and subtraaction result must be in range
         let comparision_result = integer.as_ref().map(|integer| integer.compare_to_modulus());
 

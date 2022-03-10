@@ -6,8 +6,13 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
-impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
-    pub(crate) fn _add_incomplete_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: &AssignedPoint<F>, b: &AssignedPoint<F>) -> Result<AssignedPoint<F>, Error> {
+impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
+    pub(crate) fn _add_incomplete_unsafe(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedPoint<Emulated::Base, N>,
+        b: &AssignedPoint<Emulated::Base, N>,
+    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         let ch = self.base_field_chip();
 
         // lambda = b_y - a_y / b_x - a_x
@@ -17,10 +22,10 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
         // c_x =  lambda * lambda - a_x - b_x
         let lambda_square = &ch.square(ctx, lambda)?;
-        let x = &ch.sub_sub(ctx, lambda_square, &a.x, &b.x)?;
+        let x = ch.sub_sub(ctx, lambda_square, &a.x, &b.x)?;
 
         // c_y = lambda * (a_x - c_x) - a_y
-        let t = &ch.sub(ctx, &a.x, x)?;
+        let t = &ch.sub(ctx, &a.x, &x)?;
         let t = &ch.mul(ctx, t, lambda)?;
         let y = ch.sub(ctx, t, &a.y)?;
 
@@ -29,7 +34,11 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
         Ok(p_0)
     }
 
-    pub(crate) fn _double_incomplete(&self, ctx: &mut RegionCtx<'_, '_, F>, point: &AssignedPoint<F>) -> Result<AssignedPoint<F>, Error> {
+    pub(crate) fn _double_incomplete(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        point: &AssignedPoint<Emulated::Base, N>,
+    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         let ch = self.base_field_chip();
 
         // lambda = (3 * a_x^2) / 2 * a_y
@@ -52,10 +61,10 @@ impl<Emulated: CurveAffine, F: FieldExt> GeneralEccChip<Emulated, F> {
 
     pub(crate) fn _ladder_incomplete(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        to_double: &AssignedPoint<F>,
-        to_add: &AssignedPoint<F>,
-    ) -> Result<AssignedPoint<F>, Error> {
+        ctx: &mut RegionCtx<'_, '_, N>,
+        to_double: &AssignedPoint<Emulated::Base, N>,
+        to_add: &AssignedPoint<Emulated::Base, N>,
+    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         let ch = self.base_field_chip();
 
         // (P + Q) + P

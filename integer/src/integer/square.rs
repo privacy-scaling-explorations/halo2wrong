@@ -2,16 +2,17 @@ use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::MaybeReduced, AssignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
+use maingate::Assigned;
 use maingate::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _square(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _square(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let a_int = self.rns.to_integer(a);
+        let a_int = a.integer();
 
         let reduction_witness: MaybeReduced<W, N> = a_int.map(|a_int| a_int.square()).into();
         let quotient = reduction_witness.long();
@@ -103,9 +104,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
                 // update running temp value
                 intermediate_value = intermediate_value.map(|t| {
-                    let a_j = a.limb_value(j).unwrap();
-                    let a_k = a.limb_value(k).unwrap();
-                    let q = quotient.limb_value(k).unwrap();
+                    let a_j = a.limb(j).value().unwrap();
+                    let a_k = a.limb(k).value().unwrap();
+                    let q = quotient.limb(k).value().unwrap();
+
                     let p = negative_wrong_modulus[j];
                     t - (a_j * a_k + q * p)
                 });

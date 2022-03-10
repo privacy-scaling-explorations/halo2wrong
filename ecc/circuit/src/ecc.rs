@@ -9,24 +9,25 @@ use integer::IntegerConfig;
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 use std::fmt;
+use std::rc::Rc;
 
 pub use base_field_ecc::*;
 pub use general_ecc::*;
 
 #[derive(Clone, Debug)]
-pub struct Point<'a, W: WrongExt, N: FieldExt> {
-    x: Integer<'a, W, N>,
-    y: Integer<'a, W, N>,
+pub struct Point<W: WrongExt, N: FieldExt> {
+    x: Integer<W, N>,
+    y: Integer<W, N>,
 }
 
-impl<'a, W: WrongExt, N: FieldExt> Point<'a, W, N> {
-    fn from(rns: &'a Rns<W, N>, point: impl CurveAffine<Base = W>) -> Self {
+impl<W: WrongExt, N: FieldExt> Point<W, N> {
+    fn from(rns: Rc<Rns<W, N>>, point: impl CurveAffine<Base = W>) -> Self {
         let coords = point.coordinates();
         // disallow point of infinity
         let coords = coords.unwrap();
 
-        let x = rns.new(*coords.x());
-        let y = rns.new(*coords.y());
+        let x = Integer::from_fe(*coords.x(), Rc::clone(&rns));
+        let y = Integer::from_fe(*coords.y(), Rc::clone(&rns));
         Point { x, y }
     }
 
@@ -40,12 +41,12 @@ impl<'a, W: WrongExt, N: FieldExt> Point<'a, W, N> {
 
 #[derive(Clone)]
 /// point that is assumed to be on curve and not infinity
-pub struct AssignedPoint<N: FieldExt> {
-    x: AssignedInteger<N>,
-    y: AssignedInteger<N>,
+pub struct AssignedPoint<W: WrongExt, N: FieldExt> {
+    x: AssignedInteger<W, N>,
+    y: AssignedInteger<W, N>,
 }
 
-impl<F: FieldExt> fmt::Debug for AssignedPoint<F> {
+impl<W: WrongExt, N: FieldExt> fmt::Debug for AssignedPoint<W, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AssignedPoint")
             .field("xn", &self.x.native().value())
@@ -55,12 +56,12 @@ impl<F: FieldExt> fmt::Debug for AssignedPoint<F> {
     }
 }
 
-impl<F: FieldExt> AssignedPoint<F> {
-    pub fn new(x: AssignedInteger<F>, y: AssignedInteger<F>) -> AssignedPoint<F> {
+impl<W: WrongExt, N: FieldExt> AssignedPoint<W, N> {
+    pub fn new(x: AssignedInteger<W, N>, y: AssignedInteger<W, N>) -> AssignedPoint<W, N> {
         AssignedPoint { x, y }
     }
 
-    pub fn get_x(&self) -> AssignedInteger<F> {
+    pub fn get_x(&self) -> AssignedInteger<W, N> {
         self.x.clone()
     }
 }
@@ -135,9 +136,9 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
     }
 }
 
-struct Table<F: FieldExt>(Vec<AssignedPoint<F>>);
+struct Table<W: WrongExt, N: FieldExt>(Vec<AssignedPoint<W, N>>);
 
-impl<F: FieldExt> fmt::Debug for Table<F> {
+impl<W: FieldExt, N: FieldExt> fmt::Debug for Table<W, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Table");
         for (i, entry) in self.0.iter().enumerate() {
@@ -151,13 +152,13 @@ impl<F: FieldExt> fmt::Debug for Table<F> {
     }
 }
 
-pub(super) struct MulAux<F: FieldExt> {
-    to_add: AssignedPoint<F>,
-    to_sub: AssignedPoint<F>,
+pub(super) struct MulAux<W: WrongExt, N: FieldExt> {
+    to_add: AssignedPoint<W, N>,
+    to_sub: AssignedPoint<W, N>,
 }
 
-impl<F: FieldExt> MulAux<F> {
-    pub(super) fn new(to_add: AssignedPoint<F>, to_sub: AssignedPoint<F>) -> Self {
+impl<W: WrongExt, N: FieldExt> MulAux<W, N> {
+    pub(super) fn new(to_add: AssignedPoint<W, N>, to_sub: AssignedPoint<W, N>) -> Self {
         MulAux { to_add, to_sub }
     }
 }

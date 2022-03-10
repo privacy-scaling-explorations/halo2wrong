@@ -1,17 +1,19 @@
+use std::rc::Rc;
+
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::{AssignedInteger, WrongExt};
+use crate::{rns::Integer, AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{halo2, Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _invert(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<(AssignedInteger<N>, AssignedCondition<N>), Error> {
+    pub(super) fn _invert(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<(AssignedInteger<W, N>, AssignedCondition<N>), Error> {
         let main_gate = self.main_gate();
 
         let one = N::one();
-        let integer_one = self.rns.new_from_big(1u32.into());
+        let integer_one = Integer::from_big(1u32.into(), Rc::clone(&self.rns));
 
-        let a_int = self.rns.to_integer(a);
+        let a_int = a.integer();
 
         let inv_or_one = match a_int.as_ref() {
             Some(a) => match a.invert() {
@@ -58,15 +60,15 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok((inv_or_one, cond.into()))
     }
 
-    pub(crate) fn _invert_incomplete(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
-        let a_int = self.rns.to_integer(a);
+    pub(crate) fn _invert_incomplete(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+        let a_int = a.integer();
         let inv = match a_int.as_ref() {
             Some(a) => match a.invert() {
                 Some(a) => Some(a),
                 None => {
                     // any number will fail it if a is zero
                     // no assertion here for now since we might want to fail in tests
-                    Some(self.rns.new_from_big(666u32.into()))
+                    Some(Integer::from_big(1u32.into(), Rc::clone(&self.rns)))
                 }
             },
             None => None,

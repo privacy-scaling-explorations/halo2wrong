@@ -7,7 +7,7 @@ use num_bigint::BigUint as big_uint;
 use std::convert::TryInto;
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _assert_not_zero(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<(), Error> {
+    pub(super) fn _assert_not_zero(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let one = N::one();
 

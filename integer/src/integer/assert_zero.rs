@@ -21,12 +21,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         self.rns.bit_len_limb
     }
 
-    pub(super) fn _assert_zero(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<(), Error> {
+    pub(super) fn _assert_zero(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let a_int = self.rns.to_integer(a);
+        let a_int = a.integer();
         let reduction_witness: MaybeReduced<W, N> = a_int.as_ref().map(|a_int| a_int.reduce()).into();
         let quotient = reduction_witness.short();
         let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();

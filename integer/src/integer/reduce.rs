@@ -6,49 +6,58 @@ use halo2::plonk::Error;
 use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn reduce_if_limb_values_exceeds_unreduced(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn reduce_if_limb_values_exceeds_unreduced(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let exceeds_max_limb_value = a
             .limbs
             .iter()
             .fold(false, |must_reduce, limb| must_reduce | (limb.max_val() > self.rns.max_unreduced_limb));
-
         assert!(a.max_val() < self.rns.max_reducible_value);
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(a.clone())
+            Ok(self.new_assigned_integer(a.limbs.clone(), a.native_value.clone()))
         }
     }
 
-    pub(super) fn reduce_if_limb_values_exceeds_reduced(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn reduce_if_limb_values_exceeds_reduced(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let exceeds_max_limb_value = a
             .limbs
             .iter()
             .fold(false, |must_reduce, limb| must_reduce | (limb.max_val() > self.rns.max_reduced_limb));
-
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(a.clone())
+            Ok(self.new_assigned_integer(a.limbs.clone(), a.native_value.clone()))
         }
     }
 
-    pub(super) fn reduce_if_max_operand_value_exceeds(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn reduce_if_max_operand_value_exceeds(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let exceeds_max_value = a.max_val() > self.rns.max_operand;
-
         if exceeds_max_value {
             self.reduce(ctx, a)
         } else {
-            Ok(a.clone())
+            Ok(self.new_assigned_integer(a.limbs.clone(), a.native_value.clone()))
         }
     }
 
-    pub(super) fn _reduce(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<N>) -> Result<AssignedInteger<N>, Error> {
+    pub(super) fn _reduce(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
 
-        let a_int = self.rns.to_integer(a);
+        let a_int = a.integer();
         let reduction_witness: MaybeReduced<W, N> = a_int.as_ref().map(|a_int| a_int.reduce()).into();
         let quotient = reduction_witness.short();
         let result = reduction_witness.result();

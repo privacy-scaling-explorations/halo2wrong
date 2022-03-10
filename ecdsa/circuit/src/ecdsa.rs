@@ -2,6 +2,7 @@ use crate::halo2;
 use crate::integer;
 use crate::maingate;
 use ecc::maingate::RegionCtx;
+use ecc::WrongExt;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
@@ -35,18 +36,18 @@ impl EcdsaConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct EcdsaSig<'a, W: FieldExt, N: FieldExt> {
-    pub r: Integer<'a, W, N>,
-    pub s: Integer<'a, W, N>,
+pub struct EcdsaSig<W: FieldExt, N: FieldExt> {
+    pub r: Integer<W, N>,
+    pub s: Integer<W, N>,
 }
 
-pub struct AssignedEcdsaSig<N: FieldExt> {
-    pub r: AssignedInteger<N>,
-    pub s: AssignedInteger<N>,
+pub struct AssignedEcdsaSig<W: WrongExt, N: FieldExt> {
+    pub r: AssignedInteger<W, N>,
+    pub s: AssignedInteger<W, N>,
 }
 
-pub struct AssignedPublicKey<N: FieldExt> {
-    pub point: AssignedPoint<N>,
+pub struct AssignedPublicKey<W: WrongExt, N: FieldExt> {
+    pub point: AssignedPoint<W, N>,
 }
 
 pub struct EcdsaChip<E: CurveAffine, N: FieldExt>(GeneralEccChip<E, N>);
@@ -69,9 +70,9 @@ impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
     pub fn verify(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        sig: &AssignedEcdsaSig<N>,
-        pk: &AssignedPublicKey<N>,
-        msg_hash: &AssignedInteger<N>,
+        sig: &AssignedEcdsaSig<E::Scalar, N>,
+        pk: &AssignedPublicKey<E::Base, N>,
+        msg_hash: &AssignedInteger<E::Scalar, N>,
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip();
         let scalar_chip = ecc_chip.scalar_field_chip();
@@ -102,7 +103,7 @@ impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
         // assuming E::Base/E::ScalarExt have the same number of limbs
         let q_x = q.get_x();
         let q_x_reduced_in_q = base_chip.reduce(ctx, &q_x)?;
-        let q_x_reduced_in_r = scalar_chip.reduce(ctx, &q_x_reduced_in_q)?;
+        let q_x_reduced_in_r = scalar_chip.reduce_external(ctx, &q_x_reduced_in_q)?;
 
         // 7. check if Q.x == r (mod n)
         scalar_chip.assert_strict_equal(ctx, &q_x_reduced_in_r, &sig.r)?;
@@ -117,7 +118,6 @@ mod tests {
     use crate::halo2;
     use crate::integer;
     use crate::maingate;
-    use ecc::integer::UnassignedInteger;
     use ecc::maingate::RegionCtx;
     use ecc::{EccConfig, GeneralEccChip};
     use group::ff::Field;
@@ -195,9 +195,7 @@ mod tests {
         }
 
         fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
-            // let mut ecdsa_chip = EcdsaChip::<E, N>::new(config.ecdsa_chip_config(), self.window_size, BIT_LEN_LIMB)?;
-            let ecc_chip_config = config.ecc_chip_config();
-            let mut ecc_chip = GeneralEccChip::<E, N>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip = GeneralEccChip::<E, N>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
             let scalar_chip = ecc_chip.scalar_field_chip();
 
             let mut rng = thread_rng();
@@ -230,24 +228,6 @@ mod tests {
             let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
             let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
 
-            // verify with Emulated
-            {
-                let s_inv = sig_s.invert().unwrap();
-                let u1 = m_hash * s_inv;
-                let u2 = x_bytes_on_n * s_inv;
-                let g1 = E::generator().mul(u1);
-                let g2 = pk.mul(u2);
-                let q = g1 + g2;
-                let q = q.to_affine();
-            }
-
-            let rns_scalar = ecc_chip.rns_scalar();
-
-            let integer_r = rns_scalar.new(x_bytes_on_n);
-            let integer_s = rns_scalar.new(sig_s);
-            let integer_m_hash = rns_scalar.new(m_hash);
-            let msg_hash = integer_m_hash.clone();
-
             layouter.assign_region(
                 || "assign aux values",
                 |mut region| {
@@ -268,13 +248,17 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let r_assigned = scalar_chip.assign_integer(ctx, UnassignedInteger::new(Some(integer_r.clone())))?;
-                    let s_assigned = scalar_chip.assign_integer(ctx, UnassignedInteger::new(Some(integer_s.clone())))?;
+                    let integer_r = ecc_chip.new_unassigned_scalar(Some(x_bytes_on_n));
+                    let integer_s = ecc_chip.new_unassigned_scalar(Some(sig_s));
+                    let msg_hash = ecc_chip.new_unassigned_scalar(Some(m_hash));
+
+                    let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
+                    let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
                     let sig = AssignedEcdsaSig { r: r_assigned, s: s_assigned };
 
                     let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
                     let pk_assigned = AssignedPublicKey { point: pk_in_circuit };
-                    let msg_hash = scalar_chip.assign_integer(ctx, UnassignedInteger::new(Some(msg_hash.clone())))?;
+                    let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
                     ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
                 },
             )?;

@@ -10,15 +10,16 @@ use integer::maingate::RegionCtx;
 use integer::UnassignedInteger;
 use maingate::{Assigned, AssignedCondition, MainGate};
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 mod add;
 mod mul;
 
 pub struct BaseFieldEccChip<C: CurveAffine> {
     config: EccConfig,
-    pub(crate) rns: Rns<C::Base, C::ScalarExt>,
-    aux_generator: Option<(AssignedPoint<C::ScalarExt>, Option<C>)>,
-    aux_registry: BTreeMap<(usize, usize), AssignedPoint<C::ScalarExt>>,
+    pub(crate) rns: Rc<Rns<C::Base, C::Scalar>>,
+    aux_generator: Option<(AssignedPoint<C::Base, C::Scalar>, Option<C>)>,
+    aux_registry: BTreeMap<(usize, usize), AssignedPoint<C::Base, C::Scalar>>,
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
@@ -26,11 +27,11 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Rns::construct(bit_len_limb)
     }
 
-    #[allow(unused_variables)]
     pub fn new(config: EccConfig, bit_len_limb: usize) -> Self {
+        let rns = Self::rns(bit_len_limb);
         Self {
             config,
-            rns: Self::rns(bit_len_limb),
+            rns: Rc::new(rns),
             aux_generator: None,
             aux_registry: BTreeMap::new(),
         }
@@ -40,31 +41,31 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         self.config.main_gate_config.instance
     }
 
-    fn integer_chip(&self) -> IntegerChip<C::Base, C::ScalarExt> {
+    fn integer_chip(&self) -> IntegerChip<C::Base, C::Scalar> {
         let integer_chip_config = self.config.integer_chip_config();
-        IntegerChip::<C::Base, C::ScalarExt>::new(integer_chip_config, self.rns.clone())
+        IntegerChip::<C::Base, C::Scalar>::new(integer_chip_config, Rc::clone(&self.rns))
     }
 
-    fn main_gate(&self) -> MainGate<C::ScalarExt> {
+    fn main_gate(&self) -> MainGate<C::Scalar> {
         MainGate::<_>::new(self.config.main_gate_config.clone())
     }
 
-    fn to_rns_point(&self, point: C) -> Point<C::Base, C::ScalarExt> {
+    fn to_rns_point(&self, point: C) -> Point<C::Base, C::Scalar> {
         let coords = point.coordinates();
         // disallow point of infinity
         // it will not pass assing point enforcement
         let coords = coords.unwrap();
 
-        let x = self.rns.new(*coords.x());
-        let y = self.rns.new(*coords.y());
+        let x = Integer::from_fe(*coords.x(), Rc::clone(&self.rns));
+        let y = Integer::from_fe(*coords.y(), Rc::clone(&self.rns));
         Point { x, y }
     }
 
-    fn parameter_b(&self) -> Integer<C::Base, C::ScalarExt> {
-        self.rns.new(C::b())
+    fn parameter_b(&self) -> Integer<C::Base, C::Scalar> {
+        Integer::from_fe(C::b(), Rc::clone(&self.rns))
     }
 
-    fn get_mul_aux(&self, window_size: usize, number_of_pairs: usize) -> Result<MulAux<C::ScalarExt>, Error> {
+    fn get_mul_aux(&self, window_size: usize, number_of_pairs: usize) -> Result<MulAux<C::Base, C::Scalar>, Error> {
         let to_add = match self.aux_generator.clone() {
             Some((assigned, _)) => Ok(assigned),
             None => Err(Error::Synthesis),
@@ -78,21 +79,21 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
-    fn expose_public(&self, mut layouter: impl Layouter<C::Scalar>, point: AssignedPoint<C::Scalar>, offset: usize) -> Result<(), Error> {
+    fn expose_public(&self, mut layouter: impl Layouter<C::Scalar>, point: AssignedPoint<C::Base, C::Scalar>, offset: usize) -> Result<(), Error> {
         let instance_column = self.instance_column();
         let mut offset = offset;
-        for limb in point.x.limbs.iter() {
+        for limb in point.x.limbs().iter() {
             layouter.constrain_instance(limb.cell(), instance_column, offset)?;
             offset += 1;
         }
-        for limb in point.y.limbs.iter() {
+        for limb in point.y.limbs().iter() {
             layouter.constrain_instance(limb.cell(), instance_column, offset)?;
             offset += 1;
         }
         Ok(())
     }
 
-    fn assign_constant(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, point: C) -> Result<AssignedPoint<C::Scalar>, Error> {
+    fn assign_constant(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, point: C) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let coords = point.coordinates();
         // disallow point of infinity
         let coords = coords.unwrap();
@@ -102,7 +103,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y))
     }
 
-    fn assign_point(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, point: Option<C>) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    fn assign_point(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, point: Option<C>) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let integer_chip = self.integer_chip();
 
         let point = point.map(|point| self.to_rns_point(point));
@@ -119,14 +120,13 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(point)
     }
 
-    pub fn assign_aux_generator(&mut self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, aux_generator: Option<C>) -> Result<(), Error> {
+    pub fn assign_aux_generator(&mut self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, aux_generator: Option<C>) -> Result<(), Error> {
         let aux_generator_assigned = self.assign_point(ctx, aux_generator)?;
-        // let aux_to_sub = ecc_chip.assign_point(ctx, Some(aux_to_sub))?;
         self.aux_generator = Some((aux_generator_assigned, aux_generator));
         Ok(())
     }
 
-    pub fn assign_aux(&mut self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, window_size: usize, number_of_pairs: usize) -> Result<(), Error> {
+    pub fn assign_aux(&mut self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, window_size: usize, number_of_pairs: usize) -> Result<(), Error> {
         match self.aux_generator {
             Some((_, point)) => {
                 let aux = match point {
@@ -142,7 +142,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         }
     }
 
-    fn assert_is_on_curve(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, point: &AssignedPoint<C::ScalarExt>) -> Result<(), Error> {
+    fn assert_is_on_curve(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, point: &AssignedPoint<C::Base, C::Scalar>) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
 
         let y_square = &integer_chip.square(ctx, &point.y)?;
@@ -153,7 +153,12 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
-    fn assert_equal(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, p0: &AssignedPoint<C::ScalarExt>, p1: &AssignedPoint<C::ScalarExt>) -> Result<(), Error> {
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        p0: &AssignedPoint<C::Base, C::Scalar>,
+        p1: &AssignedPoint<C::Base, C::Scalar>,
+    ) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
         integer_chip.assert_equal(ctx, &p0.x, &p1.x)?;
         integer_chip.assert_equal(ctx, &p0.y, &p1.y)
@@ -161,11 +166,11 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     fn select(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        c: &AssignedCondition<C::ScalarExt>,
-        p1: &AssignedPoint<C::ScalarExt>,
-        p2: &AssignedPoint<C::ScalarExt>,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        c: &AssignedCondition<C::Scalar>,
+        p1: &AssignedPoint<C::Base, C::Scalar>,
+        p2: &AssignedPoint<C::Base, C::Scalar>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let integer_chip = self.integer_chip();
         let x = integer_chip.select(ctx, &p1.x, &p2.x, c)?;
         let y = integer_chip.select(ctx, &p1.y, &p2.y, c)?;
@@ -174,11 +179,11 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     fn select_or_assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        c: &AssignedCondition<C::ScalarExt>,
-        p1: &AssignedPoint<C::ScalarExt>,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        c: &AssignedCondition<C::Scalar>,
+        p1: &AssignedPoint<C::Base, C::Scalar>,
         p2: C,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let integer_chip = self.integer_chip();
         let p2 = self.to_rns_point(p2);
         let x = integer_chip.select_or_assign(ctx, &p1.x, &p2.x, c)?;
@@ -186,7 +191,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y))
     }
 
-    fn normalize(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, point: &AssignedPoint<C::ScalarExt>) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    fn normalize(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, point: &AssignedPoint<C::Base, C::Scalar>) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let integer_chip = self.integer_chip();
         let x = integer_chip.reduce(ctx, &point.x)?;
         let y = integer_chip.reduce(ctx, &point.y)?;
@@ -196,10 +201,10 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     #[allow(unused_variables)]
     fn add(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        p0: &AssignedPoint<C::ScalarExt>,
-        p1: &AssignedPoint<C::ScalarExt>,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        p0: &AssignedPoint<C::Base, C::Scalar>,
+        p1: &AssignedPoint<C::Base, C::Scalar>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         // guarantees that p0 != p1 or p0 != p1
         // so that we can use unsafe addition formula which assumes operands are not equal
         // addition to that we strictly disallow addition result to be point of infinity
@@ -208,12 +213,17 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         self._add_incomplete_unsafe(ctx, p0, p1)
     }
 
-    fn double(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, p: &AssignedPoint<C::ScalarExt>) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    fn double(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, p: &AssignedPoint<C::Base, C::Scalar>) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         // point must be asserted to be in curve and not infinity
         self._double_incomplete(ctx, p)
     }
 
-    fn double_n(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, p: &AssignedPoint<C::ScalarExt>, logn: usize) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    fn double_n(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        p: &AssignedPoint<C::Base, C::Scalar>,
+        logn: usize,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let mut acc = p.clone();
         for _ in 0..logn {
             acc = self._double_incomplete(ctx, &acc)?;
@@ -223,14 +233,14 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
     fn ladder(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::ScalarExt>,
-        to_double: &AssignedPoint<C::ScalarExt>,
-        to_add: &AssignedPoint<C::ScalarExt>,
-    ) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        to_double: &AssignedPoint<C::Base, C::Scalar>,
+        to_add: &AssignedPoint<C::Base, C::Scalar>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         self._ladder_incomplete(ctx, to_double, to_add)
     }
 
-    fn neg(&self, ctx: &mut RegionCtx<'_, '_, C::ScalarExt>, p: &AssignedPoint<C::ScalarExt>) -> Result<AssignedPoint<C::ScalarExt>, Error> {
+    fn neg(&self, ctx: &mut RegionCtx<'_, '_, C::Scalar>, p: &AssignedPoint<C::Base, C::Scalar>) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
         let integer_chip = self.integer_chip();
         let y_neg = integer_chip.neg(ctx, &p.y)?;
         Ok(AssignedPoint::new(p.x.clone(), y_neg))
@@ -239,6 +249,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::BaseFieldEccChip;
     use crate::ecc::{AssignedPoint, EccConfig, Point};
     use crate::halo2;
@@ -266,11 +278,11 @@ mod tests {
 
     const BIT_LEN_LIMB: usize = 68;
 
-    fn rns<C: CurveAffine>() -> Rns<C::Base, C::ScalarExt> {
+    fn rns<C: CurveAffine>() -> Rns<C::Base, C::Scalar> {
         Rns::construct(BIT_LEN_LIMB)
     }
 
-    fn setup<C: CurveAffine>(k_override: u32) -> (Rns<C::Base, C::ScalarExt>, u32) {
+    fn setup<C: CurveAffine>(k_override: u32) -> (Rns<C::Base, C::Scalar>, u32) {
         let rns = rns::<C>();
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         let mut k: u32 = (bit_len_lookup + 1) as u32;
@@ -301,13 +313,13 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self {
+        fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
             let rns = BaseFieldEccChip::<C>::rns(BIT_LEN_LIMB);
 
-            let main_gate_config = MainGate::<C::ScalarExt>::configure(meta);
+            let main_gate_config = MainGate::<C::Scalar>::configure(meta);
             let mut overflow_bit_lengths: Vec<usize> = vec![];
             overflow_bit_lengths.extend(rns.overflow_lengths());
-            let range_config = RangeChip::<C::ScalarExt>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let range_config = RangeChip::<C::Scalar>::configure(meta, &main_gate_config, overflow_bit_lengths);
             TestCircuitConfig {
                 main_gate_config,
                 range_config,
@@ -330,10 +342,10 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccAddition<C: CurveAffine> {
-        rns: Rns<C::Base, C::ScalarExt>,
+        rns: Rns<C::Base, C::Scalar>,
     }
 
-    impl<C: CurveAffine> Circuit<C::ScalarExt> for TestEccAddition<C> {
+    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccAddition<C> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -341,11 +353,11 @@ mod tests {
             Self::default()
         }
 
-        fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
+        fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
             TestCircuitConfig::new::<C>(meta)
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::Scalar>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
             let ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
             layouter.assign_region(
@@ -418,12 +430,12 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccPublicInput<C: CurveAffine> {
-        rns: Rns<C::Base, C::ScalarExt>,
+        // rns: Rns<C::Base, C::Scalar>,
         a: Option<C>,
         b: Option<C>,
     }
 
-    impl<C: CurveAffine> Circuit<C::ScalarExt> for TestEccPublicInput<C> {
+    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccPublicInput<C> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -431,11 +443,11 @@ mod tests {
             Self::default()
         }
 
-        fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
+        fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
             TestCircuitConfig::new::<C>(meta)
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::Scalar>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
             let ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
 
@@ -477,21 +489,23 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_public_input() {
-        let (rns, k) = setup::<Curve>(0);
         use rand::thread_rng;
         let mut rng = thread_rng();
+
+        let (rns, k) = setup::<Curve>(0);
+        let rns = Rc::new(rns);
 
         let a = CurveProjective::random(&mut rng).to_affine();
         let b = CurveProjective::random(&mut rng).to_affine();
 
         let c0: Curve = (a + b).into();
-        let c0 = Point::from(&rns, c0);
+        let c0 = Point::from(Rc::clone(&rns), c0);
         let mut public_data = c0.public();
         let c1: Curve = (a + a).into();
-        let c1 = Point::from(&rns, c1);
+        let c1 = Point::from(Rc::clone(&rns), c1);
         public_data.extend(c1.public());
 
-        let circuit = TestEccPublicInput::<Curve> { rns, a: Some(a), b: Some(b) };
+        let circuit = TestEccPublicInput::<Curve> { a: Some(a), b: Some(b) };
 
         let prover = match MockProver::run(k, &circuit, vec![public_data]) {
             Ok(prover) => prover,
@@ -507,7 +521,7 @@ mod tests {
         aux_generator: C,
     }
 
-    impl<C: CurveAffine> Circuit<C::ScalarExt> for TestEccMul<C> {
+    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccMul<C> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -515,14 +529,14 @@ mod tests {
             Self::default()
         }
 
-        fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
+        fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
             TestCircuitConfig::new::<C>(meta)
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::Scalar>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
             let mut ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
-            let main_gate = MainGate::<C::ScalarExt>::new(config.main_gate_config.clone());
+            let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
             // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
             // main_gate.break_here(ctx)?;
 
@@ -547,7 +561,7 @@ mod tests {
                     let mut rng = thread_rng();
 
                     let base = C::CurveExt::random(&mut rng);
-                    let s = C::ScalarExt::random(&mut rng);
+                    let s = C::Scalar::random(&mut rng);
                     let result = base * s;
 
                     let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
@@ -592,7 +606,7 @@ mod tests {
         aux_generator: C,
     }
 
-    impl<C: CurveAffine> Circuit<C::ScalarExt> for TestEccBatchMul<C> {
+    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccBatchMul<C> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -600,14 +614,14 @@ mod tests {
             Self::default()
         }
 
-        fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
+        fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
             TestCircuitConfig::new::<C>(meta)
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::ScalarExt>) -> Result<(), Error> {
+        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<C::Scalar>) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
             let mut ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
-            let main_gate = MainGate::<C::ScalarExt>::new(config.main_gate_config.clone());
+            let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
 
             layouter.assign_region(
                 || "assign aux values",
@@ -630,10 +644,10 @@ mod tests {
                     let mut rng = thread_rng();
 
                     let mut acc = C::CurveExt::identity();
-                    let pairs: Vec<(AssignedPoint<C::ScalarExt>, AssignedValue<C::ScalarExt>)> = (0..self.number_of_pairs)
+                    let pairs: Vec<(AssignedPoint<C::Base, C::Scalar>, AssignedValue<C::Scalar>)> = (0..self.number_of_pairs)
                         .map(|_| {
                             let base = C::CurveExt::random(&mut rng);
-                            let s = C::ScalarExt::random(&mut rng);
+                            let s = C::Scalar::random(&mut rng);
                             acc = acc + (base * s);
                             let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
                             let s = main_gate.assign_value(ctx, &Some(s).into())?;

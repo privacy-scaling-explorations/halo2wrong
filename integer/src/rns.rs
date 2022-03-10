@@ -1,4 +1,4 @@
-use crate::{AssignedInteger, WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use maingate::halo2;
 use maingate::utils::{big_to_fe, compose, decompose_big, fe_to_big};
@@ -7,6 +7,7 @@ use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use std::fmt;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 #[cfg(feature = "kzg")]
 use crate::halo2::arithmetic::BaseExt;
@@ -38,8 +39,8 @@ cfg_if::cfg_if! {
     }
 }
 
-impl<'a, W: WrongExt, N: FieldExt> From<Integer<'a, W, N>> for big_uint {
-    fn from(el: Integer<'a, W, N>) -> Self {
+impl<W: WrongExt, N: FieldExt> From<Integer<W, N>> for big_uint {
+    fn from(el: Integer<W, N>) -> Self {
         el.value()
     }
 }
@@ -59,9 +60,9 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
 }
 
 #[derive(Clone)]
-pub struct ReductionWitness<'a, W: WrongExt, N: FieldExt> {
-    pub result: Integer<'a, W, N>,
-    pub quotient: Quotient<'a, W, N>,
+pub struct ReductionWitness<W: WrongExt, N: FieldExt> {
+    pub result: Integer<W, N>,
+    pub quotient: Quotient<W, N>,
     pub t: Vec<N>,
     pub u_0: N,
     pub u_1: N,
@@ -69,16 +70,16 @@ pub struct ReductionWitness<'a, W: WrongExt, N: FieldExt> {
     pub v_1: N,
 }
 
-pub(crate) struct MaybeReduced<'a, W: WrongExt, N: FieldExt>(Option<ReductionWitness<'a, W, N>>);
+pub(crate) struct MaybeReduced<W: WrongExt, N: FieldExt>(Option<ReductionWitness<W, N>>);
 
-impl<'a, W: WrongExt, N: FieldExt> From<Option<ReductionWitness<'a, W, N>>> for MaybeReduced<'a, W, N> {
-    fn from(integer: Option<ReductionWitness<'a, W, N>>) -> Self {
+impl<W: WrongExt, N: FieldExt> From<Option<ReductionWitness<W, N>>> for MaybeReduced<W, N> {
+    fn from(integer: Option<ReductionWitness<W, N>>) -> Self {
         MaybeReduced(integer)
     }
 }
 
-impl<'a, W: WrongExt, N: FieldExt> MaybeReduced<'a, W, N> {
-    pub(crate) fn long(&self) -> Option<Integer<'a, W, N>> {
+impl<W: WrongExt, N: FieldExt> MaybeReduced<W, N> {
+    pub(crate) fn long(&self) -> Option<Integer<W, N>> {
         self.0.as_ref().map(|reduction_result| match reduction_result.quotient.clone() {
             Quotient::Long(quotient) => quotient,
             _ => panic!("long quotient expected"),
@@ -92,7 +93,7 @@ impl<'a, W: WrongExt, N: FieldExt> MaybeReduced<'a, W, N> {
         })
     }
 
-    pub(crate) fn result(&self) -> Option<Integer<'a, W, N>> {
+    pub(crate) fn result(&self) -> Option<Integer<W, N>> {
         self.0.as_ref().map(|u| u.result.clone())
     }
 
@@ -127,14 +128,14 @@ impl<'a, W: WrongExt, N: FieldExt> MaybeReduced<'a, W, N> {
 }
 
 #[derive(Clone)]
-pub enum Quotient<'a, W: WrongExt, N: FieldExt> {
+pub enum Quotient<W: WrongExt, N: FieldExt> {
     Short(N),
-    Long(Integer<'a, W, N>),
+    Long(Integer<W, N>),
 }
 
 #[derive(Clone)]
-pub(crate) struct ComparisionResult<'a, W: WrongExt, N: FieldExt> {
-    pub result: Integer<'a, W, N>,
+pub(crate) struct ComparisionResult<W: WrongExt, N: FieldExt> {
+    pub result: Integer<W, N>,
     pub borrow: [bool; NUMBER_OF_LIMBS],
 }
 
@@ -417,7 +418,7 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         };
 
         let max_with_max_unreduced_limbs = vec![big_to_fe(max_unreduced_limb); 4];
-        let max_with_max_unreduced = rns.new_from_limbs(max_with_max_unreduced_limbs);
+        let max_with_max_unreduced = Integer::from_limbs(max_with_max_unreduced_limbs, Rc::new(rns.clone()));
         let reduction_result = max_with_max_unreduced.reduce();
         let quotient = match reduction_result.quotient.clone() {
             Quotient::Short(quotient) => quotient,
@@ -427,42 +428,6 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         assert!(quotient < max_reduced_limb);
 
         rns
-    }
-
-    pub fn new(&self, fe: W) -> Integer<W, N> {
-        Integer::from_big(fe_to_big(fe), self)
-    }
-
-    pub fn zero(&self) -> Integer<W, N> {
-        Integer::from_big(big_uint::zero(), self)
-    }
-
-    pub fn new_from_limbs(&self, limbs: Vec<N>) -> Integer<W, N> {
-        let limbs = limbs.iter().map(|limb| Limb::<N>::new(*limb)).collect();
-        Integer { limbs, rns: self }
-    }
-
-    pub fn new_from_big(&self, e: big_uint) -> Integer<W, N> {
-        assert!(e <= self.max_dense_value);
-        let limbs = decompose_big::<N>(e, NUMBER_OF_LIMBS, self.bit_len_limb);
-        self.new_from_limbs(limbs)
-    }
-
-    pub fn make_aux(&self, max_vals: Vec<big_uint>) -> Integer<W, N> {
-        let mut max_shift = 0usize;
-
-        for (max_val, aux) in max_vals.iter().zip(self.base_aux.iter()) {
-            let mut shift = 1;
-            let mut aux = aux.clone();
-            while *max_val > aux {
-                aux <<= 1usize;
-                max_shift = std::cmp::max(shift, max_shift);
-                shift += 1;
-            }
-        }
-
-        let aux_limbs = self.base_aux.iter().map(|aux_limb| big_to_fe(aux_limb << max_shift)).collect();
-        self.new_from_limbs(aux_limbs)
     }
 
     pub fn overflow_lengths(&self) -> Vec<usize> {
@@ -478,10 +443,6 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
             max_most_significant_operand_limb_size,
             max_most_significant_reduced_limb_size,
         ]
-    }
-
-    pub fn to_integer(&self, a: &AssignedInteger<N>) -> Option<Integer<W, N>> {
-        a.limbs().map(|limbs| Integer::new(limbs, self))
     }
 }
 
@@ -527,12 +488,12 @@ impl<F: FieldExt> Limb<F> {
 }
 
 #[derive(Clone)]
-pub struct Integer<'a, W: WrongExt, N: FieldExt> {
+pub struct Integer<W: WrongExt, N: FieldExt> {
     limbs: Vec<Limb<N>>,
-    rns: &'a Rns<W, N>,
+    rns: Rc<Rns<W, N>>,
 }
 
-impl<'a, W: WrongExt, N: FieldExt> fmt::Debug for Integer<'a, W, N> {
+impl<W: WrongExt, N: FieldExt> fmt::Debug for Integer<W, N> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = self.value();
         let mut debug = f.debug_struct("Integer");
@@ -546,36 +507,41 @@ impl<'a, W: WrongExt, N: FieldExt> fmt::Debug for Integer<'a, W, N> {
     }
 }
 
-impl<'a, W: WrongExt, N: FieldExt> Common<N> for Integer<'a, W, N> {
+impl<W: WrongExt, N: FieldExt> Common<N> for Integer<W, N> {
     fn value(&self) -> big_uint {
         let limb_values = self.limbs.iter().map(|limb| limb.value()).collect();
         compose(limb_values, self.rns.bit_len_limb)
     }
 }
 
-impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
-    pub fn new(limbs: Vec<Limb<N>>, rns: &'a Rns<W, N>) -> Self {
+impl<W: WrongExt, N: FieldExt> Integer<W, N> {
+    pub fn new(limbs: Vec<Limb<N>>, rns: Rc<Rns<W, N>>) -> Self {
         assert!(limbs.len() == NUMBER_OF_LIMBS);
         Self { limbs, rns }
     }
 
-    pub fn from_big(e: big_uint, rns: &'a Rns<W, N>) -> Self {
+    pub fn from_fe(e: W, rns: Rc<Rns<W, N>>) -> Self {
+        Integer::from_big(fe_to_big(e), rns)
+    }
+
+    pub fn from_big(e: big_uint, rns: Rc<Rns<W, N>>) -> Self {
         let limbs = decompose_big::<N>(e, NUMBER_OF_LIMBS, rns.bit_len_limb);
         let limbs = limbs.iter().map(|e| Limb::<N>::new(*e)).collect();
         Self { limbs, rns }
     }
 
-    pub fn from_bytes_le(e: &[u8], rns: &'a Rns<W, N>) -> Self {
+    pub fn from_limbs(limbs: Vec<N>, rns: Rc<Rns<W, N>>) -> Self {
+        let limbs = limbs.iter().map(|limb| Limb::<N>::new(*limb)).collect();
+        Integer { limbs, rns }
+    }
+
+    pub fn from_bytes_le(e: &[u8], rns: Rc<Rns<W, N>>) -> Self {
         let x = num_bigint::BigUint::from_bytes_le(e);
         Self::from_big(x, rns)
     }
 
     pub fn limbs(&self) -> Vec<N> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
-    }
-
-    pub fn limb_value(&self, idx: usize) -> N {
-        self.limb(idx).fe()
     }
 
     pub fn limb(&self, idx: usize) -> Limb<N> {
@@ -592,36 +558,33 @@ impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
         let a_biguint = self.value();
         let a_w = big_to_fe::<W>(a_biguint);
         let inv_w = a_w.invert();
-
-        inv_w.map(|inv| self.rns.new_from_big(fe_to_big(inv))).into()
+        inv_w.map(|inv| Self::from_big(fe_to_big(inv), Rc::clone(&self.rns))).into()
     }
 
-    pub(crate) fn div(&self, denom: &Integer<'a, W, N>) -> Option<Integer<W, N>> {
+    pub(crate) fn div(&self, denom: &Integer<W, N>) -> Option<Integer<W, N>> {
         denom.invert().map(|b_inv| {
             let a_mul_b = (self.value() * b_inv.value()) % self.rns.wrong_modulus.clone();
-            self.rns.new_from_big(a_mul_b)
+            Self::from_big(a_mul_b, Rc::clone(&self.rns))
         })
     }
 
-    pub(crate) fn square(&self) -> ReductionWitness<'a, W, N> {
+    pub(crate) fn square(&self) -> ReductionWitness<W, N> {
         self.mul(self)
     }
 
-    pub(crate) fn mul(&self, other: &Integer<'a, W, N>) -> ReductionWitness<'a, W, N> {
+    pub(crate) fn mul(&self, other: &Integer<W, N>) -> ReductionWitness<W, N> {
         let modulus = self.rns.wrong_modulus.clone();
         let negative_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
-
         let (quotient, result) = (self.value() * other.value()).div_rem(&modulus);
-
-        let quotient = self.rns.new_from_big(quotient);
-        let result = self.rns.new_from_big(result);
+        let quotient = Self::from_big(quotient, Rc::clone(&self.rns));
+        let result = Self::from_big(result, Rc::clone(&self.rns));
 
         let l = NUMBER_OF_LIMBS;
         let mut t: Vec<N> = vec![N::zero(); l];
         for k in 0..l {
             for i in 0..=k {
                 let j = k - i;
-                t[i + j] = t[i + j] + self.limb_value(i) * other.limb_value(j) + negative_modulus[i] * quotient.limb_value(j);
+                t[i + j] = t[i + j] + self.limb(i).0 * other.limb(j).0 + negative_modulus[i] * quotient.limb(j).0;
             }
         }
 
@@ -651,7 +614,7 @@ impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
         // compute intermediate values
         let t: Vec<N> = self.limbs().iter().zip(negative_modulus.iter()).map(|(a, p)| *a + *p * quotient).collect();
 
-        let result = self.rns.new_from_big(result);
+        let result = Integer::from_big(result, Rc::clone(&self.rns));
 
         let (u_0, u_1, v_0, v_1) = result.residues(t.clone());
         let quotient = Quotient::Short(quotient);
@@ -670,8 +633,8 @@ impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
     fn residues(&self, t: Vec<N>) -> (N, N, N, N) {
         let s = self.rns.left_shifter_r;
 
-        let u_0 = t[0] + s * t[1] - self.limb_value(0) - s * self.limb_value(1);
-        let u_1 = t[2] + s * t[3] - self.limb_value(2) - s * self.limb_value(3);
+        let u_0 = t[0] + s * t[1] - self.limb(0).0 - s * self.limb(1).0;
+        let u_1 = t[2] + s * t[3] - self.limb(2).0 - s * self.limb(3).0;
 
         // sanity check
         {
@@ -712,204 +675,22 @@ impl<'a, W: WrongExt, N: FieldExt> Integer<'a, W, N> {
             })
             .collect();
 
-        let result = self.rns.new_from_limbs(limbs);
-
+        let result = Integer::from_limbs(limbs, Rc::clone(&self.rns));
         ComparisionResult { result, borrow }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    #[allow(dead_code)]
-
-    impl<W: WrongExt, N: FieldExt> Rns<W, N> {
-        pub(crate) fn rand_in_field(&self) -> Integer<W, N> {
-            let mut rng = thread_rng();
-            self.new_from_big(fe_to_big(W::random(&mut rng)))
-        }
-
-        pub(crate) fn rand_in_remainder_range(&self) -> Integer<W, N> {
-            let mut rng = thread_rng();
-            let el = rng.gen_biguint(self.max_remainder.bits() as u64);
-            self.new_from_big(el)
-        }
-
-        pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N> {
-            let mut rng = thread_rng();
-            let el = rng.gen_biguint(self.max_operand.bits() as u64);
-            self.new_from_big(el)
-        }
-
-        pub(crate) fn rand_in_unreduced_range(&self) -> Integer<W, N> {
-            self.rand_with_limb_bit_size(self.max_unreduced_limb.bits() as usize)
-        }
-
-        pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<W, N> {
-            let limbs: Vec<N> = (0..NUMBER_OF_LIMBS)
-                .map(|_| {
-                    let mut rng = thread_rng();
-                    let el = rng.gen_biguint(bit_len as u64);
-                    big_to_fe(el)
-                })
-                .collect();
-
-            self.new_from_limbs(limbs)
-        }
-
-        pub(crate) fn max_in_remainder_range(&self) -> Integer<W, N> {
-            self.new_from_big(self.max_remainder.clone())
-        }
-
-        pub(crate) fn max_in_operand_range(&self) -> Integer<W, N> {
-            self.new_from_big(self.max_operand.clone())
-        }
-
-        pub(crate) fn max_in_unreduced_range(&self) -> Integer<W, N> {
-            self.new_from_limbs(vec![big_to_fe(self.max_unreduced_limb.clone()); 4])
-        }
-    }
-
-    use super::{big_to_fe, fe_to_big, modulus, Rns};
-    use crate::rns::Common;
-    use crate::rns::Integer;
-    use crate::WrongExt;
-    use crate::NUMBER_OF_LIMBS;
-    use halo2::arithmetic::FieldExt;
-    use maingate::compose;
-    use maingate::halo2;
-    use num_bigint::{BigUint as big_uint, RandBigInt};
-    use num_traits::{One, Zero};
-    use rand::thread_rng;
-
-    cfg_if::cfg_if! {
-      if #[cfg(feature = "kzg")] {
-        use halo2::pairing::bn256::Fq as Wrong;
-        use halo2::pairing::bn256::Fr as Native;
-      } else {
-        use halo2::pasta::Fp as Wrong;
-        use halo2::pasta::Fq as Native;
-      }
-    }
-
-    fn rns() -> Rns<Wrong, Native> {
-        let bit_len_limb = 68;
-        Rns::<Wrong, Native>::construct(bit_len_limb)
-    }
-
-    #[test]
-    fn test_rns_constants() {
-        let mut rng = thread_rng();
-
-        let rns = rns();
-
-        let wrong_modulus = rns.wrong_modulus.clone();
-        let native_modulus = modulus::<Native>();
-
-        // shifters
-
-        let el_0 = Native::random(&mut rng);
-        let shifted_0 = el_0 * rns.left_shifter_r;
-        let left_shifter_r = big_uint::one() << rns.bit_len_limb;
-        let el = fe_to_big(el_0);
-        let shifted_1 = (el * left_shifter_r) % native_modulus.clone();
-        let shifted_0 = fe_to_big(shifted_0);
-        assert_eq!(shifted_0, shifted_1);
-        let shifted: Native = big_to_fe(shifted_0);
-        let el_1 = shifted * rns.right_shifter_r;
-        assert_eq!(el_0, el_1);
-
-        let el_0 = Native::random(&mut rng);
-        let shifted_0 = el_0 * rns.left_shifter_2r;
-        let left_shifter_2r = big_uint::one() << (2 * rns.bit_len_limb);
-        let el = fe_to_big(el_0);
-        let shifted_1 = (el * left_shifter_2r) % native_modulus;
-        let shifted_0 = fe_to_big(shifted_0);
-        assert_eq!(shifted_0, shifted_1);
-        let shifted: Native = big_to_fe(shifted_0);
-        let el_1 = shifted * rns.right_shifter_2r;
-        assert_eq!(el_0, el_1);
-
-        let el_0 = Wrong::random(&mut rng);
-        let el = fe_to_big(el_0);
-        let aux = compose(rns.base_aux, rns.bit_len_limb);
-        let el = (aux + el) % wrong_modulus;
-        let el_1: Wrong = big_to_fe(el);
-        assert_eq!(el_0, el_1)
-    }
-
-    #[test]
-    fn test_integer() {
-        let rns = rns();
-        let mut rng = thread_rng();
-
-        let wrong_modulus = rns.wrong_modulus.clone();
-
-        // conversion
-        let el_0 = rng.gen_biguint((rns.bit_len_limb * NUMBER_OF_LIMBS) as u64);
-        let el = rns.new_from_big(el_0.clone());
-        let el_1 = el.value();
-        assert_eq!(el_0, el_1);
-
-        // reduce
-        let overflow = rns.bit_len_limb + 10;
-        let el = rns.rand_with_limb_bit_size(overflow);
-        let result_0 = el.value() % wrong_modulus.clone();
-        let reduction_context = el.reduce();
-        let result_1 = reduction_context.result;
-        assert_eq!(result_1.value(), result_0);
-
-        // aux
-        let aux = compose(rns.base_aux.clone(), rns.bit_len_limb);
-        assert_eq!(aux % &wrong_modulus, big_uint::zero());
-
-        // mul
-        for _ in 0..10000 {
-            let el_0 = &rns.rand_in_remainder_range();
-            let el_1 = &rns.rand_in_remainder_range();
-            let result_0 = (el_0.value() * el_1.value()) % wrong_modulus.clone();
-            let reduction_context = el_0.mul(el_1);
-            let result_1 = reduction_context.result;
-            assert_eq!(result_1.value(), result_0);
-        }
-
-        // inv
-        for _ in 0..10000 {
-            let el = &rns.rand_in_remainder_range();
-            let result = el.invert();
-            let result = result.map(|inv| (inv.value() * el.value()) % wrong_modulus.clone());
-
-            match result {
-                Some(result) => assert_eq!(result, 1u32.into()),
-                None => assert_eq!(el.value(), 0u32.into()),
+    pub fn subtracion_aux(max_vals: Vec<big_uint>, rns: Rc<Rns<W, N>>) -> Self {
+        let mut max_shift = 0usize;
+        for (max_val, aux) in max_vals.iter().zip(rns.base_aux.iter()) {
+            let mut shift = 1;
+            let mut aux = aux.clone();
+            while *max_val > aux {
+                aux <<= 1usize;
+                max_shift = std::cmp::max(shift, max_shift);
+                shift += 1;
             }
         }
-
-        // inv of 0
-        {
-            let el = rns.new_from_big(0u32.into());
-            let result = el.invert();
-            assert_eq!(result.map(|_| {}), None);
-        }
-
-        // div
-        for _ in 0..10000 {
-            let el_0 = &rns.rand_in_remainder_range();
-            let el_1 = &rns.rand_in_remainder_range();
-            let result_0 = el_0.div(el_1);
-            let result = result_0.map(|result_0| (result_0.value() * el_1.value() - el_0.value()) % wrong_modulus.clone());
-
-            match result {
-                Some(result) => assert_eq!(result, 0u32.into()),
-                None => assert_eq!(el_1.value(), 0u32.into()),
-            }
-        }
-
-        // div 0
-        {
-            let el_0 = &rns.rand_in_remainder_range();
-            let el_1 = &rns.new_from_big(0u32.into());
-            let result = el_0.div(el_1);
-            assert_eq!(result.map(|_| {}), None);
-        }
+        let limbs = rns.base_aux.iter().map(|aux_limb| big_to_fe(aux_limb << max_shift)).collect();
+        Self::from_limbs(limbs, rns)
     }
 }
