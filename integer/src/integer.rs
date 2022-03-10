@@ -1115,12 +1115,12 @@ mod tests {
                     // 1 / a
                     let a = &integer_chip.range_assign_integer(
                         ctx,
-                        Some(a.clone()).into(),
+                        Some(a).into(),
                         Range::Remainder,
                     )?;
                     let inv_0 = &integer_chip.range_assign_integer(
                         ctx,
-                        Some(inv.clone()).into(),
+                        Some(inv).into(),
                         Range::Remainder,
                     )?;
                     let (inv_1, cond) = integer_chip.invert(ctx, a)?;
@@ -1153,12 +1153,12 @@ mod tests {
                     let c = a.div(&b).unwrap();
                     let a = &integer_chip.range_assign_integer(
                         ctx,
-                        Some(a.clone()).into(),
+                        Some(a).into(),
                         Range::Remainder,
                     )?;
                     let b = &integer_chip.range_assign_integer(
                         ctx,
-                        Some(b.clone()).into(),
+                        Some(b).into(),
                         Range::Remainder,
                     )?;
                     let c_0 =

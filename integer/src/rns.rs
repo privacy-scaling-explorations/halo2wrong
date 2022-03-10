@@ -385,14 +385,14 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         assert!(base_aux_value.clone() % wrong_modulus == big_uint::zero());
         assert!(base_aux_value > *max_remainder);
 
-        for i in 0..NUMBER_OF_LIMBS {
+        for (i, aux) in base_aux.iter().enumerate() {
             let is_last_limb = i == NUMBER_OF_LIMBS - 1;
             let target = if is_last_limb {
                 max_most_significant_reduced_limb.clone()
             } else {
                 max_reduced_limb.clone()
             };
-            assert!(base_aux[i] >= target);
+            assert!(*aux >= target);
         }
 
         let bit_len_last_limb = bit_len_wrong_modulus as usize % bit_len_limb;
@@ -448,7 +448,7 @@ impl<W: WrongExt, N: FieldExt> Rns<W, N> {
         let max_with_max_unreduced =
             Integer::from_limbs(max_with_max_unreduced_limbs, Rc::new(rns.clone()));
         let reduction_result = max_with_max_unreduced.reduce();
-        let quotient = match reduction_result.quotient.clone() {
+        let quotient = match reduction_result.quotient {
             Quotient::Short(quotient) => quotient,
             _ => panic!("short quotient is expected"),
         };
