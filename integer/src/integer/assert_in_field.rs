@@ -5,7 +5,11 @@ use halo2::plonk::Error;
 use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _assert_in_field(&self, ctx: &mut RegionCtx<'_, '_, N>, input: &AssignedInteger<W, N>) -> Result<(), Error> {
+    pub(super) fn _assert_in_field(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        input: &AssignedInteger<W, N>,
+    ) -> Result<(), Error> {
         // Constraints:
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0

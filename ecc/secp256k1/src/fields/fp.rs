@@ -62,7 +62,10 @@ impl From<u64> for Fp {
 
 impl ConstantTimeEq for Fp {
     fn ct_eq(&self, other: &Self) -> Choice {
-        self.0[0].ct_eq(&other.0[0]) & self.0[1].ct_eq(&other.0[1]) & self.0[2].ct_eq(&other.0[2]) & self.0[3].ct_eq(&other.0[3])
+        self.0[0].ct_eq(&other.0[0])
+            & self.0[1].ct_eq(&other.0[1])
+            & self.0[2].ct_eq(&other.0[2])
+            & self.0[3].ct_eq(&other.0[3])
     }
 }
 
@@ -107,7 +110,12 @@ impl ConditionallySelectable for Fp {
 
 /// Constant representing the modulus
 /// p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f
-const MODULUS: Fp = Fp([0xfffffffefffffc2f, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff]);
+const MODULUS: Fp = Fp([
+    0xfffffffefffffc2f,
+    0xffffffffffffffff,
+    0xffffffffffffffff,
+    0xffffffffffffffff,
+]);
 
 /// The modulus as u32 limbs.
 #[cfg(not(target_pointer_width = "64"))]
@@ -275,7 +283,16 @@ impl Fp {
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    const fn montgomery_reduce(r0: u64, r1: u64, r2: u64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64) -> Self {
+    const fn montgomery_reduce(
+        r0: u64,
+        r1: u64,
+        r2: u64,
+        r3: u64,
+        r4: u64,
+        r5: u64,
+        r6: u64,
+        r7: u64,
+    ) -> Self {
         // The Montgomery reduction here is based on Algorithm 14.32 in
         // Handbook of Applied Cryptography
         // <http://cacr.uwaterloo.ca/hac/about/chap14.pdf>.
@@ -474,7 +491,12 @@ impl ff::Field for Fp {
 
     /// Computes the square root of this element, if it exists.
     fn sqrt(&self) -> CtOption<Self> {
-        let tmp = self.pow(&[0xffffffffbfffff0c, 0xffffffffffffffff, 0xffffffffffffffff, 0x3fffffffffffffff]);
+        let tmp = self.pow(&[
+            0xffffffffbfffff0c,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+            0x3fffffffffffffff,
+        ]);
 
         CtOption::new(tmp, tmp.square().ct_eq(self))
     }
@@ -482,7 +504,12 @@ impl ff::Field for Fp {
     /// Computes the multiplicative inverse of this element,
     /// failing if the element is zero.
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime(&[0xfffffffefffffc2d, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff]);
+        let tmp = self.pow_vartime(&[
+            0xfffffffefffffc2d,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+            0xffffffffffffffff,
+        ]);
 
         CtOption::new(tmp, !self.ct_eq(&Self::zero()))
     }
@@ -651,7 +678,8 @@ impl BaseExt for Fp {
     fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
         let mut compressed = [0u8; 32];
         reader.read_exact(&mut compressed[..])?;
-        Option::from(Self::from_repr(compressed)).ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
+        Option::from(Self::from_repr(compressed))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
     }
 
     fn from_bytes_wide(bytes: &[u8; 64]) -> Fp {
@@ -673,7 +701,12 @@ impl FieldExt for Fp {
     const MODULUS: &'static str = MODULUS_STR;
     const ROOT_OF_UNITY_INV: Self = Self::zero();
     const DELTA: Self = Self::zero();
-    const TWO_INV: Self = Fp::from_raw([0xffffffff7ffffe18, 0xffffffffffffffff, 0xffffffffffffffff, 0x7fffffffffffffff]);
+    const TWO_INV: Self = Fp::from_raw([
+        0xffffffff7ffffe18,
+        0xffffffffffffffff,
+        0xffffffffffffffff,
+        0x7fffffffffffffff,
+    ]);
 
     const ZETA: Self = Self::zero();
 
@@ -746,7 +779,11 @@ mod test {
 
     #[cfg(test)]
     fn big_modulus() -> BigUint {
-        BigUint::from_str_radix("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f", 16).unwrap()
+        BigUint::from_str_radix(
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+            16,
+        )
+        .unwrap()
     }
 
     #[test]

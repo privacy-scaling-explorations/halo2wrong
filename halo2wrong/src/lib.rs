@@ -23,12 +23,28 @@ impl<'a, 'b, F: FieldExt> RegionCtx<'a, 'b, F> {
         RegionCtx { region, offset }
     }
 
-    pub fn assign_fixed(&mut self, annotation: &str, column: Column<Fixed>, value: F) -> Result<AssignedCell<F, F>, Error> {
-        self.region.assign_fixed(|| annotation, column, *self.offset, || Ok(value))
+    pub fn assign_fixed(
+        &mut self,
+        annotation: &str,
+        column: Column<Fixed>,
+        value: F,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.region
+            .assign_fixed(|| annotation, column, *self.offset, || Ok(value))
     }
 
-    pub fn assign_advice(&mut self, annotation: &str, column: Column<Advice>, value: Option<F>) -> Result<AssignedCell<F, F>, Error> {
-        self.region.assign_advice(|| annotation, column, *self.offset, || value.ok_or(Error::Synthesis))
+    pub fn assign_advice(
+        &mut self,
+        annotation: &str,
+        column: Column<Advice>,
+        value: Option<F>,
+    ) -> Result<AssignedCell<F, F>, Error> {
+        self.region.assign_advice(
+            || annotation,
+            column,
+            *self.offset,
+            || value.ok_or(Error::Synthesis),
+        )
     }
 
     pub fn constrain_equal(&mut self, cell_0: Cell, cell_1: Cell) -> Result<(), Error> {

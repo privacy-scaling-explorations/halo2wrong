@@ -61,13 +61,21 @@ impl<F: FieldExt> Assigned<F> for &AssignedLimb<F> {
 impl<F: FieldExt> AssignedLimb<F> {
     fn new(cell: Cell, value: Option<F>, max_val: big_uint) -> Self {
         let value = value.map(|value| Limb::<F>::new(value));
-        AssignedLimb { value, cell, max_val }
+        AssignedLimb {
+            value,
+            cell,
+            max_val,
+        }
     }
 
     fn from(assigned: AssignedValue<F>, max_val: big_uint) -> Self {
         let value = assigned.value().map(|value| Limb::<F>::new(value));
         let cell = assigned.cell();
-        AssignedLimb { value, cell, max_val }
+        AssignedLimb {
+            value,
+            cell,
+            max_val,
+        }
     }
 
     fn limb(&self) -> Option<Limb<F>> {
@@ -136,8 +144,16 @@ pub struct AssignedInteger<W: WrongExt, N: FieldExt> {
 }
 
 impl<'a, W: WrongExt, N: FieldExt> AssignedInteger<W, N> {
-    pub fn new(rns: Rc<Rns<W, N>>, limbs: Vec<AssignedLimb<N>>, native_value: AssignedValue<N>) -> Self {
-        AssignedInteger { limbs, native_value, rns }
+    pub fn new(
+        rns: Rc<Rns<W, N>>,
+        limbs: Vec<AssignedLimb<N>>,
+        native_value: AssignedValue<N>,
+    ) -> Self {
+        AssignedInteger {
+            limbs,
+            native_value,
+            rns,
+        }
     }
 
     fn max_val(&self) -> big_uint {
@@ -181,7 +197,12 @@ impl<'a, W: WrongExt, N: FieldExt> AssignedInteger<W, N> {
                 shift += 1;
             }
         }
-        let limbs = self.rns.base_aux.iter().map(|aux_limb| big_to_fe(aux_limb << max_shift)).collect();
+        let limbs = self
+            .rns
+            .base_aux
+            .iter()
+            .map(|aux_limb| big_to_fe(aux_limb << max_shift))
+            .collect();
         Integer::from_limbs(limbs, Rc::clone(&self.rns))
     }
 }

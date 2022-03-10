@@ -54,7 +54,8 @@ impl<F: FieldExt> AssignedCondition<F> {
 
 impl<F: FieldExt> Assigned<F> for AssignedCondition<F> {
     fn value(&self) -> Option<F> {
-        self.bool_value.map(|value| if value { F::one() } else { F::zero() })
+        self.bool_value
+            .map(|value| if value { F::one() } else { F::zero() })
     }
     fn cell(&self) -> Cell {
         self.cell
@@ -63,7 +64,8 @@ impl<F: FieldExt> Assigned<F> for AssignedCondition<F> {
 
 impl<F: FieldExt> Assigned<F> for &AssignedCondition<F> {
     fn value(&self) -> Option<F> {
-        self.bool_value.map(|value| if value { F::one() } else { F::zero() })
+        self.bool_value
+            .map(|value| if value { F::one() } else { F::zero() })
     }
     fn cell(&self) -> Cell {
         self.cell

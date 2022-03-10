@@ -9,7 +9,12 @@ use maingate::RegionCtx;
 use maingate::{halo2, utils::fe_to_big, MainGateInstructions};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _add(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>, b: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(super) fn _add(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+        b: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
@@ -27,7 +32,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(super) fn _sub(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>, b: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(super) fn _sub(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+        b: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         let aux = Integer::subtracion_aux(b.max_vals(), Rc::clone(&self.rns));
@@ -61,7 +71,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         // c = a - b_0 - b_1
 
-        let max_vals = b_0.max_vals().iter().zip(b_1.max_vals().iter()).map(|(b_0, b_1)| b_0 + b_1).collect();
+        let max_vals = b_0
+            .max_vals()
+            .iter()
+            .zip(b_1.max_vals().iter())
+            .map(|(b_0, b_1)| b_0 + b_1)
+            .collect();
         let aux = Integer::subtracion_aux(max_vals, Rc::clone(&self.rns));
         let aux_limbs = aux.limbs();
         let aux_native = aux.native();
@@ -78,12 +93,22 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
             c_limbs.push(AssignedLimb::from(c_limb, c_max));
         }
-        let c_native = main_gate.sub_sub_with_constant(ctx, a.native(), b_0.native(), b_1.native(), aux_native)?;
+        let c_native = main_gate.sub_sub_with_constant(
+            ctx,
+            a.native(),
+            b_0.native(),
+            b_1.native(),
+            aux_native,
+        )?;
 
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(super) fn _neg(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(super) fn _neg(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         let aux = a.make_aux();
@@ -104,7 +129,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(crate) fn _mul2(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(crate) fn _mul2(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
@@ -121,7 +150,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(crate) fn _mul3(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(crate) fn _mul3(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
@@ -138,7 +171,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    pub(crate) fn _add_constant(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>, b: &Integer<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(crate) fn _add_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+        b: &Integer<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
 
         let mut c_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);

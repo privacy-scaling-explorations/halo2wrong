@@ -5,7 +5,10 @@ use crate::rns::{Common, Integer};
 use crate::{AssignedInteger, AssignedLimb, UnassignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::{fe_to_big, halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
+use maingate::{
+    fe_to_big, halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx,
+    Term,
+};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 
@@ -35,7 +38,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let limb_2 = &mut AssignedLimb::from(assigned, max_val);
 
         let max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
-        let assigned = range_chip.range_value(ctx, &integer.limb(3), most_significant_limb_bit_len)?;
+        let assigned =
+            range_chip.range_value(ctx, &integer.limb(3), most_significant_limb_bit_len)?;
         let limb_3 = &mut AssignedLimb::from(assigned, max_val);
 
         // find the native value
@@ -59,10 +63,22 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         )?;
 
         let native_value = main_gate.assign_to_acc(ctx, &integer.native())?;
-        Ok(self.new_assigned_integer(vec![limb_0.clone(), limb_1.clone(), limb_2.clone(), limb_3.clone()], native_value))
+        Ok(self.new_assigned_integer(
+            vec![
+                limb_0.clone(),
+                limb_1.clone(),
+                limb_2.clone(),
+                limb_3.clone(),
+            ],
+            native_value,
+        ))
     }
 
-    pub(super) fn _assign_constant(&self, ctx: &mut RegionCtx<'_, '_, N>, integer: W) -> Result<AssignedInteger<W, N>, Error> {
+    pub(super) fn _assign_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        integer: W,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let integer = Integer::from_fe(integer, Rc::clone(&self.rns));
 
         let main_gate = self.main_gate();
@@ -111,7 +127,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             zero,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
-        let assigned_values = vec![assigned_values.0, assigned_values.1, assigned_values.2, assigned_values.3];
+        let assigned_values = vec![
+            assigned_values.0,
+            assigned_values.1,
+            assigned_values.2,
+            assigned_values.3,
+        ];
 
         let native_value = main_gate.assign_to_acc(ctx, &integer.native())?;
 

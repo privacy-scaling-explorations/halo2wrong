@@ -7,7 +7,11 @@ use num_bigint::BigUint as big_uint;
 use std::convert::TryInto;
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _assert_not_zero(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<(), Error> {
+    pub(super) fn _assert_not_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let one = N::one();
 
@@ -17,8 +21,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         // Sanity check.
         // This algorithm requires that wrong modulus * 2 <= native modulus * 2 ^ bit_len_limb.
-        let two_pow_limb_bits_minus_1 = big_uint::from(2u64).pow((self.rns.bit_len_limb - 1).try_into().unwrap());
-        assert!(self.rns.wrong_modulus.clone() <= self.rns.native_modulus.clone() * two_pow_limb_bits_minus_1);
+        let two_pow_limb_bits_minus_1 =
+            big_uint::from(2u64).pow((self.rns.bit_len_limb - 1).try_into().unwrap());
+        assert!(
+            self.rns.wrong_modulus.clone()
+                <= self.rns.native_modulus.clone() * two_pow_limb_bits_minus_1
+        );
 
         // r = 0 <-> r % 2 ^ 64 = 0 /\ r % native_modulus = 0
         // r <> 0 <-> r % 2 ^ 64 <> 0 \/ r % native_modulus <> 0
@@ -47,7 +55,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
-        let native_diff = r.native().value.map(|value| value - self.rns.wrong_modulus_in_native_modulus);
+        let native_diff = r
+            .native()
+            .value
+            .map(|value| value - self.rns.wrong_modulus_in_native_modulus);
         let (_, native_diff, _, _, _) = main_gate.combine(
             ctx,
             [

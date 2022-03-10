@@ -746,8 +746,18 @@ macro_rules! impl_projective_curve_specific {
         fn generator() -> Self {
             // Reference: https://neuromancer.sk/std/secg/secp256k1
             Self {
-                x: $base::from_raw([0x59f2815b16f81798, 0x029bfcdb2dce28d9, 0x55a06295ce870b07, 0x79be667ef9dcbbac]),
-                y: $base::from_raw([0x9c47d08ffb10d4b8, 0xfd17b448a6855419, 0x5da4fbfc0e1108a8, 0x483ada7726a3c465]),
+                x: $base::from_raw([
+                    0x59f2815b16f81798,
+                    0x029bfcdb2dce28d9,
+                    0x55a06295ce870b07,
+                    0x79be667ef9dcbbac,
+                ]),
+                y: $base::from_raw([
+                    0x9c47d08ffb10d4b8,
+                    0xfd17b448a6855419,
+                    0x5da4fbfc0e1108a8,
+                    0x483ada7726a3c465,
+                ]),
                 z: $base::one(),
             }
         }
@@ -770,7 +780,11 @@ macro_rules! impl_projective_curve_specific {
             let y3 = m * (s - x3) - a;
             let z3 = (self.y + self.z).square() - yy - zz;
 
-            let tmp = $name { x: x3, y: y3, z: z3 };
+            let tmp = $name {
+                x: x3,
+                y: y3,
+                z: z3,
+            };
 
             $name::conditional_select(&tmp, &$name::identity(), self.is_identity())
         }
@@ -811,8 +825,18 @@ macro_rules! impl_affine_curve_specific {
         fn generator() -> Self {
             // Reference: https://neuromancer.sk/std/secg/secp256k1
             Self {
-                x: $base::from_raw([0x59f2815b16f81798, 0x029bfcdb2dce28d9, 0x55a06295ce870b07, 0x79be667ef9dcbbac]),
-                y: $base::from_raw([0x9c47d08ffb10d4b8, 0xfd17b448a6855419, 0x5da4fbfc0e1108a8, 0x483ada7726a3c465]),
+                x: $base::from_raw([
+                    0x59f2815b16f81798,
+                    0x029bfcdb2dce28d9,
+                    0x55a06295ce870b07,
+                    0x79be667ef9dcbbac,
+                ]),
+                y: $base::from_raw([
+                    0x9c47d08ffb10d4b8,
+                    0xfd17b448a6855419,
+                    0x5da4fbfc0e1108a8,
+                    0x483ada7726a3c465,
+                ]),
 
                 infinity: Choice::from(0u8),
             }

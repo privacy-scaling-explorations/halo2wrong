@@ -24,7 +24,11 @@ impl<'a, F: FieldExt> std::fmt::Debug for Term<'a, F> {
                 .field("value", &coeff.value())
                 .field("base", base)
                 .finish(),
-            Self::Unassigned(coeff, base) => f.debug_struct("Unassigned").field("coeff", coeff).field("base", base).finish(),
+            Self::Unassigned(coeff, base) => f
+                .debug_struct("Unassigned")
+                .field("coeff", coeff)
+                .field("base", base)
+                .finish(),
             Self::Zero => f.debug_struct("Zero").finish(),
         }
     }
@@ -93,29 +97,80 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     type CombinedValues;
     type MainGateColumn;
 
-    fn expose_public(&self, layouter: impl Layouter<F>, value: AssignedValue<F>, row: usize) -> Result<(), Error>;
+    fn expose_public(
+        &self,
+        layouter: impl Layouter<F>,
+        value: AssignedValue<F>,
+        row: usize,
+    ) -> Result<(), Error>;
 
-    fn assign_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, constant: F) -> Result<AssignedValue<F>, Error>;
+    fn assign_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn assign_value(&self, ctx: &mut RegionCtx<'_, '_, F>, value: &UnassignedValue<F>) -> Result<AssignedValue<F>, Error>;
+    fn assign_value(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        value: &UnassignedValue<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn assign_to_column(&self, ctx: &mut RegionCtx<'_, '_, F>, value: &UnassignedValue<F>, column: Self::MainGateColumn) -> Result<AssignedValue<F>, Error>;
+    fn assign_to_column(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        value: &UnassignedValue<F>,
+        column: Self::MainGateColumn,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn assign_to_acc(&self, ctx: &mut RegionCtx<'_, '_, F>, value: &UnassignedValue<F>) -> Result<AssignedValue<F>, Error>;
+    fn assign_to_acc(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        value: &UnassignedValue<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn assign_bit(&self, ctx: &mut RegionCtx<'_, '_, F>, value: &UnassignedValue<F>) -> Result<AssignedBit<F>, Error>;
+    fn assign_bit(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        value: &UnassignedValue<F>,
+    ) -> Result<AssignedBit<F>, Error>;
 
     fn assert_bit(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error>;
 
-    fn one_or_one(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error>;
+    fn one_or_one(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error>;
 
-    fn or(&self, ctx: &mut RegionCtx<'_, '_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error>;
+    fn or(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        c1: &AssignedCondition<F>,
+        c2: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error>;
 
-    fn and(&self, ctx: &mut RegionCtx<'_, '_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error>;
+    fn and(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        c1: &AssignedCondition<F>,
+        c2: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error>;
 
-    fn not(&self, ctx: &mut RegionCtx<'_, '_, F>, c: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error>;
+    fn not(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        c: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error>;
 
-    fn select(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, cond: &AssignedCondition<F>) -> Result<AssignedValue<F>, Error>;
+    fn select(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        cond: &AssignedCondition<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn select_or_assign(
         &self,
@@ -125,39 +180,113 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         cond: &AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    fn div_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn div_unsafe(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn div(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
+    fn div(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
 
-    fn invert_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn invert_unsafe(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn invert(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
+    fn invert(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error>;
 
-    fn assert_equal_to_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: F) -> Result<(), Error>;
+    fn assert_equal_to_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: F,
+    ) -> Result<(), Error>;
 
-    fn assert_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error>;
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error>;
 
-    fn assert_not_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error>;
+    fn assert_not_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error>;
 
-    fn is_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedCondition<F>, Error>;
+    fn is_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedCondition<F>, Error>;
 
-    fn assert_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error>;
+    fn assert_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>)
+        -> Result<(), Error>;
 
-    fn assert_not_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error>;
+    fn assert_not_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<(), Error>;
 
-    fn is_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedCondition<F>, Error>;
+    fn is_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedCondition<F>, Error>;
 
     fn assert_one(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error>;
 
-    fn add(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn add(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn add_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error>;
+    fn add_with_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn add_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error>;
+    fn add_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn sub(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn sub(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn sub_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error>;
+    fn sub_with_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn sub_sub_with_constant(
         &self,
@@ -168,13 +297,31 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         constant: F,
     ) -> Result<AssignedValue<F>, Error>;
 
-    fn neg_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error>;
+    fn neg_with_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn mul2(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn mul2(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn mul3(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn mul3(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
-    fn mul(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error>;
+    fn mul(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn combine(
         &self,
@@ -185,14 +332,29 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         options: Self::CombinationOption,
     ) -> Result<Self::CombinedValues, Error>;
 
-    fn nand(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error>;
+    fn nand(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error>;
 
-    fn decompose(&self, ctx: &mut RegionCtx<'_, '_, F>, composed: impl Assigned<F>, number_of_bits: usize) -> Result<Vec<AssignedBit<F>>, Error>;
+    fn decompose(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        composed: impl Assigned<F>,
+        number_of_bits: usize,
+    ) -> Result<Vec<AssignedBit<F>>, Error>;
 
     fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error>;
 
     fn break_here(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
-        self.combine(ctx, [Term::Zero; WIDTH], F::one(), CombinationOptionCommon::OneLinerAdd.into())?;
+        self.combine(
+            ctx,
+            [Term::Zero; WIDTH],
+            F::one(),
+            CombinationOptionCommon::OneLinerAdd.into(),
+        )?;
         Ok(())
     }
 }

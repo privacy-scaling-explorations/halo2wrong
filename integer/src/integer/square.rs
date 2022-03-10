@@ -3,10 +3,17 @@ use crate::{rns::MaybeReduced, AssignedInteger, WrongExt, NUMBER_OF_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::Assigned;
-use maingate::{halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
+use maingate::{
+    halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions,
+    RegionCtx, Term,
+};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub(super) fn _square(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<AssignedInteger<W, N>, Error> {
+    pub(super) fn _square(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<AssignedInteger<W, N>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
@@ -192,7 +199,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             [
                 Term::Assigned(&a_native, zero),
                 Term::Assigned(&a_native, zero),
-                Term::Assigned(&quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+                Term::Assigned(
+                    &quotient.native(),
+                    -self.rns.wrong_modulus_in_native_modulus,
+                ),
                 Term::Assigned(&result.native(), -one),
                 Term::Zero,
             ],

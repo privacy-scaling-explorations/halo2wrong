@@ -64,7 +64,10 @@ impl From<u64> for Fq {
 
 impl ConstantTimeEq for Fq {
     fn ct_eq(&self, other: &Self) -> Choice {
-        self.0[0].ct_eq(&other.0[0]) & self.0[1].ct_eq(&other.0[1]) & self.0[2].ct_eq(&other.0[2]) & self.0[3].ct_eq(&other.0[3])
+        self.0[0].ct_eq(&other.0[0])
+            & self.0[1].ct_eq(&other.0[1])
+            & self.0[2].ct_eq(&other.0[2])
+            & self.0[3].ct_eq(&other.0[3])
     }
 }
 
@@ -110,7 +113,12 @@ impl ConditionallySelectable for Fq {
 /// Constant representing the modulus
 /// q = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
-const MODULUS: Fq = Fq([0xbfd25e8cd0364141, 0xbaaedce6af48a03b, 0xfffffffffffffffe, 0xffffffffffffffff]);
+const MODULUS: Fq = Fq([
+    0xbfd25e8cd0364141,
+    0xbaaedce6af48a03b,
+    0xfffffffffffffffe,
+    0xffffffffffffffff,
+]);
 
 /// The modulus as u32 limbs.
 #[cfg(not(target_pointer_width = "64"))]
@@ -185,11 +193,21 @@ const R: Fq = Fq([0x402da1732fc9bebf, 0x4551231950b75fc4, 0x1, 0]);
 
 /// R^2 = 2^512 mod q
 /// 0x9d671cd581c69bc5e697f5e45bcd07c6741496c20e7cf878896cf21467d7d140
-const R2: Fq = Fq([0x896cf21467d7d140, 0x741496c20e7cf878, 0xe697f5e45bcd07c6, 0x9d671cd581c69bc5]);
+const R2: Fq = Fq([
+    0x896cf21467d7d140,
+    0x741496c20e7cf878,
+    0xe697f5e45bcd07c6,
+    0x9d671cd581c69bc5,
+]);
 
 /// R^3 = 2^768 mod q
 /// 0x555d800c18ef116db1b31347f1d0b2da0017648444d4322c7bc0cfe0e9ff41ed
-const R3: Fq = Fq([0x7bc0cfe0e9ff41ed, 0x0017648444d4322c, 0xb1b31347f1d0b2da, 0x555d800c18ef116d]);
+const R3: Fq = Fq([
+    0x7bc0cfe0e9ff41ed,
+    0x0017648444d4322c,
+    0xb1b31347f1d0b2da,
+    0x555d800c18ef116d,
+]);
 
 impl Default for Fq {
     #[inline]
@@ -278,7 +296,16 @@ impl Fq {
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    const fn montgomery_reduce(r0: u64, r1: u64, r2: u64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64) -> Self {
+    const fn montgomery_reduce(
+        r0: u64,
+        r1: u64,
+        r2: u64,
+        r3: u64,
+        r4: u64,
+        r5: u64,
+        r6: u64,
+        r7: u64,
+    ) -> Self {
         // The Montgomery reduction here is based on Algorithm 14.32 in
         // Handbook of Applied Cryptography
         // <http://cacr.uwaterloo.ca/hac/about/chap14.pdf>.
@@ -492,7 +519,12 @@ impl ff::Field for Fq {
     /// failing if the element is zero.
 
     fn invert(&self) -> CtOption<Self> {
-        let tmp = self.pow_vartime(&[0xbfd25e8cd036413f, 0xbaaedce6af48a03b, 0xfffffffffffffffe, 0xffffffffffffffff]);
+        let tmp = self.pow_vartime(&[
+            0xbfd25e8cd036413f,
+            0xbaaedce6af48a03b,
+            0xfffffffffffffffe,
+            0xffffffffffffffff,
+        ]);
 
         CtOption::new(tmp, !self.ct_eq(&Self::zero()))
     }
@@ -668,7 +700,8 @@ impl BaseExt for Fq {
     fn read<R: Read>(reader: &mut R) -> io::Result<Self> {
         let mut compressed = [0u8; 32];
         reader.read_exact(&mut compressed[..])?;
-        Option::from(Self::from_repr(compressed)).ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
+        Option::from(Self::from_repr(compressed))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))
     }
 
     fn from_bytes_wide(bytes: &[u8; 64]) -> Self {
@@ -690,7 +723,12 @@ impl FieldExt for Fq {
     const MODULUS: &'static str = MODULUS_STR;
     const ROOT_OF_UNITY_INV: Self = Self::zero();
     const DELTA: Self = Self::zero();
-    const TWO_INV: Self = Self::from_raw([0xdfe92f46681b20a1, 0x5d576e7357a4501d, 0xffffffffffffffff, 0x7fffffffffffffff]);
+    const TWO_INV: Self = Self::from_raw([
+        0xdfe92f46681b20a1,
+        0x5d576e7357a4501d,
+        0xffffffffffffffff,
+        0x7fffffffffffffff,
+    ]);
 
     const ZETA: Self = Self::zero();
 
@@ -756,7 +794,11 @@ mod test {
 
     #[cfg(test)]
     fn big_modulus() -> BigUint {
-        BigUint::from_str_radix("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141", 16).unwrap()
+        BigUint::from_str_radix(
+            "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+            16,
+        )
+        .unwrap()
     }
 
     #[test]

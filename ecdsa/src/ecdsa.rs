@@ -154,7 +154,8 @@ mod tests {
             let mut overflow_bit_lengths: Vec<usize> = vec![];
             overflow_bit_lengths.extend(rns_base.overflow_lengths());
             overflow_bit_lengths.extend(rns_scalar.overflow_lengths());
-            let range_config = RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let range_config =
+                RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
             TestCircuitEcdsaVerifyConfig {
                 main_gate_config,
                 range_config,
@@ -165,7 +166,10 @@ mod tests {
             EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
         }
 
-        pub fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
+        pub fn config_range<N: FieldExt>(
+            &self,
+            layouter: &mut impl Layouter<N>,
+        ) -> Result<(), Error> {
             let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
             let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
             range_chip.load_limb_range_table(layouter)?;
@@ -194,7 +198,11 @@ mod tests {
             TestCircuitEcdsaVerifyConfig::new::<E, N>(meta)
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<N>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<N>,
+        ) -> Result<(), Error> {
             let mut ecc_chip = GeneralEccChip::<E, N>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
             let scalar_chip = ecc_chip.scalar_field_chip();
 
@@ -254,10 +262,15 @@ mod tests {
 
                     let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
                     let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
-                    let sig = AssignedEcdsaSig { r: r_assigned, s: s_assigned };
+                    let sig = AssignedEcdsaSig {
+                        r: r_assigned,
+                        s: s_assigned,
+                    };
 
                     let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
-                    let pk_assigned = AssignedPublicKey { point: pk_in_circuit };
+                    let pk_assigned = AssignedPublicKey {
+                        point: pk_in_circuit,
+                    };
                     let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
                     ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
                 },

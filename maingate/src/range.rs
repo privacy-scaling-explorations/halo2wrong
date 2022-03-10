@@ -64,14 +64,24 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
-    fn range_value(&self, ctx: &mut RegionCtx<'_, '_, F>, input: &UnassignedValue<F>, bit_len: usize) -> Result<AssignedValue<F>, Error>;
+    fn range_value(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        input: &UnassignedValue<F>,
+        bit_len: usize,
+    ) -> Result<AssignedValue<F>, Error>;
 
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
     fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
-    fn range_value(&self, ctx: &mut RegionCtx<'_, '_, F>, input: &UnassignedValue<F>, bit_len: usize) -> Result<AssignedValue<F>, Error> {
+    fn range_value(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        input: &UnassignedValue<F>,
+        bit_len: usize,
+    ) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
         let (one, zero) = (F::one(), F::zero());
         let r = self.left_shifter[0];
@@ -151,9 +161,15 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
             // Most significant Term in first row
             let term_1 = if has_overflow {
-                Term::Unassigned(limbs.as_ref().map(|limbs| limbs[number_of_limbs - 2]), bases[number_of_limbs - 2])
+                Term::Unassigned(
+                    limbs.as_ref().map(|limbs| limbs[number_of_limbs - 2]),
+                    bases[number_of_limbs - 2],
+                )
             } else {
-                Term::Unassigned(limbs.as_ref().map(|limbs| limbs[number_of_limbs - 1]), bases[number_of_limbs - 1])
+                Term::Unassigned(
+                    limbs.as_ref().map(|limbs| limbs[number_of_limbs - 1]),
+                    bases[number_of_limbs - 1],
+                )
             };
 
             let term_2 = if number_of_limbs > 2 {
@@ -197,7 +213,13 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
                 let (_, _, _, assigned, _) = main_gate.combine(
                     ctx,
-                    [Term::Zero, overflow, Term::Zero, unassigned_input, intermediate],
+                    [
+                        Term::Zero,
+                        overflow,
+                        Term::Zero,
+                        unassigned_input,
+                        intermediate,
+                    ],
                     zero,
                     CombinationOptionCommon::OneLinerAdd.into(),
                 )?;
@@ -206,7 +228,12 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             } else {
                 let unassigned_input = Term::Unassigned(input.value(), -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
-                let (_, _, _, _, assigned) = main_gate.combine(ctx, [term_0, term_1, term_2, term_3, unassigned_input], zero, combination_option)?;
+                let (_, _, _, _, assigned) = main_gate.combine(
+                    ctx,
+                    [term_0, term_1, term_2, term_3, unassigned_input],
+                    zero,
+                    combination_option,
+                )?;
                 Ok(assigned)
             }
         }
@@ -219,7 +246,12 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             || "",
             |mut table| {
                 for (index, &value) in table_values.iter().enumerate() {
-                    table.assign_cell(|| "limb range table", self.config.dense_limb_range_table, index, || Ok(value))?;
+                    table.assign_cell(
+                        || "limb range table",
+                        self.config.dense_limb_range_table,
+                        index,
+                        || Ok(value),
+                    )?;
                 }
                 Ok(())
             },
@@ -236,7 +268,12 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 || "",
                 |mut table| {
                     for (index, &value) in table_values.iter().enumerate() {
-                        table.assign_cell(|| "overflow table", overflow_table.column, index, || Ok(value))?;
+                        table.assign_cell(
+                            || "overflow table",
+                            overflow_table.column,
+                            index,
+                            || Ok(value),
+                        )?;
                     }
                     Ok(())
                 },
@@ -258,18 +295,35 @@ impl<F: FieldExt> RangeChip<F> {
         RangeChip {
             config,
             base_bit_len,
-            left_shifter: vec![left_shifter_r, left_shifter_2r, left_shifter_3r, left_shifter_4r],
+            left_shifter: vec![
+                left_shifter_r,
+                left_shifter_2r,
+                left_shifter_3r,
+                left_shifter_4r,
+            ],
         }
     }
 
     #[allow(unused_variables)]
-    pub fn configure(meta: &mut ConstraintSystem<F>, main_gate_config: &MainGateConfig, fine_tune_bit_lengths: Vec<usize>) -> RangeConfig {
+    pub fn configure(
+        meta: &mut ConstraintSystem<F>,
+        main_gate_config: &MainGateConfig,
+        fine_tune_bit_lengths: Vec<usize>,
+    ) -> RangeConfig {
         let mut fine_tune_bit_lengths = fine_tune_bit_lengths;
         fine_tune_bit_lengths.sort_unstable();
         fine_tune_bit_lengths.dedup();
-        let fine_tune_bit_lengths: Vec<usize> = fine_tune_bit_lengths.into_iter().filter(|e| *e != 0).collect();
+        let fine_tune_bit_lengths: Vec<usize> = fine_tune_bit_lengths
+            .into_iter()
+            .filter(|e| *e != 0)
+            .collect();
 
-        let (a, b, c, d) = (main_gate_config.a, main_gate_config.b, main_gate_config.c, main_gate_config.d);
+        let (a, b, c, d) = (
+            main_gate_config.a,
+            main_gate_config.b,
+            main_gate_config.c,
+            main_gate_config.d,
+        );
 
         let s_dense_limb_range = meta.complex_selector();
         let dense_limb_range_table = meta.lookup_table_column();
@@ -360,7 +414,8 @@ mod tests {
         fn new<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
             let main_gate_config = MainGate::<F>::configure(meta);
             let fine_tune_bit_lengths = Self::fine_tune_bit_lengths();
-            let range_config = RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bit_lengths);
+            let range_config =
+                RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bit_lengths);
             Self { range_config }
         }
 
@@ -390,7 +445,11 @@ mod tests {
             TestCircuitConfig::new(meta)
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let range_chip = config.range_chip();
             let main_gate = config.main_gate();
 

@@ -9,7 +9,12 @@ use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
 impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
-    fn pad(&self, region: &mut RegionCtx<'_, '_, N>, bits: &mut Vec<AssignedCondition<N>>, window_size: usize) -> Result<(), Error> {
+    fn pad(
+        &self,
+        region: &mut RegionCtx<'_, '_, N>,
+        bits: &mut Vec<AssignedCondition<N>>,
+        window_size: usize,
+    ) -> Result<(), Error> {
         assert_eq!(bits.len(), Emulated::ScalarExt::NUM_BITS as usize);
 
         // TODO: This is a tmp workaround. Instead of padding with zeros we can use a shorter ending window.
@@ -29,7 +34,9 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
         Windowed(
             (0..number_of_windows)
                 .map(|i| {
-                    let mut selector: Vec<AssignedCondition<N>> = (0..window_size).map(|j| bits[i * window_size + j].clone()).collect();
+                    let mut selector: Vec<AssignedCondition<N>> = (0..window_size)
+                        .map(|j| bits[i * window_size + j].clone())
+                        .collect();
                     selector.reverse();
                     Selector(selector)
                 })
@@ -107,7 +114,10 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     pub fn mul_batch_1d_horizontal(
         &self,
         region: &mut RegionCtx<'_, '_, N>,
-        pairs: Vec<(AssignedPoint<Emulated::Base, N>, AssignedInteger<Emulated::Scalar, N>)>,
+        pairs: Vec<(
+            AssignedPoint<Emulated::Base, N>,
+            AssignedInteger<Emulated::Scalar, N>,
+        )>,
         window_size: usize,
     ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
         assert!(window_size > 0);

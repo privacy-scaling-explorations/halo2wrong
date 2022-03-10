@@ -129,7 +129,9 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Window");
         for (i, selector) in self.0.iter().enumerate() {
-            debug.field("selector_index", &i).field("selector", selector);
+            debug
+                .field("selector_index", &i)
+                .field("selector", selector);
         }
         debug.finish()?;
         Ok(())

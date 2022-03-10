@@ -3,7 +3,9 @@ use crate::rns::MaybeReduced;
 use crate::{AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term};
+use maingate::{
+    halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term,
+};
 
 impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     fn assert_zero_v0_range_tune(&self) -> usize {
@@ -21,13 +23,18 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         self.rns.bit_len_limb
     }
 
-    pub(super) fn _assert_zero(&self, ctx: &mut RegionCtx<'_, '_, N>, a: &AssignedInteger<W, N>) -> Result<(), Error> {
+    pub(super) fn _assert_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N>,
+    ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
         let negative_wrong_modulus: Vec<N> = self.rns.negative_wrong_modulus_decomposed.clone();
 
         let a_int = a.integer();
-        let reduction_witness: MaybeReduced<W, N> = a_int.as_ref().map(|a_int| a_int.reduce()).into();
+        let reduction_witness: MaybeReduced<W, N> =
+            a_int.as_ref().map(|a_int| a_int.reduce()).into();
         let quotient = reduction_witness.short();
         let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
         let (_, _, v_0, v_1) = reduction_witness.residues();
@@ -35,7 +42,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // apply ranges
 
         let range_chip = self.range_chip();
-        let quotient = &range_chip.range_value(ctx, &quotient.into(), self.assert_zero_quotient_range_tune())?;
+        let quotient = &range_chip.range_value(
+            ctx,
+            &quotient.into(),
+            self.assert_zero_quotient_range_tune(),
+        )?;
         let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.assert_zero_v0_range_tune())?;
         let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.assert_zero_v1_range_tune())?;
 

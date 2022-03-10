@@ -18,7 +18,13 @@ pub enum MainGateColumn {
     E = 4,
 }
 
-pub(crate) type CombinedValues<F> = (AssignedValue<F>, AssignedValue<F>, AssignedValue<F>, AssignedValue<F>, AssignedValue<F>);
+pub(crate) type CombinedValues<F> = (
+    AssignedValue<F>,
+    AssignedValue<F>,
+    AssignedValue<F>,
+    AssignedValue<F>,
+    AssignedValue<F>,
+);
 
 #[derive(Clone, Debug)]
 pub struct MainGateConfig {
@@ -80,26 +86,50 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     type CombinedValues = CombinedValues<F>;
     type MainGateColumn = MainGateColumn;
 
-    fn expose_public(&self, mut layouter: impl Layouter<F>, value: AssignedValue<F>, row: usize) -> Result<(), Error> {
+    fn expose_public(
+        &self,
+        mut layouter: impl Layouter<F>,
+        value: AssignedValue<F>,
+        row: usize,
+    ) -> Result<(), Error> {
         let config = self.config();
         layouter.constrain_instance(value.cell(), config.instance, row)
     }
 
-    fn assign_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, constant: F) -> Result<AssignedValue<F>, Error> {
+    fn assign_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
         let (assigned, _, _, _, _) = self.combine(
             ctx,
-            [Term::unassigned_to_sub(Some(constant)), Term::Zero, Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::unassigned_to_sub(Some(constant)),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             constant,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
         Ok(assigned)
     }
 
-    fn assign_value(&self, ctx: &mut RegionCtx<'_, '_, F>, unassigned: &UnassignedValue<F>) -> Result<AssignedValue<F>, Error> {
+    fn assign_value(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        unassigned: &UnassignedValue<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         self.assign_to_column(ctx, unassigned, MainGateColumn::A)
     }
 
-    fn assign_to_column(&self, ctx: &mut RegionCtx<'_, '_, F>, unassigned: &UnassignedValue<F>, column: MainGateColumn) -> Result<AssignedValue<F>, Error> {
+    fn assign_to_column(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        unassigned: &UnassignedValue<F>,
+        column: MainGateColumn,
+    ) -> Result<AssignedValue<F>, Error> {
         let column = match column {
             MainGateColumn::A => self.config.a,
             MainGateColumn::B => self.config.b,
@@ -114,11 +144,19 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(unassigned.assign(cell.cell()))
     }
 
-    fn assign_to_acc(&self, ctx: &mut RegionCtx<'_, '_, F>, unassigned: &UnassignedValue<F>) -> Result<AssignedValue<F>, Error> {
+    fn assign_to_acc(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        unassigned: &UnassignedValue<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         self.assign_to_column(ctx, unassigned, MainGateColumn::E)
     }
 
-    fn assign_bit(&self, ctx: &mut RegionCtx<'_, '_, F>, bit: &UnassignedValue<F>) -> Result<AssignedBit<F>, Error> {
+    fn assign_bit(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        bit: &UnassignedValue<F>,
+    ) -> Result<AssignedBit<F>, Error> {
         // val * val - val  = 0
 
         // Witness layout:
@@ -145,15 +183,31 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c.into())
     }
 
-    fn add(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn add(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         self.add_with_constant(ctx, a, b, F::zero())
     }
 
-    fn sub(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn sub(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         self.sub_with_constant(ctx, a, b, F::zero())
     }
 
-    fn add_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
+    fn add_with_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => Some(a + b + constant),
             _ => None,
@@ -175,12 +229,23 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c)
     }
 
-    fn add_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
+    fn add_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + constant);
 
         let (_, _, c, _, _) = self.combine(
             ctx,
-            [Term::assigned_to_add(&a), Term::Zero, Term::unassigned_to_sub(c), Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_add(&a),
+                Term::Zero,
+                Term::unassigned_to_sub(c),
+                Term::Zero,
+                Term::Zero,
+            ],
             constant,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -188,12 +253,23 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c)
     }
 
-    fn neg_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
+    fn neg_with_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| -a + constant);
 
         let (_, _, c, _, _) = self.combine(
             ctx,
-            [Term::assigned_to_sub(&a), Term::Zero, Term::unassigned_to_sub(c), Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_sub(&a),
+                Term::Zero,
+                Term::unassigned_to_sub(c),
+                Term::Zero,
+                Term::Zero,
+            ],
             constant,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -201,7 +277,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c)
     }
 
-    fn sub_with_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, constant: F) -> Result<AssignedValue<F>, Error> {
+    fn sub_with_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => Some(a - b + constant),
             _ => None,
@@ -252,7 +334,11 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(d)
     }
 
-    fn mul2(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn mul2(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + a);
 
         let (_, _, c, _, _) = self.combine(
@@ -271,7 +357,11 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c)
     }
 
-    fn mul3(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn mul3(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + a + a);
 
         let (_, _, _, d, _) = self.combine(
@@ -290,7 +380,12 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(d)
     }
 
-    fn mul(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn mul(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => Some(a * b),
             _ => None,
@@ -312,7 +407,12 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c)
     }
 
-    fn div_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn div_unsafe(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => {
                 let b_maybe_inverted: Option<F> = b.invert().into();
@@ -341,13 +441,22 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(b)
     }
 
-    fn div(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
+    fn div(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
         let (b_inverted, cond) = self.invert(ctx, b)?;
         let res = self.mul(ctx, a, b_inverted)?;
         Ok((res, cond))
     }
 
-    fn invert_unsafe(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedValue<F>, Error> {
+    fn invert_unsafe(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         // Just enforce the equation below
         // If input 'a' is zero then no valid witness will be found
         // a * a' - 1 = 0
@@ -363,7 +472,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         let (_, b, _, _, _) = self.combine(
             ctx,
-            [Term::assigned_to_mul(&a), Term::unassigned_to_mul(inverse), Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_mul(&a),
+                Term::unassigned_to_mul(inverse),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             -F::one(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -371,7 +486,11 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(b)
     }
 
-    fn invert(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
+    fn invert(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
         let (one, zero) = (F::one(), F::zero());
 
         // Returns 'r' as a condition bit that defines if inversion successful or not
@@ -437,10 +556,21 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok((a_inv, r))
     }
 
-    fn assert_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error> {
         self.combine(
             ctx,
-            [Term::assigned_to_add(&a), Term::assigned_to_sub(&b), Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_add(&a),
+                Term::assigned_to_sub(&b),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             F::zero(),
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -448,13 +578,23 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(())
     }
 
-    fn assert_not_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
+    fn assert_not_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error> {
         // (a - b) must have an inverse
         let c = self.sub_with_constant(ctx, a, b, F::zero())?;
         self.assert_not_zero(ctx, c)
     }
 
-    fn is_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<AssignedCondition<F>, Error> {
+    fn is_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
         let (one, zero) = (F::one(), F::zero());
 
         // Given a and b equation below is enforced
@@ -526,11 +666,19 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(r)
     }
 
-    fn assert_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error> {
+    fn assert_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<(), Error> {
         self.assert_equal_to_constant(ctx, a, F::zero())
     }
 
-    fn assert_not_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<(), Error> {
+    fn assert_not_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<(), Error> {
         // Non-zero element must have an inverse
         // a * w - 1 = 0
 
@@ -545,7 +693,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         self.combine(
             ctx,
-            [Term::assigned_to_mul(&a), Term::unassigned_to_mul(w), Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_mul(&a),
+                Term::unassigned_to_mul(w),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             -F::one(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -553,7 +707,11 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(())
     }
 
-    fn is_zero(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>) -> Result<AssignedCondition<F>, Error> {
+    fn is_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
         let (_, is_zero) = self.invert(ctx, a)?;
         Ok(is_zero)
     }
@@ -562,10 +720,21 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         self.assert_equal_to_constant(ctx, a, F::one())
     }
 
-    fn assert_equal_to_constant(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: F) -> Result<(), Error> {
+    fn assert_equal_to_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: F,
+    ) -> Result<(), Error> {
         self.combine(
             ctx,
-            [Term::assigned_to_add(&a), Term::Zero, Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_add(&a),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             -b,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -573,7 +742,12 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(())
     }
 
-    fn or(&self, ctx: &mut RegionCtx<'_, '_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error> {
+    fn or(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        c1: &AssignedCondition<F>,
+        c2: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
         let c = match (c1.value(), c2.value()) {
             (Some(c1), Some(c2)) => Some(c1 + c2 - c1 * c2),
             _ => None,
@@ -599,7 +773,12 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c.into())
     }
 
-    fn and(&self, ctx: &mut RegionCtx<'_, '_, F>, c1: &AssignedCondition<F>, c2: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error> {
+    fn and(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        c1: &AssignedCondition<F>,
+        c2: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
         let c = match (c1.value(), c2.value()) {
             (Some(c1), Some(c2)) => Some(c1 * c2),
             _ => None,
@@ -623,13 +802,23 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(c.into())
     }
 
-    fn not(&self, ctx: &mut RegionCtx<'_, '_, F>, c: &AssignedCondition<F>) -> Result<AssignedCondition<F>, Error> {
+    fn not(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        c: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
         let one = F::one();
         let not_c = c.value().map(|c| one - c);
 
         let (_, b, _, _, _) = self.combine(
             ctx,
-            [Term::assigned_to_add(c), Term::unassigned_to_add(not_c), Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_add(c),
+                Term::unassigned_to_add(not_c),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             -one,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -637,7 +826,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(b.into())
     }
 
-    fn select(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>, cond: &AssignedCondition<F>) -> Result<AssignedValue<F>, Error> {
+    fn select(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+        cond: &AssignedCondition<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         // We should satisfy the equation below with bit asserted condition flag
         // c (a-b) + b - res = 0
         // c a - c b + b - res = 0
@@ -671,7 +866,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(res)
     }
 
-    fn select_or_assign(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: F, cond: &AssignedCondition<F>) -> Result<AssignedValue<F>, Error> {
+    fn select_or_assign(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: F,
+        cond: &AssignedCondition<F>,
+    ) -> Result<AssignedValue<F>, Error> {
         // We should satisfy the equation below with bit asserted condition flag
         // c (a-b_constant) + b_constant - res = 0
 
@@ -693,7 +894,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // a - b - dif = 0
         let (_, _, _, dif, _) = self.combine(
             ctx,
-            [Term::assigned_to_add(&a), Term::Zero, Term::Zero, Term::unassigned_to_sub(dif), Term::Zero],
+            [
+                Term::assigned_to_add(&a),
+                Term::Zero,
+                Term::Zero,
+                Term::unassigned_to_sub(dif),
+                Term::Zero,
+            ],
             -b,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -742,7 +949,12 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(())
     }
 
-    fn one_or_one(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
+    fn one_or_one(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error> {
         // (a-1) * (b-1)  = 0
 
         // Witness layout:
@@ -753,7 +965,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         let one = F::one();
         self.combine(
             ctx,
-            [Term::assigned_to_sub(&a), Term::assigned_to_sub(&b), Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_sub(&a),
+                Term::assigned_to_sub(&b),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             one,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -761,7 +979,12 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(())
     }
 
-    fn decompose(&self, ctx: &mut RegionCtx<'_, '_, F>, composed: impl Assigned<F>, number_of_bits: usize) -> Result<Vec<AssignedBit<F>>, Error> {
+    fn decompose(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        composed: impl Assigned<F>,
+        number_of_bits: usize,
+    ) -> Result<Vec<AssignedBit<F>>, Error> {
         use num_bigint::BigUint as big_uint;
         use num_traits::One;
         assert!(number_of_bits <= F::NUM_BITS as usize);
@@ -775,7 +998,9 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         let mut assigned_bits: Vec<AssignedBit<F>> = Vec::with_capacity(number_of_bits);
 
-        let decomposed_value = composed.value().map(|value| decompose(value, number_of_bits, 1));
+        let decomposed_value = composed
+            .value()
+            .map(|value| decompose(value, number_of_bits, 1));
 
         for i in 0..number_of_bits {
             let bit = decomposed_value.as_ref().map(|bits| bits[i]);
@@ -820,8 +1045,16 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 combination_option,
             )?;
 
-            acc = match (coeff_0.value(), coeff_1.value(), coeff_2.value(), coeff_3.value(), acc) {
-                (Some(c_0), Some(c_1), Some(c_2), Some(c_3), Some(acc)) => Some(acc - (base_0 * c_0 + base_1 * c_1 + base_2 * c_2 + base_3 * c_3)),
+            acc = match (
+                coeff_0.value(),
+                coeff_1.value(),
+                coeff_2.value(),
+                coeff_3.value(),
+                acc,
+            ) {
+                (Some(c_0), Some(c_1), Some(c_2), Some(c_3), Some(acc)) => {
+                    Some(acc - (base_0 * c_0 + base_1 * c_1 + base_2 * c_2 + base_3 * c_3))
+                }
                 _ => None,
             };
         }
@@ -865,7 +1098,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
             self.combine(
                 ctx,
-                [term_0, term_1, term_2, Term::Zero, Term::unassigned_to_sub(acc)],
+                [
+                    term_0,
+                    term_1,
+                    term_2,
+                    Term::Zero,
+                    Term::unassigned_to_sub(acc),
+                ],
                 F::zero(),
                 CombinationOptionCommon::OneLinerAdd.into(),
             )?;
@@ -878,7 +1117,13 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok(assigned_bits)
     }
 
-    fn combine(&self, ctx: &mut RegionCtx<'_, '_, F>, terms: [Term<F>; WIDTH], constant: F, option: CombinationOption<F>) -> Result<CombinedValues<F>, Error> {
+    fn combine(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        terms: [Term<F>; WIDTH],
+        constant: F,
+        option: CombinationOption<F>,
+    ) -> Result<CombinedValues<F>, Error> {
         let (c_0, u_0) = (terms[0].coeff(), terms[0].base());
         let (c_1, u_1) = (terms[1].coeff(), terms[1].base());
         let (c_2, u_2) = (terms[2].coeff(), terms[2].base());
@@ -963,10 +1208,21 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok((a_0, a_1, a_2, a_3, a_4))
     }
 
-    fn nand(&self, ctx: &mut RegionCtx<'_, '_, F>, a: impl Assigned<F>, b: impl Assigned<F>) -> Result<(), Error> {
+    fn nand(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        a: impl Assigned<F>,
+        b: impl Assigned<F>,
+    ) -> Result<(), Error> {
         self.combine(
             ctx,
-            [Term::assigned_to_mul(&a), Term::assigned_to_mul(&b), Term::Zero, Term::Zero, Term::Zero],
+            [
+                Term::assigned_to_mul(&a),
+                Term::assigned_to_mul(&b),
+                Term::Zero,
+                Term::Zero,
+                Term::Zero,
+            ],
             F::zero(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -990,7 +1246,10 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
 impl<F: FieldExt> MainGate<F> {
     pub fn new(config: MainGateConfig) -> Self {
-        MainGate { config, _marker: PhantomData }
+        MainGate {
+            config,
+            _marker: PhantomData,
+        }
     }
 
     pub fn configure(meta: &mut ConstraintSystem<F>) -> MainGateConfig {
@@ -1134,7 +1393,11 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
             let value = layouter.assign_region(
@@ -1187,10 +1450,17 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
-            let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+            let mut rng = XorShiftRng::from_seed([
+                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+                0xbc, 0xe5,
+            ]);
 
             let mut rand = || -> F { F::random(&mut rng) };
 
@@ -1215,7 +1485,12 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerAdd.into())?;
+                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::OneLinerAdd.into(),
+                        )?;
 
                         let terms = [
                             Term::Assigned(&u_0, r_0),
@@ -1225,7 +1500,12 @@ mod tests {
                             Term::Assigned(&u_4, r_4),
                         ];
 
-                        main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerAdd.into())?;
+                        main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::OneLinerAdd.into(),
+                        )?;
                     }
 
                     // OneLinerMul
@@ -1233,7 +1513,12 @@ mod tests {
                         let (a_0, a_1, a_2, a_3, a_4) = (rand(), rand(), rand(), rand(), rand());
                         let (r_0, r_1, r_2, r_3, r_4) = (rand(), rand(), rand(), rand(), rand());
 
-                        let constant = -(a_0 * a_1 + a_0 * r_0 + a_1 * r_1 + a_2 * r_2 + a_3 * r_3 + a_4 * r_4);
+                        let constant = -(a_0 * a_1
+                            + a_0 * r_0
+                            + a_1 * r_1
+                            + a_2 * r_2
+                            + a_3 * r_3
+                            + a_4 * r_4);
 
                         let terms = [
                             Term::Unassigned(Some(a_0), r_0),
@@ -1243,7 +1528,12 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerMul.into())?;
+                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::OneLinerMul.into(),
+                        )?;
 
                         let terms = [
                             Term::Assigned(&u_0, r_0),
@@ -1253,15 +1543,28 @@ mod tests {
                             Term::Assigned(&u_4, r_4),
                         ];
 
-                        main_gate.combine(ctx, terms, constant, CombinationOptionCommon::OneLinerMul.into())?;
+                        main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::OneLinerMul.into(),
+                        )?;
                     }
 
                     // CombineToNextMul(F)
                     {
-                        let (a_0, a_1, a_2, a_3, a_4, a_next) = (rand(), rand(), rand(), rand(), rand(), rand());
-                        let (r_0, r_1, r_2, r_3, r_4, r_next) = (rand(), rand(), rand(), rand(), rand(), rand());
+                        let (a_0, a_1, a_2, a_3, a_4, a_next) =
+                            (rand(), rand(), rand(), rand(), rand(), rand());
+                        let (r_0, r_1, r_2, r_3, r_4, r_next) =
+                            (rand(), rand(), rand(), rand(), rand(), rand());
 
-                        let constant = -(a_0 * a_1 + r_0 * a_0 + r_1 * a_1 + a_2 * r_2 + a_3 * r_3 + a_4 * r_4 + a_next * r_next);
+                        let constant = -(a_0 * a_1
+                            + r_0 * a_0
+                            + r_1 * a_1
+                            + a_2 * r_2
+                            + a_3 * r_3
+                            + a_4 * r_4
+                            + a_next * r_next);
 
                         let terms = [
                             Term::Unassigned(Some(a_0), r_0),
@@ -1271,7 +1574,12 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextMul(r_next).into())?;
+                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::CombineToNextMul(r_next).into(),
+                        )?;
 
                         main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
@@ -1283,17 +1591,30 @@ mod tests {
                             Term::Assigned(&u_4, r_4),
                         ];
 
-                        main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextMul(r_next).into())?;
+                        main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::CombineToNextMul(r_next).into(),
+                        )?;
 
                         main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
                     }
 
                     // CombineToNextScaleMul(F, F)
                     {
-                        let (a_0, a_1, a_2, a_3, a_4, a_next) = (rand(), rand(), rand(), rand(), rand(), rand());
-                        let (r_scale, r_0, r_1, r_2, r_3, r_4, r_next) = (rand(), rand(), rand(), rand(), rand(), rand(), rand());
+                        let (a_0, a_1, a_2, a_3, a_4, a_next) =
+                            (rand(), rand(), rand(), rand(), rand(), rand());
+                        let (r_scale, r_0, r_1, r_2, r_3, r_4, r_next) =
+                            (rand(), rand(), rand(), rand(), rand(), rand(), rand());
 
-                        let constant = -(r_scale * a_0 * a_1 + r_0 * a_0 + r_1 * a_1 + a_2 * r_2 + a_3 * r_3 + a_4 * r_4 + a_next * r_next);
+                        let constant = -(r_scale * a_0 * a_1
+                            + r_0 * a_0
+                            + r_1 * a_1
+                            + a_2 * r_2
+                            + a_3 * r_3
+                            + a_4 * r_4
+                            + a_next * r_next);
 
                         let terms = [
                             Term::Unassigned(Some(a_0), r_0),
@@ -1303,8 +1624,12 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let (u_0, u_1, u_2, u_3, u_4) =
-                            main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into())?;
+                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
+                        )?;
 
                         main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
@@ -1316,17 +1641,29 @@ mod tests {
                             Term::Assigned(&u_4, r_4),
                         ];
 
-                        main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into())?;
+                        main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
+                        )?;
 
                         main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
                     }
 
                     // CombineToNextAdd(F)
                     {
-                        let (a_0, a_1, a_2, a_3, a_4, a_next) = (rand(), rand(), rand(), rand(), rand(), rand());
-                        let (r_0, r_1, r_2, r_3, r_4, r_next) = (rand(), rand(), rand(), rand(), rand(), rand());
+                        let (a_0, a_1, a_2, a_3, a_4, a_next) =
+                            (rand(), rand(), rand(), rand(), rand(), rand());
+                        let (r_0, r_1, r_2, r_3, r_4, r_next) =
+                            (rand(), rand(), rand(), rand(), rand(), rand());
 
-                        let constant = -(r_0 * a_0 + r_1 * a_1 + a_2 * r_2 + a_3 * r_3 + a_4 * r_4 + a_next * r_next);
+                        let constant = -(r_0 * a_0
+                            + r_1 * a_1
+                            + a_2 * r_2
+                            + a_3 * r_3
+                            + a_4 * r_4
+                            + a_next * r_next);
 
                         let terms = [
                             Term::Unassigned(Some(a_0), r_0),
@@ -1336,7 +1673,12 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextAdd(r_next).into())?;
+                        let (u_0, u_1, u_2, u_3, u_4) = main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::CombineToNextAdd(r_next).into(),
+                        )?;
 
                         main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
 
@@ -1348,7 +1690,12 @@ mod tests {
                             Term::Assigned(&u_4, r_4),
                         ];
 
-                        main_gate.combine(ctx, terms, constant, CombinationOptionCommon::CombineToNextAdd(r_next).into())?;
+                        main_gate.combine(
+                            ctx,
+                            terms,
+                            constant,
+                            CombinationOptionCommon::CombineToNextAdd(r_next).into(),
+                        )?;
 
                         main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
                     }
@@ -1364,7 +1711,9 @@ mod tests {
     #[test]
     fn test_main_gate_combination() {
         const K: u32 = 8;
-        let circuit = TestCircuitCombination::<Fp> { _marker: PhantomData };
+        let circuit = TestCircuitCombination::<Fp> {
+            _marker: PhantomData,
+        };
         let public_inputs = vec![vec![]];
         let prover = match MockProver::run(K, &circuit, public_inputs) {
             Ok(prover) => prover,
@@ -1392,7 +1741,11 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
             layouter.assign_region(
@@ -1468,7 +1821,11 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
             layouter.assign_region(
@@ -1477,7 +1834,10 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+                    let mut rng = XorShiftRng::from_seed([
+                        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32,
+                        0x54, 0x06, 0xbc, 0xe5,
+                    ]);
 
                     let mut rand = || -> F { F::random(&mut rng) };
 
@@ -1585,10 +1945,17 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
-            let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+            let mut rng = XorShiftRng::from_seed([
+                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+                0xbc, 0xe5,
+            ]);
 
             let mut rand = || -> F { F::random(&mut rng) };
 
@@ -1701,7 +2068,9 @@ mod tests {
     fn test_main_gate_arith() {
         const K: u32 = 8;
 
-        let circuit = TestCircuitArith::<Fp> { _marker: PhantomData::<Fp> };
+        let circuit = TestCircuitArith::<Fp> {
+            _marker: PhantomData::<Fp>,
+        };
         let public_inputs = vec![vec![]];
         let prover = match MockProver::run(K, &circuit, public_inputs) {
             Ok(prover) => prover,
@@ -1729,13 +2098,20 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = MainGate::<F> {
                 config: config.main_gate_config,
                 _marker: PhantomData,
             };
 
-            let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+            let mut rng = XorShiftRng::from_seed([
+                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+                0xbc, 0xe5,
+            ]);
 
             let mut rand = || -> F { F::random(&mut rng) };
 
@@ -1755,7 +2131,8 @@ mod tests {
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let b = &main_gate.assign_value(ctx, &b.into())?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let cond: AssignedCondition<F> =
+                        main_gate.assign_value(ctx, &cond.into())?.into();
                     let selected = main_gate.select(ctx, a, b, &cond)?;
                     main_gate.assert_equal(ctx, b, selected)?;
 
@@ -1769,7 +2146,8 @@ mod tests {
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let b = &main_gate.assign_value(ctx, &b.into())?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let cond: AssignedCondition<F> =
+                        main_gate.assign_value(ctx, &cond.into())?.into();
                     let selected = main_gate.select(ctx, a, b, &cond)?;
                     main_gate.assert_equal(ctx, a, selected)?;
 
@@ -1783,7 +2161,8 @@ mod tests {
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let b_assigned = &main_gate.assign_value(ctx, &b_unassigned.into())?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let cond: AssignedCondition<F> =
+                        main_gate.assign_value(ctx, &cond.into())?.into();
                     let selected = main_gate.select_or_assign(ctx, a, b_constant, &cond)?;
                     main_gate.assert_equal(ctx, b_assigned, selected)?;
 
@@ -1795,7 +2174,8 @@ mod tests {
                     let cond = Some(cond);
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
-                    let cond: AssignedCondition<F> = main_gate.assign_value(ctx, &cond.into())?.into();
+                    let cond: AssignedCondition<F> =
+                        main_gate.assign_value(ctx, &cond.into())?.into();
                     let selected = main_gate.select_or_assign(ctx, a, b_constant, &cond)?;
                     main_gate.assert_equal(ctx, a, selected)?;
 
@@ -1811,7 +2191,9 @@ mod tests {
     fn test_main_gate_cond() {
         const K: u32 = 8;
 
-        let circuit = TestCircuitConditionals::<Fp> { _marker: PhantomData::<Fp> };
+        let circuit = TestCircuitConditionals::<Fp> {
+            _marker: PhantomData::<Fp>,
+        };
         let public_inputs = vec![vec![]];
         let prover = match MockProver::run(K, &circuit, public_inputs) {
             Ok(prover) => prover,
@@ -1840,13 +2222,20 @@ mod tests {
             TestCircuitConfig { main_gate_config }
         }
 
-        fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<F>) -> Result<(), Error> {
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
             let main_gate = MainGate::<F> {
                 config: config.main_gate_config,
                 _marker: PhantomData,
             };
 
-            let mut rng = XorShiftRng::from_seed([0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5]);
+            let mut rng = XorShiftRng::from_seed([
+                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
+                0xbc, 0xe5,
+            ]);
 
             let mut rand = || -> F { F::random(&mut rng) };
 
