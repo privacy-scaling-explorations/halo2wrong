@@ -14,6 +14,7 @@ use std::rc::Rc;
 pub use base_field_ecc::*;
 pub use general_ecc::*;
 
+/// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
 pub struct Point<W: WrongExt, N: FieldExt> {
     x: Integer<W, N>,
@@ -21,6 +22,8 @@ pub struct Point<W: WrongExt, N: FieldExt> {
 }
 
 impl<W: WrongExt, N: FieldExt> Point<W, N> {
+    /// Returns `Point` form a point in a EC with W as its base field
+    /// Infinity point is not allowed
     fn from(rns: Rc<Rns<W, N>>, point: impl CurveAffine<Base = W>) -> Self {
         let coords = point.coordinates();
         // disallow point of infinity
@@ -31,6 +34,7 @@ impl<W: WrongExt, N: FieldExt> Point<W, N> {
         Point { x, y }
     }
 
+    /// Returns $x$ and $y$ coordinates limbs as native field elements
     fn public(&self) -> Vec<N> {
         let mut public_data = Vec::new();
         public_data.extend(self.x.limbs());
@@ -57,10 +61,13 @@ impl<W: WrongExt, N: FieldExt> fmt::Debug for AssignedPoint<W, N> {
 }
 
 impl<W: WrongExt, N: FieldExt> AssignedPoint<W, N> {
+    /// Returns a new `AssignedPoint` given its coordinates as `AssignedInteger`
+    /// Does not check for validity (the point is in a specific curve)
     pub fn new(x: AssignedInteger<W, N>, y: AssignedInteger<W, N>) -> AssignedPoint<W, N> {
         AssignedPoint { x, y }
     }
 
+    /// Returns $x$ coordinate
     pub fn get_x(&self) -> AssignedInteger<W, N> {
         self.x.clone()
     }
@@ -69,6 +76,7 @@ impl<W: WrongExt, N: FieldExt> AssignedPoint<W, N> {
 mod base_field_ecc;
 pub mod general_ecc;
 
+/// Config for Ecc Chip
 #[derive(Clone, Debug)]
 pub struct EccConfig {
     range_config: RangeConfig,
@@ -76,6 +84,7 @@ pub struct EccConfig {
 }
 
 impl EccConfig {
+    /// Returns new `EccConfig` given `RangeConfig` and `MainGateConfig`
     pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
         Self {
             range_config,
@@ -83,18 +92,23 @@ impl EccConfig {
         }
     }
 
+    /// Returns new `IntegerConfig` with matching `RangeConfig` and `MainGateConfig`
     fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 }
 
+/// Finds a point we need to subtract from the end result in the efficient batch
+/// multiplication algorithm.
+///
+/// Computes AuxFin from AuxInit for batch multiplication
+/// see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
 fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pairs: usize) -> C {
     assert!(window_size > 0);
     assert!(number_of_pairs > 0);
     use group::ff::PrimeField;
 
     let n = C::Scalar::NUM_BITS as usize;
-    // let n = 256;
     let mut number_of_selectors = n / window_size;
     if n % window_size != 0 {
         number_of_selectors += 1;
@@ -105,10 +119,14 @@ fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pai
         k0 |= &one << (i * window_size);
     }
     let k1 = (one << number_of_pairs) - 1usize;
+    // k = k0* 2^n_pairs
     let k = k0 * k1;
     (-aux_to_add * big_to_fe::<C::Scalar>(k)).to_affine()
 }
 
+/// Vector of `AssignedCondition` which is the binary representation of a scalar.
+///
+/// Allows to select values of precomputed table in efficient multiplication algorithm
 #[derive(Default)]
 struct Selector<F: FieldExt>(Vec<AssignedCondition<F>>);
 
@@ -123,6 +141,8 @@ impl<F: FieldExt> fmt::Debug for Selector<F> {
     }
 }
 
+/// Vector of `Selectors` which represent the binary representation of a scalar
+/// split in window sized selectors.
 struct Windowed<F: FieldExt>(Vec<Selector<F>>);
 
 impl<F: FieldExt> fmt::Debug for Windowed<F> {
@@ -138,6 +158,7 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
     }
 }
 
+/// Table of precomputed values for efficient multiplication algorithm.
 struct Table<W: WrongExt, N: FieldExt>(Vec<AssignedPoint<W, N>>);
 
 impl<W: FieldExt, N: FieldExt> fmt::Debug for Table<W, N> {
@@ -154,13 +175,18 @@ impl<W: FieldExt, N: FieldExt> fmt::Debug for Table<W, N> {
     }
 }
 
+/// Auxiliary points for efficient multiplication algorithm
+/// See: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg
 pub(super) struct MulAux<W: WrongExt, N: FieldExt> {
     to_add: AssignedPoint<W, N>,
     to_sub: AssignedPoint<W, N>,
 }
 
+/// Constructs `MulAux`
 impl<W: WrongExt, N: FieldExt> MulAux<W, N> {
     pub(super) fn new(to_add: AssignedPoint<W, N>, to_sub: AssignedPoint<W, N>) -> Self {
+        // TODO Should we ensure that these 2 point are coherent:
+        // to_sub = (to_add * (1 << ec_order ) -1)
         MulAux { to_add, to_sub }
     }
 }

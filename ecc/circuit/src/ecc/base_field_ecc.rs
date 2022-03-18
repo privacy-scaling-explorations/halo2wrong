@@ -16,17 +16,24 @@ mod add;
 mod mul;
 
 pub struct BaseFieldEccChip<C: CurveAffine> {
+    /// Chip configuration
     config: EccConfig,
+    /// Rns for EC base field
     pub(crate) rns: Rc<Rns<C::Base, C::Scalar>>,
+    /// Auxiliary point for optimized multiplication algorithm
     aux_generator: Option<(AssignedPoint<C::Base, C::Scalar>, Option<C>)>,
+    /// Auxiliary points for optimized multiplication for each (window_size, n_pairs) pairs
     aux_registry: BTreeMap<(usize, usize), AssignedPoint<C::Base, C::Scalar>>,
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
+    /// Residue numeral system
+    /// Used to emulate `C::Base` (wrong field) over `C::Scalar` (native field)
     pub fn rns(bit_len_limb: usize) -> Rns<C::Base, C::Scalar> {
         Rns::construct(bit_len_limb)
     }
 
+    /// Return `BaseEccChip` from `EccConfig`
     pub fn new(config: EccConfig, bit_len_limb: usize) -> Self {
         let rns = Self::rns(bit_len_limb);
         Self {
@@ -37,19 +44,23 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         }
     }
 
+    /// Return `Instance` columns of the chip config
     fn instance_column(&self) -> Column<Instance> {
         self.config.main_gate_config.instance
     }
 
+    /// Returns `IntegerChip` for the base field of the emulated EC
     fn integer_chip(&self) -> IntegerChip<C::Base, C::Scalar> {
         let integer_chip_config = self.config.integer_chip_config();
         IntegerChip::<C::Base, C::Scalar>::new(integer_chip_config, Rc::clone(&self.rns))
     }
 
+    /// Return `Maingate` of the `GeneralEccChip`
     fn main_gate(&self) -> MainGate<C::Scalar> {
         MainGate::<_>::new(self.config.main_gate_config.clone())
     }
 
+    /// Returns a `Point` (Rns representation) from a point in the emulated EC
     fn to_rns_point(&self, point: C) -> Point<C::Base, C::Scalar> {
         let coords = point.coordinates();
         // disallow point of infinity
@@ -61,10 +72,12 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Point { x, y }
     }
 
+    /// Returns emulated EC constant $b$
     fn parameter_b(&self) -> Integer<C::Base, C::Scalar> {
         Integer::from_fe(C::b(), Rc::clone(&self.rns))
     }
 
+    /// Auxilary point for optimized multiplication algorithm
     fn get_mul_aux(
         &self,
         window_size: usize,
@@ -78,11 +91,14 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
             Some(aux) => Ok(aux.clone()),
             None => Err(Error::Synthesis),
         }?;
+        // to_add the equivalent of AuxInit and to_sub AuxFin
+        // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
         Ok(MulAux::new(to_add, to_sub))
     }
 }
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
+    /// Expose `AssignedPoint` as Public Input
     fn expose_public(
         &self,
         mut layouter: impl Layouter<C::Scalar>,
@@ -102,6 +118,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
+    /// Takes `Point` and assign its coordiantes as constant
+    /// Returned as `AssignedPoint`
     fn assign_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -116,6 +134,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y))
     }
 
+    /// Takes `Point` of the EC and returns it as `AssignedPoint`
     fn assign_point(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -137,6 +156,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(point)
     }
 
+    /// Assigns the auxiliary generator point
     pub fn assign_aux_generator(
         &mut self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -147,6 +167,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
+    /// Assigns multiplication auxiliary point for a pair of (window_size, n_pairs)
     pub fn assign_aux(
         &mut self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -169,6 +190,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         }
     }
 
+    /// Constraints to ensure `AssignedPoint` is on curve
     fn assert_is_on_curve(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -184,6 +206,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
+    /// Constraints assert two `AssignedPoint`s are equal
     fn assert_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -195,6 +218,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         integer_chip.assert_equal(ctx, &p0.y, &p1.y)
     }
 
+    /// Selects between 2 `AssignedPoint` determined by an `AssignedCondition`
     fn select(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -208,6 +232,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y))
     }
 
+    /// Selects between an `AssignedPoint` and a point on the EC `Emulated`
+    /// determined by an `AssignedCondition`
     fn select_or_assign(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -222,6 +248,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x, y))
     }
 
+    /// Normalizes an `AssignedPoint` by reducing each of its coordinates
     fn normalize(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -234,6 +261,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     }
 
     #[allow(unused_variables)]
+    /// Adds 2 distinct `AssignedPoints`
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -248,6 +276,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         self._add_incomplete_unsafe(ctx, p0, p1)
     }
 
+    /// Doubles an `AssignedPoint`
     fn double(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -257,6 +286,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         self._double_incomplete(ctx, p)
     }
 
+    /// Given an `AssignedPoint` $P$ computes P * 2^logn
     fn double_n(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -270,6 +300,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(acc)
     }
 
+    /// Wrapper for `_ladder_incomplete`
+    /// Given 2 `AssignedPoint` $P$ and $Q$ efficiently computes $2*P + Q$
     fn ladder(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -279,6 +311,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         self._ladder_incomplete(ctx, to_double, to_add)
     }
 
+    /// Returns the negative or inverse of an `AssignedPoint`
     fn neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
