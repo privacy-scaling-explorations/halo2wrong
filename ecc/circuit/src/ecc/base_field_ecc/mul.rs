@@ -8,6 +8,7 @@ use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
+    /// Pads scalar up to the next window_size mul
     fn pad(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -33,6 +34,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
+    /// Splits the bit representation of a scalar into windows
     fn window(bits: Vec<AssignedCondition<C::Scalar>>, window_size: usize) -> Windowed<C::Scalar> {
         assert_eq!(bits.len() % window_size, 0);
         let number_of_windows = bits.len() / window_size;
@@ -49,6 +51,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         )
     }
 
+    /// Constructs table for efficient multiplication algorithm
+    /// The table contains precomputed point values that allow to trade
+    /// additions for selections
     fn make_incremental_table(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -64,6 +69,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(Table(table))
     }
 
+    /// Selects a point in > 2 sized table using a selector
     fn select_multi(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -85,6 +91,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(reducer[0].clone())
     }
 
+    /// Scalar multiplication of a point in the EC
+    /// Performed with the sliding-window algorithm
     pub(super) fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -117,6 +125,10 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         self.add(ctx, &acc, &aux.to_sub)
     }
 
+    /// Computes multi-product
+    ///
+    /// Given a vector of point, scalar pairs [(P_0, e_0), (P_1, e_1), ..., (P_k, e_k)]
+    /// returns : P_0 * e_0 + P_1 * e_1 + ...+ P_k * e_k
     pub(super) fn mul_batch_1d_horizontal(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,

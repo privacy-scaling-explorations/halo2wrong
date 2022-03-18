@@ -7,6 +7,11 @@ use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
 impl<C: CurveAffine> BaseFieldEccChip<C> {
+    /// Optimized point addition algorithm
+    ///
+    /// The operands `a` and `b` must be distinct and neither
+    /// of them can be the point at infinity.
+    /// Otherwise the function returns an erroneous point.
     pub(crate) fn _add_incomplete_unsafe(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -34,6 +39,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(p_0)
     }
 
+    /// Optimized point doubling algorithm
+    ///
+    /// The point provided must not be the point at infinity
     pub(crate) fn _double_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -59,6 +67,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(AssignedPoint::new(x.clone(), y))
     }
 
+    /// Given 2 `AssignedPoint` $P$ and $Q$ efficiently computes $2*P + Q$
+    ///
+    /// see: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
     pub(crate) fn _ladder_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
