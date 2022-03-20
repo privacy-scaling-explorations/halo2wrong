@@ -133,6 +133,60 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         Ok(())
     }
+
+    /// Verify batch of signatures
+    pub fn batch_verify(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        triplets: Vec<(
+            &AssignedPublicKey<E::Base, N>,  // signer pk
+            &AssignedEcdsaSig<E::Scalar, N>, //signature
+            &AssignedInteger<E::Scalar, N>,  //msg_hash
+        )>,
+    ) -> Result<(), Error> {
+        let ecc_chip = self.ecc_chip();
+        let scalar_chip = ecc_chip.scalar_field_chip();
+        let base_chip = ecc_chip.base_field_chip();
+
+        let e_gen = ecc_chip.assign_point(ctx, Some(E::generator()))?;
+        let batch_mul_input: Vec<(
+            AssignedPoint<E::Base, N>,
+            AssignedInteger<E::Scalar, N>,
+            AssignedInteger<E::Scalar, N>,
+        )> = triplets
+            .iter()
+            .map(|(pk, sig, msg_hash)| {
+                // 1. check 0 < r, s < n
+                // since `assert_not_zero` already includes a in-field check, we can just call `assert_not_zero`
+                scalar_chip.assert_not_zero(ctx, &sig.r)?;
+                scalar_chip.assert_not_zero(ctx, &sig.s)?;
+                // 2. w = s^(-1) (mod n)
+                let (s_inv, _) = scalar_chip.invert(ctx, &sig.s)?;
+
+                // 3. u1 = m' * w (mod n)
+                let u1 = scalar_chip.mul(ctx, &msg_hash, &s_inv)?;
+
+                // 4. u2 = r * w (mod n)
+                let u2 = scalar_chip.mul(ctx, &sig.r, &s_inv)?;
+                Ok((pk.point.clone(), u1, u2))
+            })
+            .collect::<Result<_, Error>>()?;
+
+        // 5. compute vector of Q = u1*G + u2*pk for each signature
+        let q_batch = ecc_chip.mul_batch_ecdsa(ctx, &e_gen, batch_mul_input, 2)?;
+
+        for (q, (_, sig, _)) in q_batch.iter().zip(triplets.iter()) {
+            // 6. reduce q_x in E::ScalarExt
+            // assuming E::Base/E::ScalarExt have the same number of limbs
+            let q_x = q.get_x();
+            let q_x_reduced_in_q = base_chip.reduce(ctx, &q_x)?;
+            let q_x_reduced_in_r = scalar_chip.reduce_external(ctx, &q_x_reduced_in_q)?;
+            // 7. check if Q.x == r (mod n)
+            scalar_chip.assert_strict_equal(ctx, &q_x_reduced_in_r, &sig.r)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
