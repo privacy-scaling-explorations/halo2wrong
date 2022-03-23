@@ -207,7 +207,7 @@ impl<
     ///  - Scalar to mul with generator $u_1$ as `AssignedInteger`
     ///  - Scalar to mul with Public Key point $u_2$ as `AssignedInteger`
     ///
-    /// Returns [G * u_1_i + P_1 * u_2_i] for each i in the triplet Vec
+    /// Returns [G * u_1_i + P_i * u_2_i] for each i in the triplet Vec
     pub fn mul_batch_ecdsa(
         &self,
         region: &mut RegionCtx<'_, '_, N>,
@@ -221,7 +221,7 @@ impl<
     ) -> Result<Vec<AssignedPoint<Emulated::Base, N>>, Error> {
         assert!(window_size > 0);
         assert!(triplets.len() > 0);
-        let aux = self.get_mul_aux(window_size, triplets.len())?;
+        let aux = self.get_mul_aux(window_size, 2).unwrap();
 
         let scalar_chip = self.scalar_field_chip();
         // 1. Decompose scalars in bits
@@ -259,15 +259,11 @@ impl<
 
         // Tables for the public key points
         let mut binary_aux = aux.to_add.clone();
+        binary_aux = self.double(region, &binary_aux)?;
         let pk_tables: Vec<Table<Emulated::Base, N>> = triplets
             .iter()
-            .enumerate()
-            .map(|(i, (point, _, _))| {
-                let table = self.make_incremental_table(region, &binary_aux, point, window_size);
-                if i != triplets.len() - 1 {
-                    binary_aux = self.double(region, &binary_aux)?;
-                }
-                table
+            .map(|(point, _, _)| {
+                self.make_incremental_table(region, &binary_aux, point, window_size)
             })
             .collect::<Result<_, Error>>()?;
 
@@ -277,10 +273,8 @@ impl<
             .zip(windowed_scalars.iter())
             .map(|(pk_table, (w_u1, w_u2))| {
                 // First window
-                let u1_selector = &w_u1.0[0];
-                let mut acc = self.select_multi(region, u1_selector, &gen_table)?;
-                let u2_selector = &w_u2.0[0];
-                let to_add = self.select_multi(region, u2_selector, &pk_table)?;
+                let mut acc = self.select_multi(region, &w_u1.0[0], &gen_table)?;
+                let to_add = self.select_multi(region, &w_u2.0[0], &pk_table)?;
                 acc = self.add(region, &acc, &to_add)?;
 
                 // Rest of windows
