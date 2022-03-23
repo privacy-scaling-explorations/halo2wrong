@@ -139,9 +139,9 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         triplets: Vec<(
-            &AssignedPublicKey<E::Base, N>,  // signer pk
-            &AssignedEcdsaSig<E::Scalar, N>, // signature
-            &AssignedInteger<E::Scalar, N>,  // msg_hash
+            AssignedPublicKey<E::Base, N>,  // signer pk
+            AssignedEcdsaSig<E::Scalar, N>, // signature
+            AssignedInteger<E::Scalar, N>,  // msg_hash
         )>,
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip();
@@ -150,14 +150,15 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         let e_gen = ecc_chip.assign_point(ctx, Some(E::generator()))?;
         let batch_mul_input: Vec<(
-            AssignedPoint<E::Base, N>,
-            AssignedInteger<E::Scalar, N>,
-            AssignedInteger<E::Scalar, N>,
+            AssignedPoint<E::Base, N>,     // pk
+            AssignedInteger<E::Scalar, N>, // u1
+            AssignedInteger<E::Scalar, N>, // u2
         )> = triplets
             .iter()
             .map(|(pk, sig, msg_hash)| {
                 // 1. check 0 < r, s < n
-                // since `assert_not_zero` already includes a in-field check, we can just call `assert_not_zero`
+                // since `assert_not_zero` already includes a in-field check, we can just call
+                // `assert_not_zero`
                 scalar_chip.assert_not_zero(ctx, &sig.r)?;
                 scalar_chip.assert_not_zero(ctx, &sig.s)?;
                 // 2. w = s^(-1) (mod n)
@@ -428,40 +429,50 @@ mod tests {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
                     ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+                    ecc_chip.assign_aux(ctx, self.window_size, 2)?;
                     Ok(())
                 },
             )?;
 
             let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
-
-            for i in 0..self.batch_size {
-                layouter.assign_region(
-                    || format!("region {}", i),
+            layouter
+                .assign_region(
+                    || "region 0",
                     |mut region| {
+                        let mut assigned_bevi: Vec<(
+                            AssignedPublicKey<E::Base, N>,
+                            AssignedEcdsaSig<E::Scalar, N>,
+                            AssignedInteger<E::Scalar, N>,
+                        )> = Vec::with_capacity(self.batch_size);
                         let offset = &mut 0;
                         let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                        let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.x_bytes_n[i]));
-                        let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.sig_s[i]));
-                        let msg_hash = ecc_chip.new_unassigned_scalar(Some(bevi.m_hash[i]));
+                        for i in 0..self.batch_size {
+                            let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.x_bytes_n[i]));
+                            let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.sig_s[i]));
+                            let msg_hash = ecc_chip.new_unassigned_scalar(Some(bevi.m_hash[i]));
 
-                        let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
-                        let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
-                        let sig = AssignedEcdsaSig {
-                            r: r_assigned,
-                            s: s_assigned,
-                        };
+                            let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
+                            let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                            let sig = AssignedEcdsaSig {
+                                r: r_assigned,
+                                s: s_assigned,
+                            };
 
-                        let pk_in_circuit = ecc_chip.assign_point(ctx, Some(bevi.pk[i].into()))?;
-                        let pk_assigned = AssignedPublicKey {
-                            point: pk_in_circuit,
-                        };
-                        let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
-                        ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
+                            let pk_in_circuit =
+                                ecc_chip.assign_point(ctx, Some(bevi.pk[i].into()))?;
+                            let pk_assigned = AssignedPublicKey {
+                                point: pk_in_circuit,
+                            };
+                            let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
+                            assigned_bevi.push((pk_assigned, sig, msg_hash));
+                        }
+
+                        ecdsa_chip.batch_verify(ctx, assigned_bevi).unwrap();
+                        Ok(())
                     },
-                )?;
-            }
+                )
+                .unwrap();
             config.config_range(&mut layouter)?;
 
             Ok(())
@@ -544,13 +555,13 @@ mod tests {
     fn test_ecdsa_batch_verifier() {
         fn run<C: CurveAffine, N: FieldExt>() {
             use group::Group;
-            let k = 22;
+            let k = 20;
             let mut rng = thread_rng();
             let aux_generator = C::CurveExt::random(&mut rng).to_affine();
             let circuit = TestCircuitEcdsaBatchVerify::<C, N> {
                 aux_generator,
                 window_size: 2,
-                batch_size: 6,
+                batch_size: 4,
                 _marker: PhantomData,
             };
 
