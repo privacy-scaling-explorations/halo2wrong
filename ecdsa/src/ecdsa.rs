@@ -140,8 +140,8 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         ctx: &mut RegionCtx<'_, '_, N>,
         triplets: Vec<(
             &AssignedPublicKey<E::Base, N>,  // signer pk
-            &AssignedEcdsaSig<E::Scalar, N>, //signature
-            &AssignedInteger<E::Scalar, N>,  //msg_hash
+            &AssignedEcdsaSig<E::Scalar, N>, // signature
+            &AssignedInteger<E::Scalar, N>,  // msg_hash
         )>,
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip();
@@ -337,6 +337,137 @@ mod tests {
         }
     }
 
+    #[derive(Default, Clone)]
+    struct BatchEcdsaVerifyInput<E: CurveAffine> {
+        pk: Vec<E>,
+        m_hash: Vec<E::ScalarExt>,
+        sig_s: Vec<E::ScalarExt>,
+        x_bytes_n: Vec<E::ScalarExt>,
+    }
+
+    impl<E: CurveAffine> BatchEcdsaVerifyInput<E> {
+        fn new() -> Self {
+            Self {
+                pk: vec![],
+                m_hash: vec![],
+                sig_s: vec![],
+                x_bytes_n: vec![],
+            }
+        }
+    }
+
+    #[derive(Default, Clone)]
+    struct TestCircuitEcdsaBatchVerify<E: CurveAffine, N: FieldExt> {
+        aux_generator: E,
+        window_size: usize,
+        batch_size: usize,
+        _marker: PhantomData<N>,
+    }
+
+    impl<E: CurveAffine, N: FieldExt> Circuit<N> for TestCircuitEcdsaBatchVerify<E, N> {
+        type Config = TestCircuitEcdsaVerifyConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
+            TestCircuitEcdsaVerifyConfig::new::<E, N>(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<N>,
+        ) -> Result<(), Error> {
+            let mut ecc_chip = GeneralEccChip::<E, N>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
+            let scalar_chip = ecc_chip.scalar_field_chip();
+
+            let mut rng = thread_rng();
+
+            let mut bevi = BatchEcdsaVerifyInput::new();
+            // generate a batch of valid signatures
+            let generator = <E as PrimeCurveAffine>::generator();
+            for _ in 0..self.batch_size {
+                let sk = <E as CurveAffine>::ScalarExt::random(&mut rng);
+                let pk = generator * sk;
+                let pk = pk.to_affine();
+
+                let m_hash = <E as CurveAffine>::ScalarExt::random(&mut rng);
+                let randomness = <E as CurveAffine>::ScalarExt::random(&mut rng);
+                let randomness_inv = randomness.invert().unwrap();
+                let sig_point = generator * randomness;
+                let x = sig_point.to_affine().coordinates().unwrap().x().clone();
+
+                cfg_if::cfg_if! {
+                    if #[cfg(feature = "kzg")] {
+                        let x_repr = &mut Vec::with_capacity(32);
+                        x.write(x_repr)?;
+                    } else {
+                        let mut x_repr = [0u8; 32];
+                        x_repr.copy_from_slice(x.to_repr().as_ref());
+                    }
+                }
+
+                let mut x_bytes = [0u8; 64];
+                x_bytes[..32].copy_from_slice(&x_repr[..]);
+
+                let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
+                let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
+                bevi.pk.push(pk);
+                bevi.m_hash.push(m_hash);
+                bevi.x_bytes_n.push(x_bytes_on_n);
+                bevi.sig_s.push(sig_s);
+            }
+
+            layouter.assign_region(
+                || "assign aux values",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+                    Ok(())
+                },
+            )?;
+
+            let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
+
+            for i in 0..self.batch_size {
+                layouter.assign_region(
+                    || format!("region {}", i),
+                    |mut region| {
+                        let offset = &mut 0;
+                        let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                        let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.x_bytes_n[i]));
+                        let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.sig_s[i]));
+                        let msg_hash = ecc_chip.new_unassigned_scalar(Some(bevi.m_hash[i]));
+
+                        let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
+                        let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                        let sig = AssignedEcdsaSig {
+                            r: r_assigned,
+                            s: s_assigned,
+                        };
+
+                        let pk_in_circuit = ecc_chip.assign_point(ctx, Some(bevi.pk[i].into()))?;
+                        let pk_assigned = AssignedPublicKey {
+                            point: pk_in_circuit,
+                        };
+                        let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
+                        ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
+                    },
+                )?;
+            }
+            config.config_range(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_ecdsa_verifier() {
         fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
@@ -407,5 +538,37 @@ mod tests {
         run::<Secp256k1, BnScalar>();
         run::<Secp256k1, PastaFp>();
         run::<Secp256k1, PastaFq>();
+    }
+
+    #[test]
+    fn test_ecdsa_batch_verifier() {
+        fn run<C: CurveAffine, N: FieldExt>() {
+            use group::Group;
+            let k = 22;
+            let mut rng = thread_rng();
+            let aux_generator = C::CurveExt::random(&mut rng).to_affine();
+            let circuit = TestCircuitEcdsaBatchVerify::<C, N> {
+                aux_generator,
+                window_size: 2,
+                batch_size: 6,
+                _marker: PhantomData,
+            };
+
+            let public_inputs = vec![vec![]];
+            let prover = match MockProver::run(k, &circuit, public_inputs) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
+            assert_eq!(prover.verify(), Ok(()));
+        }
+
+        #[cfg(not(feature = "kzg"))]
+        {}
+        #[cfg(feature = "kzg")]
+        {
+            use halo2::pairing::bn256::Fr;
+            use secp256k1::Secp256k1Affine as Secp256;
+            run::<Secp256, Fr>();
+        }
     }
 }
