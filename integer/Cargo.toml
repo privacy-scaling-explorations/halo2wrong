@@ -20,5 +20,5 @@ secp256k1 = { path = "../ecc/secp256k1", default-features = false }
 
 [features]
 default = ["zcash"]
-kzg = ["maingate/kzg", "secp256k1/kzg"]
-zcash = ["maingate/zcash", "secp256k1/zcash"]
+kzg = ["maingate/kzg"]
+zcash = ["maingate/zcash"]
