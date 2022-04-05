@@ -16,7 +16,7 @@ pub trait Common<F: FieldExt> {
     /// Returns the value
     fn value(&self) -> big_uint;
 
-    /// Return the value mod n
+    /// Return the value mod `n`
     /// with `n` being the order of the native field
     fn native(&self) -> F {
         let native_value = self.value() % modulus::<F>();
@@ -65,7 +65,7 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
     }
 }
 
-/// Witness values for the reduction algorithm
+/// Witness values for the reduction circuit
 /// see https://hackmd.io/LoEG5nRHQe-PvstVaD51Yw
 /// TODO Review + add reference
 #[derive(Clone)]
@@ -103,6 +103,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Returns the quotient value as [`Integer`].
+    /// The quotient must be [`Long`] otherwise the function panics
     pub(crate) fn long(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         self.0
             .as_ref()
@@ -112,6 +114,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             })
     }
 
+    /// Returns the quotient value as an element of the native field.
+    /// The quotient must be [`Short`] otherwise the function panics
     pub(crate) fn short(&self) -> Option<N> {
         self.0
             .as_ref()
@@ -121,10 +125,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             })
     }
 
+    /// Returns a copy of the result value as an [`Integer`]
     pub(crate) fn result(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         self.0.as_ref().map(|u| u.result.clone())
     }
 
+    /// Returns the residue values `u0`, `u1`, `v0`, `v1`,
     pub(crate) fn residues(&self) -> (Option<N>, Option<N>, Option<N>, Option<N>) {
         (self.u_0(), self.u_1(), self.v_0(), self.v_1())
     }
@@ -145,6 +151,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         self.0.as_ref().map(|u| u.v_1)
     }
 
+    /// Return the intermediate values of the reduction algorithm
+    // In the algorithm `t_0, t_1, t_2, t_3`
     pub(crate) fn intermediate_values(&self) -> (Option<N>, Option<N>, Option<N>, Option<N>) {
         let t = self.0.as_ref().map(|u| u.t.clone());
         let t_0 = t.as_ref().map(|t| t[0]);
@@ -168,6 +176,8 @@ pub enum Quotient<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const 
     Long(Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>),
 }
 
+/// Result of the substraction of a wrong field element as an [`Integer`]
+/// from the wrong field modulus -1
 #[derive(Clone)]
 pub(crate) struct ComparisionResult<
     W: WrongExt,
@@ -175,7 +185,10 @@ pub(crate) struct ComparisionResult<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
+    /// Result of the substraction
     pub result: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    /// Array of indicating if a borrow from the next limb was necessary for
+    /// substraction
     pub borrow: [bool; NUMBER_OF_LIMBS],
 }
 
@@ -188,8 +201,11 @@ pub(crate) struct ComparisionResult<
 /// TODO complete and add references
 #[derive(Debug, Clone)]
 pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+    /// Bit lenght of the last limb
     pub bit_len_last_limb: usize,
+    /// TODO
     pub bit_len_lookup: usize,
+    /// TODO
     pub bit_len_wrong_modulus: usize,
 
     /// Order of the wrong field W. (In the article `p`.)
@@ -202,22 +218,34 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
     /// binary field (In the article notation: M = n * p)
     pub crt_modulus: big_uint,
 
+    /// Native field element representing 2^-r with r = `bit_len_limb`
     pub right_shifter_r: N,
+    /// Native field element representing 2^-2r with r = `bit_len_limb`
     pub right_shifter_2r: N,
+    /// Native field element representing 2^r with r = `bit_len_limb`
     pub left_shifter_r: N,
+    /// Native field element representing 2^2r with r = `bit_len_limb`
     pub left_shifter_2r: N,
+    /// Native field element representing 2^3r with r = `bit_len_limb`
     pub left_shifter_3r: N,
 
     pub base_aux: [big_uint; NUMBER_OF_LIMBS],
 
+    /// Negative wrong modulus: `-p mod 2^t` as vector of limbs
     pub negative_wrong_modulus_decomposed: [N; NUMBER_OF_LIMBS],
+    /// Wrong modulus `p` as vector of limbs
     pub wrong_modulus_decomposed: [N; NUMBER_OF_LIMBS],
+    /// Wrong modulus -1  `p - 1` as vector of limbs
     pub wrong_modulus_minus_one: [N; NUMBER_OF_LIMBS],
+    /// Wrong modulus as native field element: `p mod n`
     pub wrong_modulus_in_native_modulus: N,
 
+    /// Maximum value for a reduced limb
     pub max_reduced_limb: big_uint,
+    /// Maximum value for an unreduced limb
     pub max_unreduced_limb: big_uint,
-    pub max_remainder: big_uint,
+    /// Maximum value of the remainder
+    pub max_remainder: big_uint, // `r` in the algorithm
     pub max_operand: big_uint,
     pub max_mul_quotient: big_uint,
     pub max_reducible_value: big_uint,
@@ -229,12 +257,21 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
     pub max_most_significant_unreduced_limb: big_uint,
     pub max_most_significant_mul_quotient_limb: big_uint,
 
+    /// Bit lenght of the maximum value allowed for v0
+    /// in multiplication circuit
     pub mul_v0_bit_len: usize,
+    /// Bit lenght of the maximum value allowed for v1
+    /// in multiplication circuit
     pub mul_v1_bit_len: usize,
 
+    /// Bit lenght of the maximum value allowed for v0
+    /// in reduction circuit
     pub red_v0_bit_len: usize,
+    /// Bit lenght of the maximum value allowed for v1
+    /// in reduction circuit
     pub red_v1_bit_len: usize,
 
+    // TODO
     two_limb_mask: big_uint,
 
     _marker_wrong: PhantomData<W>,
@@ -243,6 +280,8 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Calculates base aux = `2p`
+    /// Returned as limbs of big_uints
     fn calculate_base_aux() -> [big_uint; NUMBER_OF_LIMBS] {
         let two = N::from(2);
         let r = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
@@ -255,8 +294,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .map(|limb| fe_to_big(limb) << 1usize)
             .collect();
 
-        for i in 0..NUMBER_OF_LIMBS - 1 {
-            let hidx = NUMBER_OF_LIMBS - i - 1;
+        for i in 1..=NUMBER_OF_LIMBS - 1 {
+            let hidx = NUMBER_OF_LIMBS - i;
             let lidx = hidx - 1;
 
             if (base_aux[lidx].bits() as usize) < (BIT_LEN_LIMB + 1) {
@@ -268,6 +307,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         base_aux.try_into().unwrap()
     }
 
+    /// Calculates and builds an `Rns` with all its necessary values given
+    /// the bit lenght for its limbs
     pub fn construct() -> Self {
         let one = &big_uint::one();
 
