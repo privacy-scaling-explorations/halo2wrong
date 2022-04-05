@@ -7,11 +7,20 @@ use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, 
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// TODO not sure about this
+    /// Cheks the integer value is an element of the Wrong Field (Zp)
+    ///
+    /// This function must be called on reduced integers
+    /// TODO explain further
     pub(super) fn _assert_in_field(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         input: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
+        // element is: a = [a0, a1, a2, a3]
+        // wrong field modulus: p = [p0, p1, p2, p3]
+        // result: p - a =  c = [c0, c1, c2, c3]
+
         // Constraints:
         // 0 = -c_0 + p_0 - a_0 + b_0 * R
         // 0 = -c_1 + p_1 - a_1 + b_1 * R - b_0
@@ -32,8 +41,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let modulus_minus_one = &self.rns.wrong_modulus_minus_one.clone();
 
         let integer = input.integer();
-        // result containts borrows must be bits and subtraaction result must be in
-        // range
+        // result containts borrows must be bits and subtraction result must be in range
         let comparision_result = integer.as_ref().map(|integer| integer.compare_to_modulus());
 
         let result = comparision_result.as_ref().map(|r| r.result.clone());

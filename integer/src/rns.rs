@@ -11,14 +11,19 @@ use std::rc::Rc;
 #[cfg(feature = "kzg")]
 use crate::halo2::arithmetic::BaseExt;
 
+/// Provides a common interfaces for [`Limb`] and [`Integer`]
 pub trait Common<F: FieldExt> {
+    /// Returns the value
     fn value(&self) -> big_uint;
 
+    /// Return the value mod n
+    /// with `n` being the order of the native field
     fn native(&self) -> F {
         let native_value = self.value() % modulus::<F>();
         big_to_fe(native_value)
     }
 
+    /// Returns true if the values are equal (as integers), false otherwise
     fn eq(&self, other: &Self) -> bool {
         self.value() == other.value()
     }
@@ -60,6 +65,9 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
     }
 }
 
+/// Witness values for the reduction algorithm
+/// see https://hackmd.io/LoEG5nRHQe-PvstVaD51Yw
+/// TODO Review + add reference
 #[derive(Clone)]
 pub struct ReductionWitness<
     W: WrongExt,
@@ -147,6 +155,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
+/// TODO Review
+/// Quotient term in [`ReductionWitness`]
+///
+/// There are two possible representations:
+/// Short: as an element of the native field
+/// Long : as an [`Integer`]
 #[derive(Clone)]
 pub enum Quotient<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
@@ -165,15 +179,27 @@ pub(crate) struct ComparisionResult<
     pub borrow: [bool; NUMBER_OF_LIMBS],
 }
 
+/// Residue Numeral System
+/// Representation of an integer holding its values modulo several coprime
+/// integers
+///
+/// Contains all the necessary values to carry out operations such as
+/// multiplication and reduction in this representation.
+/// TODO complete and add references
 #[derive(Debug, Clone)]
 pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     pub bit_len_last_limb: usize,
     pub bit_len_lookup: usize,
     pub bit_len_wrong_modulus: usize,
 
+    /// Order of the wrong field W. (In the article `p`.)
     pub wrong_modulus: big_uint,
+    /// Order of the native field N. (In the article `n`.)
     pub native_modulus: big_uint,
+    /// Order of the binary field (In the article: 2^t. )
     pub binary_modulus: big_uint,
+    /// Order of the ring result of the direct product of the native field and
+    /// binary field (In the article notation: M = n * p)
     pub crt_modulus: big_uint,
 
     pub right_shifter_r: N,
@@ -505,6 +531,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
+/// Limb of an [`Integer`]
 #[derive(Debug, Clone)]
 pub struct Limb<F: FieldExt>(F);
 
@@ -533,19 +560,25 @@ impl<F: FieldExt> From<&str> for Limb<F> {
 }
 
 impl<F: FieldExt> Limb<F> {
+    /// Creates a [`Limb`] from a field element
     pub(crate) fn new(value: F) -> Self {
         Limb(value)
     }
 
+    /// Creates a [`Limb`] from an unsigned integer
     pub(crate) fn from_big(e: big_uint) -> Self {
         Self::new(big_to_fe(e))
     }
 
+    /// Returns the value of the [`Limb`]
     pub(crate) fn fe(&self) -> F {
         self.0
     }
 }
-
+/// Representation of an Integer
+///
+/// The integer is represented as a vector of limbs with values in the native
+/// field plus a reference to the RNS used.
 #[derive(Clone)]
 pub struct Integer<
     W: WrongExt,
@@ -585,21 +618,29 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Creates a new integer from a vector of limbs and reference to the used
+    /// [`Rns`].
     pub fn new(limbs: Vec<Limb<N>>, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         assert!(limbs.len() == NUMBER_OF_LIMBS);
         Self { limbs, rns }
     }
 
+    /// Creates a new integer from a worng field element and reference to the
+    /// used [`Rns`].
     pub fn from_fe(e: W, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         Integer::from_big(fe_to_big(e), rns)
     }
 
+    /// Creates a new integer from an unsigned integer and reference to the used
+    /// [`Rns`].
     pub fn from_big(e: big_uint, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         let limbs = decompose_big::<N>(e, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         let limbs = limbs.iter().map(|e| Limb::<N>::new(*e)).collect();
         Self { limbs, rns }
     }
 
+    /// Creates a new integer from a vector of native field elements and
+    /// reference to the used [`Rns`].
     pub fn from_limbs(
         limbs: &[N; NUMBER_OF_LIMBS],
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
@@ -608,11 +649,14 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Integer { limbs, rns }
     }
 
+    /// Creates a new integer from byte representation and reference to the used
+    /// [`Rns`].
     pub fn from_bytes_le(e: &[u8], rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         let x = num_bigint::BigUint::from_bytes_le(e);
         Self::from_big(x, rns)
     }
 
+    /// Returns the limbs as a vector of native field elements
     pub fn limbs(&self) -> Vec<N> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
     }
@@ -740,9 +784,24 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         (u_0, u_1, v_0, v_1)
     }
 
+    /// Compares value to the wrong field modulus
+    ///
+    /// Substracts the provided value from the wrong field moudulus -1
+    /// The result is given in [`ComparisonResut`] which holds the
+    /// result of the substraction and if a borrow was needed in each
+    /// limb.
+    /// This function is used in `IntgerChip::_assert_in_field` which
+    /// needs to reject the case where the value equals the wrong field
+    /// modulus. This is the reason for using modulus - 1.
     pub(crate) fn compare_to_modulus(
         &self,
     ) -> ComparisionResult<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        // value = [v0, v1, v2, v3]
+        // p-1 = [p0, p1, p2, p3]
+
+        // If a values limb is greater than its corresponding modulus limb
+        // we 'borrow' 1 from the next the modulus limb. Keeping track of
+        // these borrows is necessary in the circuit
         let mut borrow = [false; NUMBER_OF_LIMBS];
         let modulus_minus_one = self.rns.wrong_modulus_minus_one;
 

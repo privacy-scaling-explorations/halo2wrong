@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![feature(trait_alias)]
+// #![deny(missing_docs)]
 
 use std::rc::Rc;
 
