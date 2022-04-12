@@ -9,6 +9,10 @@ use std::rc::Rc;
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Adds 2 [`AssignedIntegers`].
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called throught [`IntegerChip::add`].
     pub(super) fn _add(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -31,6 +35,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
+    /// Subtracts 2 [`AssignedIntegers`].
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called throught [`IntegerChip::sub`].
     pub(super) fn _sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

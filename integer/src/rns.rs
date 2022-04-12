@@ -282,8 +282,12 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    /// Calculates base aux = `2p`
-    /// Returned as limbs of big_uints
+    /// Calculates [`Rns`] `base_aux`.
+    ///
+    /// The value `base_aux` is a vector of auxiliary limbs representing the
+    /// value `2p` with `p` the size of the wrong modulus. This value is
+    /// used in oprations like substractions in order to avoid negative when
+    /// values when working with `big_uint`.
     fn calculate_base_aux() -> [big_uint; NUMBER_OF_LIMBS] {
         let two = N::from(2);
         let r = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
@@ -575,7 +579,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-/// Limb of an [`Integer`]
+/// Limb of an [`Integer`].
 #[derive(Debug, Clone)]
 pub struct Limb<F: FieldExt>(F);
 
@@ -604,12 +608,12 @@ impl<F: FieldExt> From<&str> for Limb<F> {
 }
 
 impl<F: FieldExt> Limb<F> {
-    /// Creates a [`Limb`] from a field element
+    /// Creates a [`Limb`] from a field element.
     pub(crate) fn new(value: F) -> Self {
         Limb(value)
     }
 
-    /// Creates a [`Limb`] from an unsigned integer
+    /// Creates a [`Limb`] from an unsigned integer.
     pub(crate) fn from_big(e: big_uint) -> Self {
         Self::new(big_to_fe(e))
     }
@@ -619,10 +623,10 @@ impl<F: FieldExt> Limb<F> {
         self.0
     }
 }
-/// Representation of an Integer
+/// Representation of an integer.
 ///
-/// The integer is represented as a vector of limbs with values in the native
-/// field plus a reference to the RNS used.
+/// The integer is represented as a vector of [`Limb`]s with values in the
+/// native field plus a reference to the [`Rns`] used.
 #[derive(Clone)]
 pub struct Integer<
     W: WrongExt,
@@ -670,21 +674,21 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Self { limbs, rns }
     }
 
-    /// Creates a new integer from a worng field element and reference to the
-    /// used [`Rns`].
+    /// Creates a new [`Integer`] from a wrong field element and reference to
+    /// the used [`Rns`].
     pub fn from_fe(e: W, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         Integer::from_big(fe_to_big(e), rns)
     }
 
-    /// Creates a new integer from an unsigned integer and reference to the used
-    /// [`Rns`].
+    /// Creates a new [`Integer`] from an unsigned integer and reference to the
+    /// used [`Rns`].
     pub fn from_big(e: big_uint, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         let limbs = decompose_big::<N>(e, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
         let limbs = limbs.iter().map(|e| Limb::<N>::new(*e)).collect();
         Self { limbs, rns }
     }
 
-    /// Creates a new integer from a vector of native field elements and
+    /// Creates a new [`Integer`] from a vector of native field elements and
     /// reference to the used [`Rns`].
     pub fn from_limbs(
         limbs: &[N; NUMBER_OF_LIMBS],
@@ -694,32 +698,32 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Integer { limbs, rns }
     }
 
-    /// Creates a new integer from byte representation and reference to the used
-    /// [`Rns`].
+    /// Creates a new [`Integer`] from byte representation and reference to the
+    /// used [`Rns`].
     pub fn from_bytes_le(e: &[u8], rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         let x = num_bigint::BigUint::from_bytes_le(e);
         Self::from_big(x, rns)
     }
 
-    /// Returns the limbs as a vector of native field elements.
+    /// Returns the [`Limb`] as a vector of native field elements.
     pub fn limbs(&self) -> Vec<N> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
     }
 
-    /// Returns the limb at the `id` position.
+    /// Returns the [`Limb`] at the `id` position.
     pub fn limb(&self, idx: usize) -> Limb<N> {
         self.limbs[idx].clone()
     }
 
-    /// Scales each limb by `k`.
+    /// Scales each [`Limb`] by `k`.
     pub fn scale(&mut self, k: N) {
         for limb in self.limbs.iter_mut() {
             limb.0 *= k;
         }
     }
 
-    /// Computes the inverse of the integer as an element of the Wrong field.
-    /// Returns `None` if the value cannot be inverted.
+    /// Computes the inverse of the [`Integer`] as an element of the Wrong
+    /// field. Returns `None` if the value cannot be inverted.
     pub(crate) fn invert(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         let a_biguint = self.value();
         let a_w = big_to_fe::<W>(a_biguint);
@@ -850,7 +854,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         (u_0, u_1, v_0, v_1)
     }
 
-    /// Compares value to the wrong field modulus.
+    /// Compares value to the Wrong field modulus.
     ///
     /// Substracts the provided value from the wrong field moudulus -1
     /// The result is given in [`ComparisonResut`] which holds the
@@ -896,6 +900,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ComparisionResult { result, borrow }
     }
 
+    /// Computes the auxiliary value needed for subtraction.
+    ///
+    /// The valued will be added before subtracting the value represented by
+    /// `max_vals` in order to ensure every [`Limb`] value remains positive.
+    /// This auxiliary value is always a multiple of `p` therefore it
+    /// ensures the correct result is preserved in the Wrong field.
     pub fn subtracion_aux(
         max_vals: Vec<big_uint>,
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,

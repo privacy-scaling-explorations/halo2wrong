@@ -83,6 +83,7 @@ pub trait IntegerInstructions<
 {
     /// Assigns an [`UnassignedInteger`] to a cell in the circuit returning an
     /// [`AssignedInteger`].
+    /// Assigns an integer to a cell in the circuit.
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -97,6 +98,7 @@ pub trait IntegerInstructions<
         integer: W,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Assigns a [`Range`] element to a cell in the circuit.
     fn range_assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -104,12 +106,14 @@ pub trait IntegerInstructions<
         range: Range,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Decomposes an [`AssignedInteger`] into its bit representation.
     fn decompose(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedCondition<N>>, Error>;
 
+    /// Adds 2 [`AssignedInteger`].
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -117,6 +121,7 @@ pub trait IntegerInstructions<
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Adds an [`AssignedInteger`] and a constant.
     fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -124,18 +129,21 @@ pub trait IntegerInstructions<
         b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Multiplies an [`AssignedInteger`] by 2.
     fn mul2(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Multiplies an [`AssignedInteger`] by 3.
     fn mul3(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Substracts 2 [`AssignedInteger`].
     fn sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
