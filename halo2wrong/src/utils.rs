@@ -1,5 +1,5 @@
 use num_bigint::BigUint as big_uint;
-use num_traits::{Num, Zero};
+use num_traits::{Num, One, Zero};
 use std::ops::Shl;
 
 cfg_if::cfg_if! {
@@ -12,6 +12,10 @@ cfg_if::cfg_if! {
 
 fn modulus<F: Field>() -> big_uint {
     big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
+}
+
+pub fn power_of_two<F: Field>(n: usize) -> F {
+    big_to_fe(big_uint::one() << n)
 }
 
 pub fn big_to_fe<F: Field>(e: big_uint) -> F {

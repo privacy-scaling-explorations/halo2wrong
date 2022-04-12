@@ -143,7 +143,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
 
         let mut decomposed_scalars: Vec<Vec<AssignedCondition<C::Scalar>>> = pairs
             .iter()
-            .map(|(_, scalar)| main_gate.decompose(ctx, scalar, C::Scalar::NUM_BITS as usize))
+            .map(|(_, scalar)| main_gate.to_bits(ctx, scalar, C::Scalar::NUM_BITS as usize))
             .collect::<Result<_, Error>>()?;
 
         for decomposed in decomposed_scalars.iter_mut() {

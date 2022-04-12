@@ -4,6 +4,8 @@ use halo2::{
     plonk::{Advice, Column, Error, Fixed, Selector},
 };
 
+pub mod utils;
+
 cfg_if::cfg_if! {
   if #[cfg(feature = "kzg")] {
       pub use halo2_kzg as halo2;

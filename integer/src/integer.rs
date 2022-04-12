@@ -605,14 +605,14 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
         for i in 0..NUMBER_OF_LIMBS {
             let b_limb = b.limb(i);
 
-            let res = main_gate.select_or_assign(ctx, a.limb(i), b_limb.fe(), cond)?;
+            let res = main_gate.select_or_assign(ctx, &a.limb(i), b_limb.fe(), cond)?;
 
             // here we assume given constant is always in field
-            let max_val = a.limb(i).max_val();
+            let max_val = a.limbs[i].max_val();
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.select_or_assign(ctx, a.native(), b.native(), cond)?;
+        let native_value = main_gate.select_or_assign(ctx, &a.native(), b.native(), cond)?;
 
         Ok(self.new_assigned_integer(limbs, native_value))
     }
@@ -1125,20 +1125,20 @@ mod tests {
                     )?;
                     let (inv_1, cond) = integer_chip.invert(ctx, a)?;
                     integer_chip.assert_equal(ctx, inv_0, &inv_1)?;
-                    main_gate.assert_zero(ctx, cond)?;
+                    main_gate.assert_zero(ctx, &cond.into())?;
 
                     // 1 / 0
                     let zero = integer_chip.assign_integer(ctx, t.zero().into())?;
                     let (must_be_one, cond) = integer_chip.invert(ctx, &zero)?;
                     integer_chip.assert_strict_one(ctx, &must_be_one)?;
-                    main_gate.assert_one(ctx, cond)?;
+                    main_gate.assert_one(ctx, &cond.into())?;
 
                     // 1 / p
-                    let wrong_modulus = t.new_from_limbs(self.rns.wrong_modulus_decomposed.clone());
+                    let wrong_modulus = t.new_from_limbs(&self.rns.wrong_modulus_decomposed);
                     let modulus = integer_chip.assign_integer(ctx, wrong_modulus.into())?;
                     let (must_be_one, cond) = integer_chip.invert(ctx, &modulus)?;
                     integer_chip.assert_strict_one(ctx, &must_be_one)?;
-                    main_gate.assert_one(ctx, cond)?;
+                    main_gate.assert_one(ctx, &cond.into())?;
 
                     // 1 / a
                     let inv_1 = integer_chip.invert_incomplete(ctx, a)?;
@@ -1165,27 +1165,27 @@ mod tests {
                         &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
                     let (c_1, cond) = integer_chip.div(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, c_0, &c_1)?;
-                    main_gate.assert_zero(ctx, cond)?;
+                    main_gate.assert_zero(ctx, &cond.into())?;
 
                     // 0 / b
                     let (c_1, cond) = integer_chip.div(ctx, &zero, b)?;
                     integer_chip.assert_zero(ctx, &c_1)?;
-                    main_gate.assert_zero(ctx, cond)?;
+                    main_gate.assert_zero(ctx, &cond.into())?;
 
                     // p / b
                     let (c_1, cond) = integer_chip.div(ctx, &modulus, b)?;
                     integer_chip.assert_zero(ctx, &c_1)?;
-                    main_gate.assert_zero(ctx, cond)?;
+                    main_gate.assert_zero(ctx, &cond.into())?;
 
                     // a / 0
                     let (must_be_self, cond) = integer_chip.div(ctx, a, &zero)?;
                     integer_chip.assert_equal(ctx, &must_be_self, a)?;
-                    main_gate.assert_one(ctx, cond)?;
+                    main_gate.assert_one(ctx, &cond.into())?;
 
                     // a / p
                     let (must_be_self, cond) = integer_chip.div(ctx, a, &modulus)?;
                     integer_chip.assert_equal(ctx, &must_be_self, a)?;
-                    main_gate.assert_one(ctx, cond)?;
+                    main_gate.assert_one(ctx, &cond.into())?;
 
                     // a / b
                     let c_1 = integer_chip.div_incomplete(ctx, a, b)?;

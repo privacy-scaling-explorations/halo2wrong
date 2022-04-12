@@ -21,11 +21,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .zip(b.limbs().iter())
             .map(|(a_limb, b_limb)| {
                 let c_max = a_limb.add(b_limb);
-                let c_limb = main_gate.add(ctx, a_limb, b_limb)?;
+                let c_limb = main_gate.add(ctx, &a_limb.into(), &b_limb.into())?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
-        let c_native = main_gate.add(ctx, a.native(), b.native())?;
+        let c_native = main_gate.add(ctx, &a.native(), &b.native())?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
@@ -45,11 +45,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .zip(aux.limbs().iter())
             .map(|((a_limb, b_limb), aux)| {
                 let c_max = a_limb.add_fe(*aux);
-                let c_limb = main_gate.sub_with_constant(ctx, a_limb, b_limb, *aux)?;
+                let c_limb =
+                    main_gate.sub_with_constant(ctx, &a_limb.into(), &b_limb.into(), *aux)?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
-        let c_native = main_gate.sub_with_constant(ctx, a.native(), b.native(), aux.native())?;
+        let c_native = main_gate.sub_with_constant(ctx, &a.native(), &b.native(), aux.native())?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
@@ -78,16 +79,21 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .zip(aux.limbs().iter())
             .map(|(((a_limb, b_0_limb), b_1_limb), aux)| {
                 let c_max = a_limb.add_fe(*aux);
-                let c_limb =
-                    main_gate.sub_sub_with_constant(ctx, a_limb, b_0_limb, b_1_limb, *aux)?;
+                let c_limb = main_gate.sub_sub_with_constant(
+                    ctx,
+                    &a_limb.into(),
+                    &b_0_limb.into(),
+                    &b_1_limb.into(),
+                    *aux,
+                )?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
         let c_native = main_gate.sub_sub_with_constant(
             ctx,
-            a.native(),
-            b_0.native(),
-            b_1.native(),
+            &a.native(),
+            &b_0.native(),
+            &b_1.native(),
             aux.native(),
         )?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
@@ -106,11 +112,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .iter()
             .zip(aux.limbs().iter())
             .map(|(a_limb, aux)| {
-                let c_limb = main_gate.neg_with_constant(ctx, a_limb, *aux)?;
+                let c_limb = main_gate.neg_with_constant(ctx, &a_limb.into(), *aux)?;
                 Ok(AssignedLimb::from(c_limb, fe_to_big(*aux)))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
-        let c_native = main_gate.neg_with_constant(ctx, a.native(), aux.native())?;
+        let c_native = main_gate.neg_with_constant(ctx, &a.native(), aux.native())?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
@@ -126,11 +132,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .iter()
             .map(|a_limb| {
                 let c_max = a_limb.mul2();
-                let c_limb = main_gate.mul2(ctx, a_limb)?;
+                let c_limb = main_gate.mul2(ctx, &a_limb.into())?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
-        let c_native = main_gate.mul2(ctx, a.native())?;
+        let c_native = main_gate.mul2(ctx, &a.native())?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
@@ -146,11 +152,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .iter()
             .map(|a_limb| {
                 let c_max = a_limb.mul3();
-                let c_limb = main_gate.mul3(ctx, a_limb)?;
+                let c_limb = main_gate.mul3(ctx, &a_limb.into())?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
-        let c_native = main_gate.mul3(ctx, a.native())?;
+        let c_native = main_gate.mul3(ctx, &a.native())?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
@@ -168,11 +174,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             .zip(b.limbs().iter())
             .map(|(a_limb, b_limb)| {
                 let c_max = a_limb.add_big(fe_to_big(*b_limb));
-                let c_limb = main_gate.add_constant(ctx, a_limb, *b_limb)?;
+                let c_limb = main_gate.add_constant(ctx, &a_limb.into(), *b_limb)?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
-        let c_native = main_gate.add_constant(ctx, a.native(), b.native())?;
+        let c_native = main_gate.add_constant(ctx, &a.native(), b.native())?;
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 }

@@ -187,7 +187,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             if has_overflow {
                 let _ = main_gate.combine(
                     ctx,
-                    [term_0, term_1, term_2, term_3, Term::Zero],
+                    &[term_0, term_1, term_2, term_3, Term::Zero],
                     zero,
                     CombinationOptionCommon::CombineToNextAdd(-one).into(),
                 )?;
@@ -211,9 +211,9 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 // should meet with overflow bit len
                 ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
 
-                let (_, _, _, assigned, _) = main_gate.combine(
+                Ok(main_gate.combine(
                     ctx,
-                    [
+                    &[
                         Term::Zero,
                         overflow,
                         Term::Zero,
@@ -222,19 +222,16 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                     ],
                     zero,
                     CombinationOptionCommon::OneLinerAdd.into(),
-                )?;
-
-                Ok(assigned)
+                )?[3])
             } else {
                 let unassigned_input = Term::Unassigned(input.value(), -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
-                let (_, _, _, _, assigned) = main_gate.combine(
+                Ok(main_gate.combine(
                     ctx,
-                    [term_0, term_1, term_2, term_3, unassigned_input],
+                    &[term_0, term_1, term_2, term_3, unassigned_input],
                     zero,
                     combination_option,
-                )?;
-                Ok(assigned)
+                )?[4])
             }
         }
     }
@@ -465,7 +462,7 @@ mod tests {
 
                         let a_0 = main_gate.assign_value(ctx, &UnassignedValue(value))?;
                         let a_1 = range_chip.range_value(ctx, &UnassignedValue(value), bit_len)?;
-                        main_gate.assert_equal(ctx, a_0, a_1)?;
+                        main_gate.assert_equal(ctx, &a_0, &a_1)?;
                     }
 
                     Ok(())

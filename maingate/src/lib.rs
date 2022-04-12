@@ -3,19 +3,18 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Region},
 };
+use halo2wrong::utils::decompose;
 use std::marker::PhantomData;
-use utils::decompose;
 
+#[macro_use]
 mod instructions;
 mod main_gate;
 mod range;
 
-pub mod utils;
-pub use halo2wrong::{halo2, RegionCtx};
+pub use halo2wrong::{halo2, utils::*, RegionCtx};
 pub use instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use main_gate::*;
 pub use range::*;
-pub use utils::*;
 
 pub trait Assigned<F: FieldExt> {
     fn value(&self) -> Option<F>;
@@ -28,7 +27,7 @@ pub trait Assigned<F: FieldExt> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct AssignedCondition<F: FieldExt> {
     bool_value: Option<bool>,
     cell: Cell,
@@ -72,16 +71,23 @@ impl<F: FieldExt> Assigned<F> for &AssignedCondition<F> {
     }
 }
 
-type AssignedBit<F> = AssignedCondition<F>;
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct AssignedValue<F: FieldExt> {
-    pub value: Option<F>,
+    value: Option<F>,
     cell: Cell,
 }
 
 impl<F: FieldExt> From<AssignedCondition<F>> for AssignedValue<F> {
     fn from(cond: AssignedCondition<F>) -> Self {
+        AssignedValue {
+            value: (&cond).value(),
+            cell: cond.cell,
+        }
+    }
+}
+
+impl<F: FieldExt> From<&AssignedCondition<F>> for AssignedValue<F> {
+    fn from(cond: &AssignedCondition<F>) -> Self {
         AssignedValue {
             value: (&cond).value(),
             cell: cond.cell,

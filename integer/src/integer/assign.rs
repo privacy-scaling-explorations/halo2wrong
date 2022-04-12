@@ -28,19 +28,19 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             Range::MulQuotient => self.rns.max_most_significant_mul_quotient_limb.bits() as usize,
         };
 
-        let assigned = range_chip.range_value(ctx, &integer.limb(0), self.rns.bit_len_limb)?;
-        let limb_0 = &mut AssignedLimb::from(assigned, max_val.clone());
+        let assigned = range_chip.range_value(ctx, &integer.limb(0), BIT_LEN_LIMB)?;
+        let limb_0 = AssignedLimb::from(assigned, max_val.clone());
 
-        let assigned = range_chip.range_value(ctx, &integer.limb(1), self.rns.bit_len_limb)?;
-        let limb_1 = &mut AssignedLimb::from(assigned, max_val.clone());
+        let assigned = range_chip.range_value(ctx, &integer.limb(1), BIT_LEN_LIMB)?;
+        let limb_1 = AssignedLimb::from(assigned, max_val.clone());
 
-        let assigned = range_chip.range_value(ctx, &integer.limb(2), self.rns.bit_len_limb)?;
-        let limb_2 = &mut AssignedLimb::from(assigned, max_val);
+        let assigned = range_chip.range_value(ctx, &integer.limb(2), BIT_LEN_LIMB)?;
+        let limb_2 = AssignedLimb::from(assigned, max_val);
 
         let max_val = (big_uint::one() << most_significant_limb_bit_len) - 1usize;
         let assigned =
             range_chip.range_value(ctx, &integer.limb(3), most_significant_limb_bit_len)?;
-        let limb_3 = &mut AssignedLimb::from(assigned, max_val);
+        let limb_3 = AssignedLimb::from(assigned, max_val);
 
         // find the native value
         let main_gate = self.main_gate();
@@ -49,29 +49,21 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let rr = self.rns.left_shifter_2r;
         let rrr = self.rns.left_shifter_3r;
 
-        main_gate.combine(
+        let native_value = main_gate.combine(
             ctx,
-            [
-                Term::Assigned(limb_0, one),
-                Term::Assigned(limb_1, r),
-                Term::Assigned(limb_2, rr),
-                Term::Assigned(limb_3, rrr),
-                Term::Zero,
+            &[
+                Term::Assigned(limb_0.clone().into(), one),
+                Term::Assigned(limb_1.clone().into(), r),
+                Term::Assigned(limb_2.clone().into(), rr),
+                Term::Assigned(limb_3.clone().into(), rrr),
+                Term::Unassigned(integer.native().into(), -one),
             ],
             zero,
-            CombinationOptionCommon::CombineToNextAdd(-one).into(),
-        )?;
+            CombinationOptionCommon::OneLinerAdd.into(),
+        )?[4];
 
-        let native_value = main_gate.assign_to_acc(ctx, &integer.native())?;
-        Ok(self.new_assigned_integer(
-            vec![
-                limb_0.clone(),
-                limb_1.clone(),
-                limb_2.clone(),
-                limb_3.clone(),
-            ],
-            native_value,
-        ))
+        // let native_value = main_gate.assign_to_acc(ctx, &integer.native())?;
+        Ok(self.new_assigned_integer(vec![limb_0, limb_1, limb_2, limb_3], native_value))
     }
 
     pub(super) fn _assign_constant(
@@ -117,7 +109,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         let assigned_values = main_gate.combine(
             ctx,
-            [
+            &[
                 Term::Unassigned(integer.limb(0).into(), one),
                 Term::Unassigned(integer.limb(1).into(), r),
                 Term::Unassigned(integer.limb(2).into(), rr),
@@ -128,10 +120,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
         )?;
         let assigned_values = vec![
-            assigned_values.0,
-            assigned_values.1,
-            assigned_values.2,
-            assigned_values.3,
+            assigned_values[0],
+            assigned_values[1],
+            assigned_values[2],
+            assigned_values[3],
         ];
 
         let native_value = main_gate.assign_to_acc(ctx, &integer.native())?;

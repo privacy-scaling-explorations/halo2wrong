@@ -37,8 +37,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let inv_or_one = self.range_assign_integer(ctx, inv_or_one.into(), Range::Remainder)?;
         let a_mul_inv = &self.mul(ctx, a, &inv_or_one)?;
 
-        // We believe the mul result is strictly less than wrong modulus, so we add strict constraints here.
-        // The limbs[1..NUMBER_OF_LIMBS] of a_mul_inv should be 0.
+        // We believe the mul result is strictly less than wrong modulus, so we add
+        // strict constraints here. The limbs[1..NUMBER_OF_LIMBS] of a_mul_inv
+        // should be 0.
         self.assert_strict_bit(ctx, a_mul_inv)?;
 
         // If a_mul_inv is 0 (i.e. not 1), then inv_or_one must be 1.
@@ -46,15 +47,15 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // Here we short x.limbs[i] as x[i].
         // 1. (a_mul_inv[0] - 1) * (inv_or_one.native - 1) = 0
         // 2. (a_mul_inv[0] - 1) * (inv_or_one[0] - 1) = 0
-        main_gate.one_or_one(ctx, a_mul_inv.limb(0), inv_or_one.native())?;
-        main_gate.one_or_one(ctx, a_mul_inv.limb(0), inv_or_one.limb(0))?;
+        main_gate.one_or_one(ctx, &a_mul_inv.limb(0), &inv_or_one.native())?;
+        main_gate.one_or_one(ctx, &a_mul_inv.limb(0), &inv_or_one.limb(0))?;
 
         // Align with main_gain.invert(), cond = 1 - a_mul_inv
         let cond = a_mul_inv.limb(0).value().map(|a_mul_inv| one - a_mul_inv);
-        let (_, cond, _, _, _) = main_gate.combine(
+        let cond = main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a_mul_inv.limbs[0], one),
+            &[
+                Term::Assigned(a_mul_inv.limb(0), one),
                 Term::Unassigned(cond, one),
                 Term::Zero,
                 Term::Zero,
@@ -62,7 +63,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             ],
             -one,
             CombinationOptionCommon::OneLinerMul.into(),
-        )?;
+        )?[1];
 
         Ok((inv_or_one, cond.into()))
     }

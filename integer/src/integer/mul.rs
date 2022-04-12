@@ -37,25 +37,27 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
+        let v_0 = range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Constaints:
 
         // t_0 = a_0 * b_0 + q_0 * p_0
 
-        // t_1 =    a_0 * b_1 + a_1 * b_0 + q_0 * p_1 + q_1 * p_0
+        // t_1 = a_0 * b_1 + a_1 * b_0 + q_0 * p_1 + q_1 * p_0
         // constained as:
         // t_1 =    a_0 * b_1 + q_0 * p_1 + tmp
         // tmp =    a_1 * b_0 + q_1 * p_0
 
-        // t_2   =    a_0 * b_2 + a_1 * b_1 + a_2 * b_0 + q_0 * p_2 + q_1 * p_1 + q_2 * p_0
+        // t_2 = a_0 * b_2 + a_1 * b_1 + a_2 * b_0
+        // + q_0 * p_2 + q_1 * p_1 + q_2 * p_0
         // constained as:
         // t_2   =    a_0 * b_2 + q_0 * p_2 + tmp_a
         // tmp_a =    a_1 * b_1 + q_1 * p_1 + tmp_b
         // tmp_b =    a_2 * b_0 + q_2 * p_0
 
-        // t_3   =    a_0 * b_3 + a_1 * b_2 + a_1 * b_2 + a_3 * b_0 + q_0 * p_3 + q_1 * p_2 + q_2 * p_1 + q_3 * p_0
+        // t_3 = a_0 * b_3 + a_1 * b_2 + a_1 * b_2 + a_3 * b_0
+        // + q_0 * p_3 + q_1 * p_2 + q_2 * p_1 + q_3 * p_0
         // constained as:
         // t_3   =    a_0 * b_3 + q_0 * p_3 + tmp_a
         // tmp_a =    a_1 * b_2 + q_1 * p_2 + tmp_b
@@ -94,18 +96,18 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 }
                 .into();
 
-                let (_, _, _, _, t) = main_gate.combine(
+                let t = main_gate.combine(
                     ctx,
-                    [
-                        Term::Assigned(&a.limb(j), zero),
-                        Term::Assigned(&b.limb(k), zero),
-                        Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
+                    &[
+                        Term::Assigned(a.limb(j), zero),
+                        Term::Assigned(b.limb(k), zero),
+                        Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
                         Term::Zero,
                         Term::Unassigned(intermediate_value, -one),
                     ],
                     zero,
                     combination_option,
-                )?;
+                )?[4];
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -136,12 +138,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&intermediate_values_cycling[0].clone(), one),
-                Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
-                Term::Assigned(&result.limbs[0].clone(), -one),
+            &[
+                Term::Assigned(intermediate_values_cycling[0], one),
+                Term::Assigned(intermediate_values_cycling[1], left_shifter_r),
+                Term::Assigned(result.limb(0), -one),
                 Term::Zero,
-                Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+                Term::Assigned(result.limb(1), -left_shifter_r),
             ],
             zero,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
@@ -149,7 +151,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
+            &[
                 Term::Zero,
                 Term::Zero,
                 Term::Assigned(v_0, left_shifter_2r),
@@ -170,12 +172,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&intermediate_values_cycling[2].clone(), one),
-                Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
-                Term::Assigned(&result.limbs[2].clone(), -one),
+            &[
+                Term::Assigned(intermediate_values_cycling[2], one),
+                Term::Assigned(intermediate_values_cycling[3], left_shifter_r),
+                Term::Assigned(result.limb(2), -one),
                 Term::Zero,
-                Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+                Term::Assigned(result.limb(3), -left_shifter_r),
             ],
             zero,
             CombinationOptionCommon::CombineToNextAdd(-one).into(),
@@ -183,7 +185,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
+            &[
                 Term::Zero,
                 Term::Assigned(v_1, left_shifter_2r),
                 Term::Assigned(v_0, -one),
@@ -198,15 +200,12 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.native(), zero),
-                Term::Assigned(&b.native(), zero),
-                Term::Assigned(
-                    &quotient.native(),
-                    -self.rns.wrong_modulus_in_native_modulus,
-                ),
+            &[
+                Term::Assigned(a.native(), zero),
+                Term::Assigned(b.native(), zero),
+                Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
                 Term::Zero,
-                Term::Assigned(&result.native(), -one),
+                Term::Assigned(result.native(), -one),
             ],
             zero,
             CombinationOptionCommon::OneLinerMul.into(),
@@ -218,16 +217,17 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
         let a_int = a.integer();
-        let reduction_witness: MaybeReduced<W, N> = a_int.map(|a_int| a_int.mul(b)).into();
+        let reduction_witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+            a_int.map(|a_int| a_int.mul(b)).into();
         let quotient = reduction_witness.long();
         let result = reduction_witness.result();
         let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();
@@ -237,8 +237,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let result = &self.range_assign_integer(ctx, result.into(), Range::Remainder)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
+        let v_0 = range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Witness layout:
         // | A   | B   | C   | D     |
@@ -264,18 +264,18 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | --- | --- | --- | --- |
         // | a_0 | q_0 | -   | t_0 |
 
-        let (_, _, _, _, t_0) = main_gate.combine(
+        let t_0 = main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.limb(0), b[0]),
-                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[0]),
+            &[
+                Term::Assigned(a.limb(0), b[0]),
+                Term::Assigned(quotient.limb(0), negative_wrong_modulus[0]),
                 Term::Zero,
                 Term::Zero,
                 Term::Unassigned(t_0, -one),
             ],
             zero,
             CombinationOptionCommon::OneLinerAdd.into(),
-        )?;
+        )?[4];
 
         // t1
 
@@ -286,11 +286,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.limb(0), b[1]),
-                Term::Assigned(&a.limb(1), b[0]),
-                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[1]),
-                Term::Assigned(&quotient.limb(1), negative_wrong_modulus[0]),
+            &[
+                Term::Assigned(a.limb(0), b[1]),
+                Term::Assigned(a.limb(1), b[0]),
+                Term::Assigned(quotient.limb(0), negative_wrong_modulus[1]),
+                Term::Assigned(quotient.limb(1), negative_wrong_modulus[0]),
                 Term::Zero,
             ],
             zero,
@@ -307,7 +307,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // | q_0 | q_1 | q_2 | tmp  |
 
         let tmp = t_2.map(|_| {
-            let p = negative_wrong_modulus.clone();
+            let p = negative_wrong_modulus;
             let q_0 = quotient.limb(0).value().unwrap();
             let q_1 = quotient.limb(1).value().unwrap();
             let q_2 = quotient.limb(2).value().unwrap();
@@ -315,25 +315,25 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             q_0 * p[2] + q_1 * p[1] + q_2 * p[0]
         });
 
-        let (_, _, _, _, t_2) = main_gate.combine(
+        let t_2 = main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.limb(0), b[2]),
-                Term::Assigned(&a.limb(1), b[1]),
-                Term::Assigned(&a.limb(2), b[0]),
+            &[
+                Term::Assigned(a.limb(0), b[2]),
+                Term::Assigned(a.limb(1), b[1]),
+                Term::Assigned(a.limb(2), b[0]),
                 Term::Zero,
                 Term::Unassigned(t_2, -one),
             ],
             zero,
             CombinationOptionCommon::CombineToNextAdd(one).into(),
-        )?;
+        )?[4];
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[2]),
-                Term::Assigned(&quotient.limb(1), negative_wrong_modulus[1]),
-                Term::Assigned(&quotient.limb(2), negative_wrong_modulus[0]),
+            &[
+                Term::Assigned(quotient.limb(0), negative_wrong_modulus[2]),
+                Term::Assigned(quotient.limb(1), negative_wrong_modulus[1]),
+                Term::Assigned(quotient.limb(2), negative_wrong_modulus[0]),
                 Term::Zero,
                 Term::Unassigned(tmp, -one),
             ],
@@ -349,7 +349,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         let (tmp_a, tmp_b) = match t_3 {
             Some(t_3) => {
-                let p = negative_wrong_modulus.clone();
+                let p = negative_wrong_modulus;
                 let a = a.integer().unwrap().limbs();
                 let q = quotient.integer().unwrap().limbs();
                 let tmp_a = t_3 - a[0] * b[3] - a[1] * b[2] - a[2] * b[1];
@@ -359,25 +359,25 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
             }
             None => (None, None),
         };
-        let (_, _, _, t_3, _) = main_gate.combine(
+        let t_3 = main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.limb(0), b[3]),
-                Term::Assigned(&a.limb(1), b[2]),
-                Term::Assigned(&a.limb(2), b[1]),
+            &[
+                Term::Assigned(a.limb(0), b[3]),
+                Term::Assigned(a.limb(1), b[2]),
+                Term::Assigned(a.limb(2), b[1]),
                 Term::Unassigned(t_3, -one),
                 Term::Zero,
             ],
             zero,
             CombinationOptionCommon::CombineToNextAdd(one).into(),
-        )?;
+        )?[3];
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.limb(3), b[0]),
-                Term::Assigned(&quotient.limb(0), negative_wrong_modulus[3]),
-                Term::Assigned(&quotient.limb(1), negative_wrong_modulus[2]),
+            &[
+                Term::Assigned(a.limb(3), b[0]),
+                Term::Assigned(quotient.limb(0), negative_wrong_modulus[3]),
+                Term::Assigned(quotient.limb(1), negative_wrong_modulus[2]),
                 Term::Zero,
                 Term::Unassigned(tmp_a, -one),
             ],
@@ -387,9 +387,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&quotient.limb(2), negative_wrong_modulus[1]),
-                Term::Assigned(&quotient.limb(3), negative_wrong_modulus[0]),
+            &[
+                Term::Assigned(quotient.limb(2), negative_wrong_modulus[1]),
+                Term::Assigned(quotient.limb(3), negative_wrong_modulus[0]),
                 Term::Zero,
                 Term::Zero,
                 Term::Unassigned(tmp_b, -one),
@@ -411,11 +411,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&t_0, one),
-                Term::Assigned(&t_1, left_shifter_r),
-                Term::Assigned(&result.limbs[0].clone(), -one),
-                Term::Assigned(&result.limbs[1].clone(), -left_shifter_r),
+            &[
+                Term::Assigned(t_0, one),
+                Term::Assigned(t_1, left_shifter_r),
+                Term::Assigned(result.limb(0), -one),
+                Term::Assigned(result.limb(1), -left_shifter_r),
                 Term::Zero,
             ],
             zero,
@@ -424,7 +424,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
+            &[
                 Term::Zero,
                 Term::Zero,
                 Term::Assigned(v_0, left_shifter_2r),
@@ -445,11 +445,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&t_2, one),
-                Term::Assigned(&t_3, left_shifter_r),
-                Term::Assigned(&result.limbs[2].clone(), -one),
-                Term::Assigned(&result.limbs[3].clone(), -left_shifter_r),
+            &[
+                Term::Assigned(t_2, one),
+                Term::Assigned(t_3, left_shifter_r),
+                Term::Assigned(result.limb(2), -one),
+                Term::Assigned(result.limb(3), -left_shifter_r),
                 Term::Zero,
             ],
             zero,
@@ -458,7 +458,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
+            &[
                 Term::Zero,
                 Term::Assigned(v_1, left_shifter_2r),
                 Term::Assigned(v_0, -one),
@@ -473,14 +473,11 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.native(), b_native),
+            &[
+                Term::Assigned(a.native(), b_native),
                 Term::Zero,
-                Term::Assigned(
-                    &quotient.native(),
-                    -self.rns.wrong_modulus_in_native_modulus,
-                ),
-                Term::Assigned(&result.native(), -one),
+                Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
+                Term::Assigned(result.native(), -one),
                 Term::Zero,
             ],
             zero,
@@ -515,8 +512,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // Apply ranges
         let range_chip = self.range_chip();
         let quotient = &self.range_assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
-        let v_0 = &range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
-        let v_1 = &range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
+        let v_0 = range_chip.range_value(ctx, &v_0.into(), self.rns.mul_v0_bit_len)?;
+        let v_1 = range_chip.range_value(ctx, &v_1.into(), self.rns.mul_v1_bit_len)?;
 
         // Constaints:
 
@@ -527,13 +524,17 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         // t_1 =    a_0 * b_1 + q_0 * p_1 + tmp
         // tmp =    a_1 * b_0 + q_1 * p_0
 
-        // t_2   =    a_0 * b_2 + a_1 * b_1 + a_2 * b_0 + q_0 * p_2 + q_1 * p_1 + q_2 * p_0
+        // t_2   =    a_0 * b_2 + a_1 * b_1 + a_2 * b_0
+        // + q_0 * p_2 + q_1 * p_1 + q_2 * p_0
+        //
         // constained as:
         // t_2   =    a_0 * b_2 + q_0 * p_2 + tmp_a
         // tmp_a =    a_1 * b_1 + q_1 * p_1 + tmp_b
         // tmp_b =    a_2 * b_0 + q_2 * p_0
 
-        // t_3   =    a_0 * b_3 + a_1 * b_2 + a_1 * b_2 + a_3 * b_0 + q_0 * p_3 + q_1 * p_2 + q_2 * p_1 + q_3 * p_0
+        // t_3   =    a_0 * b_3 + a_1 * b_2 + a_1 * b_2 + a_3 * b_0
+        // + q_0 * p_3 + q_1 * p_2 + q_2 * p_1 + q_3 * p_0
+        //
         // constained as:
         // t_3   =    a_0 * b_3 + q_0 * p_3 + tmp_a
         // tmp_a =    a_1 * b_2 + q_1 * p_2 + tmp_b
@@ -572,18 +573,18 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
                 }
                 .into();
 
-                let (_, _, _, _, t_i) = main_gate.combine(
+                let t_i = main_gate.combine(
                     ctx,
-                    [
-                        Term::Assigned(&a.limb(j), zero),
-                        Term::Assigned(&b.limb(k), zero),
-                        Term::Assigned(&quotient.limb(k), negative_wrong_modulus[j]),
+                    &[
+                        Term::Assigned(a.limb(j), zero),
+                        Term::Assigned(b.limb(k), zero),
+                        Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
                         Term::Zero,
                         Term::Unassigned(t, -one),
                     ],
                     zero,
                     combination_option,
-                )?;
+                )?[4];
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -608,9 +609,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&intermediate_values_cycling[0].clone(), one),
-                Term::Assigned(&intermediate_values_cycling[1].clone(), left_shifter_r),
+            &[
+                Term::Assigned(intermediate_values_cycling[0], one),
+                Term::Assigned(intermediate_values_cycling[1], left_shifter_r),
                 Term::Assigned(v_0, -left_shifter_2r),
                 Term::Zero,
                 Term::Zero,
@@ -629,9 +630,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&intermediate_values_cycling[2].clone(), one),
-                Term::Assigned(&intermediate_values_cycling[3].clone(), left_shifter_r),
+            &[
+                Term::Assigned(intermediate_values_cycling[2], one),
+                Term::Assigned(intermediate_values_cycling[3], left_shifter_r),
                 Term::Assigned(v_0, one),
                 Term::Assigned(v_1, -left_shifter_2r),
                 Term::Zero,
@@ -644,13 +645,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 
         main_gate.combine(
             ctx,
-            [
-                Term::Assigned(&a.native(), zero),
-                Term::Assigned(&b.native(), zero),
-                Term::Assigned(
-                    &quotient.native(),
-                    -self.rns.wrong_modulus_in_native_modulus,
-                ),
+            &[
+                Term::Assigned(a.native(), zero),
+                Term::Assigned(b.native(), zero),
+                Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
                 Term::Zero,
                 Term::Zero,
             ],
