@@ -27,10 +27,14 @@ cfg_if::cfg_if! {
   }
 }
 
+/// Limb with assigned value in the circuit
 #[derive(Debug, Clone)]
 pub struct AssignedLimb<F: FieldExt> {
+    /// Value of the limb
     value: Option<Limb<F>>,
+    /// Cell assigned in the circuit
     cell: Cell,
+    /// TODO
     max_val: big_uint,
 }
 
@@ -88,6 +92,7 @@ impl<F: FieldExt> AssignedLimb<F> {
         self.value.clone()
     }
 
+    /// Returns the max value of the limb.
     fn max_val(&self) -> big_uint {
         self.max_val.clone()
     }
@@ -113,6 +118,7 @@ impl<F: FieldExt> AssignedLimb<F> {
     }
 }
 
+/// Integer without an assigned value in the circuit
 #[derive(Debug, Clone)]
 pub struct UnassignedInteger<
     W: WrongExt,
@@ -124,6 +130,7 @@ pub struct UnassignedInteger<
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Creates a new [`UnassignedInteger`]
     pub fn new(int: Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         Self(int)
     }
@@ -154,6 +161,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
+/// Integer with assigned value in the circuit
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<
     W: WrongExt,
@@ -161,14 +169,18 @@ pub struct AssignedInteger<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
+    /// Limb representation of the integer value.
     limbs: Vec<AssignedLimb<N>>,
+    /// Integer value mod native field size.
     native_value: AssignedValue<N>,
+    /// Residue number system.
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
 impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Creates a new [`AssignedInteger`].
     pub fn new(
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
         limbs: Vec<AssignedLimb<N>>,
@@ -185,6 +197,7 @@ impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
         compose(self.max_vals(), BIT_LEN_LIMB)
     }
 
+    /// Return the maximum value for each limb.
     fn max_vals(&self) -> Vec<big_uint> {
         self.limbs.iter().map(|limb| limb.max_val()).collect()
     }

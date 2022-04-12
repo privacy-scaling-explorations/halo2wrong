@@ -11,19 +11,18 @@ use std::rc::Rc;
 #[cfg(feature = "kzg")]
 use crate::halo2::arithmetic::BaseExt;
 
-/// Provides a common interfaces for [`Limb`] and [`Integer`]
+/// Common interface for [`Limb`] and [`Integer`]
 pub trait Common<F: FieldExt> {
-    /// Returns the value
+    /// Returns the represented value
     fn value(&self) -> big_uint;
 
-    /// Return the value mod `n`
-    /// with `n` being the order of the native field
+    /// Return the value modulus the Native field size.
     fn native(&self) -> F {
         let native_value = self.value() % modulus::<F>();
         big_to_fe(native_value)
     }
 
-    /// Returns true if the values are equal (as integers), false otherwise
+    /// Returns true if the represented values, false otherwise.
     fn eq(&self, other: &Self) -> bool {
         self.value() == other.value()
     }
@@ -51,6 +50,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
+/// Returns `1` if `true`, `0` otherwise.
 fn bool_to_big(truth: bool) -> big_uint {
     if truth {
         big_uint::one()
@@ -66,8 +66,12 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
 }
 
 /// Witness values for the reduction circuit
-/// see https://hackmd.io/LoEG5nRHQe-PvstVaD51Yw
-/// TODO Review + add reference
+/// see <https://hackmd.io/LoEG5nRHQe-PvstVaD51Yw>.
+///
+/// Operations that will need later reduction return this struct
+/// that holds the result + intermediate vals for the reduction
+/// circuit
+/// TODO Review
 #[derive(Clone)]
 pub struct ReductionWitness<
     W: WrongExt,
@@ -257,18 +261,16 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
     pub max_most_significant_unreduced_limb: big_uint,
     pub max_most_significant_mul_quotient_limb: big_uint,
 
-    /// Bit lenght of the maximum value allowed for v0
-    /// in multiplication circuit
+    /// Bit lenght of the maximum value allowed for v0 in multiplication
+    /// circuit.
     pub mul_v0_bit_len: usize,
-    /// Bit lenght of the maximum value allowed for v1
-    /// in multiplication circuit
+    /// Bit lenght of the maximum value allowed for v1 in multiplication
+    /// circuit.
     pub mul_v1_bit_len: usize,
 
-    /// Bit lenght of the maximum value allowed for v0
-    /// in reduction circuit
+    /// Bit lenght of the maximum value allowed for v0 in reduction circuit.
     pub red_v0_bit_len: usize,
-    /// Bit lenght of the maximum value allowed for v1
-    /// in reduction circuit
+    /// Bit lenght of the maximum value allowed for v1 in reduction circuit
     pub red_v1_bit_len: usize,
 
     // TODO
@@ -307,8 +309,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         base_aux.try_into().unwrap()
     }
 
-    /// Calculates and builds an `Rns` with all its necessary values given
-    /// the bit lenght for its limbs
+    /// Calculates and builds a [`Rns`] with all its necessary values given
+    /// the bit lenght used for its limbs.
     pub fn construct() -> Self {
         let one = &big_uint::one();
 
@@ -553,6 +555,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         rns
     }
 
+    /// Computes the overflow that each component of the [`Rns`] must support.
     pub fn overflow_lengths(&self) -> Vec<usize> {
         let max_most_significant_mul_quotient_limb_size =
             self.max_most_significant_mul_quotient_limb.bits() as usize % self.bit_len_lookup;
@@ -650,6 +653,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Common<N>
     for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Returns the represented value.
     fn value(&self) -> big_uint {
         let limb_values = self.limbs.iter().map(|limb| limb.value()).collect();
         compose(limb_values, BIT_LEN_LIMB)
@@ -697,21 +701,25 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Self::from_big(x, rns)
     }
 
-    /// Returns the limbs as a vector of native field elements
+    /// Returns the limbs as a vector of native field elements.
     pub fn limbs(&self) -> Vec<N> {
         self.limbs.iter().map(|limb| limb.fe()).collect()
     }
 
+    /// Returns the limb at the `id` position.
     pub fn limb(&self, idx: usize) -> Limb<N> {
         self.limbs[idx].clone()
     }
 
+    /// Scales each limb by `k`.
     pub fn scale(&mut self, k: N) {
         for limb in self.limbs.iter_mut() {
             limb.0 *= k;
         }
     }
 
+    /// Computes the inverse of the integer as an element of the Wrong field.
+    /// Returns `None` if the value cannot be inverted.
     pub(crate) fn invert(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         let a_biguint = self.value();
         let a_w = big_to_fe::<W>(a_biguint);
@@ -721,6 +729,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .into()
     }
 
+    /// Compute division, multiplying by the inverse of the denominator, in the
+    /// Wrong field.
     pub(crate) fn div(
         &self,
         denom: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -731,10 +741,18 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         })
     }
 
+    /// Computes the square.
+    ///
+    /// The result of this operation needs to be reduced therefore function
+    /// returns [`ReductionWitness`] for the reduction circuit.
     pub(crate) fn square(&self) -> ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self.mul(self)
     }
 
+    /// Computes multiplication in the Wrong field.
+    ///
+    /// The result of this operation needs to be reduced therefore function
+    /// returns [`ReductionWitness`] for the reduction circuit.
     pub(crate) fn mul(
         &self,
         other: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -770,6 +788,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
     }
 
+    /// Reduce an integer in the WrongField
+    ///
+    /// The result of this operation needs to be reduced therefore function
+    /// returns [`ReductionWitness`] for the reduction circuit.
     pub(crate) fn reduce(&self) -> ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let modulus = self.rns.wrong_modulus.clone();
         let negative_modulus = self.rns.negative_wrong_modulus_decomposed;
@@ -803,6 +825,9 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
     }
 
+    /// Commpute residues `u0`, `u1`, `v0`, `v1`.
+    ///
+    /// See steps 4 to 7 in <https://hackmd.io/LoEG5nRHQe-PvstVaD51Yw>.
     fn residues(&self, t: Vec<N>) -> (N, N, N, N) {
         let s = self.rns.left_shifter_r;
 
@@ -825,13 +850,13 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         (u_0, u_1, v_0, v_1)
     }
 
-    /// Compares value to the wrong field modulus
+    /// Compares value to the wrong field modulus.
     ///
     /// Substracts the provided value from the wrong field moudulus -1
     /// The result is given in [`ComparisonResut`] which holds the
     /// result of the substraction and if a borrow was needed in each
     /// limb.
-    /// This function is used in `IntgerChip::_assert_in_field` which
+    /// This function is used in [`IntgerChip::_assert_in_field`] which
     /// needs to reject the case where the value equals the wrong field
     /// modulus. This is the reason for using modulus - 1.
     pub(crate) fn compare_to_modulus(
@@ -842,7 +867,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         // If a values limb is greater than its corresponding modulus limb
         // we 'borrow' 1 from the next the modulus limb. Keeping track of
-        // these borrows is necessary in the circuit
+        // these borrows is necessary in the circuit.
         let mut borrow = [false; NUMBER_OF_LIMBS];
         let modulus_minus_one = self.rns.wrong_modulus_minus_one;
 
