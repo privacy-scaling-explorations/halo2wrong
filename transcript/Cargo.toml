@@ -1,0 +1,20 @@
+[package]
+name = "transcript"
+version = "0.1.0"
+authors = ["kilic <kiliconu@itu.edu.tr>"]
+edition = "2021"
+
+[dependencies]
+ecc = { path = "../ecc/circuit", default-features = false }
+poseidon = { git = "https://github.com/appliedzkp/poseidon.git", branch = "circuit" }
+
+rand = "0.8"
+group = "0.11"
+subtle = { version = "2.3", default-features = false }
+cfg-if = "0.1"
+
+[dev-dependencies]
+rand_core = { version = "0.6", default-features = false }
+
+[features]
+default = ["ecc/kzg"]
