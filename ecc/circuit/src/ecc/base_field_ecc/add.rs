@@ -6,7 +6,9 @@ use halo2::arithmetic::CurveAffine;
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
-impl<C: CurveAffine> BaseFieldEccChip<C> {
+impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Optimized point addition algorithm
     ///
     /// The operands `a` and `b` must be distinct and neither
@@ -15,9 +17,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     pub(crate) fn _add_incomplete_unsafe(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        a: &AssignedPoint<C::Base, C::Scalar>,
-        b: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        a: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let ch = self.integer_chip();
 
         // lambda = b_y - a_y / b_x - a_x
@@ -45,8 +47,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     pub(crate) fn _double_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        point: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
 
         // lambda = (3 * a_x^2) / 2 * a_y
@@ -73,9 +75,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     pub(crate) fn _ladder_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        to_double: &AssignedPoint<C::Base, C::Scalar>,
-        to_add: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        to_double: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        to_add: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let ch = self.integer_chip();
 
         // (P + Q) + P

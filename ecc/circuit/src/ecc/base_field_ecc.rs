@@ -15,27 +15,36 @@ use std::rc::Rc;
 mod add;
 mod mul;
 
-pub struct BaseFieldEccChip<C: CurveAffine> {
+#[derive(Debug, Clone)]
+pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+{
     /// Chip configuration
     config: EccConfig,
     /// Rns for EC base field
-    pub(crate) rns: Rc<Rns<C::Base, C::Scalar>>,
+    pub(crate) rns: Rc<Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     /// Auxiliary point for optimized multiplication algorithm
-    aux_generator: Option<(AssignedPoint<C::Base, C::Scalar>, Option<C>)>,
-    /// Auxiliary points for optimized multiplication for each (window_size, n_pairs) pairs
-    aux_registry: BTreeMap<(usize, usize), AssignedPoint<C::Base, C::Scalar>>,
+    aux_generator: Option<(
+        AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        Option<C>,
+    )>,
+    /// Auxiliary points for optimized multiplication for each (window_size,
+    /// n_pairs) pairs
+    aux_registry:
+        BTreeMap<(usize, usize), AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<C: CurveAffine> BaseFieldEccChip<C> {
+impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Residue numeral system
     /// Used to emulate `C::Base` (wrong field) over `C::Scalar` (native field)
-    pub fn rns(bit_len_limb: usize) -> Rns<C::Base, C::Scalar> {
-        Rns::construct(bit_len_limb)
+    pub fn rns() -> Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        Rns::construct()
     }
 
     /// Return `BaseEccChip` from `EccConfig`
-    pub fn new(config: EccConfig, bit_len_limb: usize) -> Self {
-        let rns = Self::rns(bit_len_limb);
+    pub fn new(config: EccConfig) -> Self {
+        let rns = Self::rns();
         Self {
             config,
             rns: Rc::new(rns),
@@ -50,18 +59,21 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     }
 
     /// Returns `IntegerChip` for the base field of the emulated EC
-    fn integer_chip(&self) -> IntegerChip<C::Base, C::Scalar> {
+    pub fn integer_chip(&self) -> IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let integer_chip_config = self.config.integer_chip_config();
-        IntegerChip::<C::Base, C::Scalar>::new(integer_chip_config, Rc::clone(&self.rns))
+        IntegerChip::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
+            integer_chip_config,
+            Rc::clone(&self.rns),
+        )
     }
 
     /// Return `Maingate` of the `GeneralEccChip`
-    fn main_gate(&self) -> MainGate<C::Scalar> {
+    pub fn main_gate(&self) -> MainGate<C::Scalar> {
         MainGate::<_>::new(self.config.main_gate_config.clone())
     }
 
     /// Returns a `Point` (Rns representation) from a point in the emulated EC
-    fn to_rns_point(&self, point: C) -> Point<C::Base, C::Scalar> {
+    fn to_rns_point(&self, point: C) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let coords = point.coordinates();
         // disallow point of infinity
         // it will not pass assing point enforcement
@@ -73,7 +85,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     }
 
     /// Returns emulated EC constant $b$
-    fn parameter_b(&self) -> Integer<C::Base, C::Scalar> {
+    fn parameter_b(&self) -> Integer<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         Integer::from_fe(C::b(), Rc::clone(&self.rns))
     }
 
@@ -82,7 +94,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         &self,
         window_size: usize,
         number_of_pairs: usize,
-    ) -> Result<MulAux<C::Base, C::Scalar>, Error> {
+    ) -> Result<MulAux<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let to_add = match self.aux_generator.clone() {
             Some((assigned, _)) => Ok(assigned),
             None => Err(Error::Synthesis),
@@ -97,12 +109,14 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     }
 }
 
-impl<C: CurveAffine> BaseFieldEccChip<C> {
+impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Expose `AssignedPoint` as Public Input
     fn expose_public(
         &self,
         mut layouter: impl Layouter<C::Scalar>,
-        point: AssignedPoint<C::Base, C::Scalar>,
+        point: AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         offset: usize,
     ) -> Result<(), Error> {
         let instance_column = self.instance_column();
@@ -124,7 +138,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
         point: C,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let coords = point.coordinates();
         // disallow point of infinity
         let coords = coords.unwrap();
@@ -139,7 +153,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
         point: Option<C>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
 
         let point = point.map(|point| self.to_rns_point(point));
@@ -167,7 +181,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         Ok(())
     }
 
-    /// Assigns multiplication auxiliary point for a pair of (window_size, n_pairs)
+    /// Assigns multiplication auxiliary point for a pair of (window_size,
+    /// n_pairs)
     pub fn assign_aux(
         &mut self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -194,7 +209,7 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn assert_is_on_curve(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        point: &AssignedPoint<C::Base, C::Scalar>,
+        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
 
@@ -210,8 +225,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn assert_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        p0: &AssignedPoint<C::Base, C::Scalar>,
-        p1: &AssignedPoint<C::Base, C::Scalar>,
+        p0: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
         integer_chip.assert_equal(ctx, &p0.x, &p1.x)?;
@@ -223,9 +238,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
         c: &AssignedCondition<C::Scalar>,
-        p1: &AssignedPoint<C::Base, C::Scalar>,
-        p2: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        p2: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
         let x = integer_chip.select(ctx, &p1.x, &p2.x, c)?;
         let y = integer_chip.select(ctx, &p1.y, &p2.y, c)?;
@@ -238,9 +253,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
         c: &AssignedCondition<C::Scalar>,
-        p1: &AssignedPoint<C::Base, C::Scalar>,
+        p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p2: C,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
         let p2 = self.to_rns_point(p2);
         let x = integer_chip.select_or_assign(ctx, &p1.x, &p2.x, c)?;
@@ -252,8 +267,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn normalize(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        point: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
         let x = integer_chip.reduce(ctx, &point.x)?;
         let y = integer_chip.reduce(ctx, &point.y)?;
@@ -265,12 +280,13 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        p0: &AssignedPoint<C::Base, C::Scalar>,
-        p1: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        p0: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         // guarantees that p0 != p1 or p0 != p1
-        // so that we can use unsafe addition formula which assumes operands are not equal
-        // addition to that we strictly disallow addition result to be point of infinity
+        // so that we can use unsafe addition formula which assumes operands are not
+        // equal addition to that we strictly disallow addition result to be
+        // point of infinity
         self.integer_chip().assert_not_equal(ctx, &p0.x, &p1.x)?;
 
         self._add_incomplete_unsafe(ctx, p0, p1)
@@ -280,8 +296,8 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn double(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        p: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         // point must be asserted to be in curve and not infinity
         self._double_incomplete(ctx, p)
     }
@@ -290,9 +306,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn double_n(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        p: &AssignedPoint<C::Base, C::Scalar>,
+        p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         logn: usize,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let mut acc = p.clone();
         for _ in 0..logn {
             acc = self._double_incomplete(ctx, &acc)?;
@@ -305,9 +321,9 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn ladder(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        to_double: &AssignedPoint<C::Base, C::Scalar>,
-        to_add: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        to_double: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        to_add: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._ladder_incomplete(ctx, to_double, to_add)
     }
 
@@ -315,11 +331,20 @@ impl<C: CurveAffine> BaseFieldEccChip<C> {
     fn neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        p: &AssignedPoint<C::Base, C::Scalar>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar>, Error> {
+        p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
         let y_neg = integer_chip.neg(ctx, &p.y)?;
         Ok(AssignedPoint::new(p.x.clone(), y_neg))
+    }
+
+    /// Returns sign of the assigned point
+    pub fn sign(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedCondition<C::Scalar>, Error> {
+        self.integer_chip().sign(ctx, &p.get_y())
     }
 }
 
@@ -355,13 +380,16 @@ mod tests {
         }
     }
 
+    const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
 
-    fn rns<C: CurveAffine>() -> Rns<C::Base, C::Scalar> {
-        Rns::construct(BIT_LEN_LIMB)
+    fn rns<C: CurveAffine>() -> Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        Rns::construct()
     }
 
-    fn setup<C: CurveAffine>(k_override: u32) -> (Rns<C::Base, C::Scalar>, u32) {
+    fn setup<C: CurveAffine>(
+        k_override: u32,
+    ) -> (Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, u32) {
         let rns = rns::<C>();
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         let mut k: u32 = (bit_len_lookup + 1) as u32;
@@ -393,7 +421,7 @@ mod tests {
 
     impl TestCircuitConfig {
         fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
-            let rns = BaseFieldEccChip::<C>::rns(BIT_LEN_LIMB);
+            let rns = BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
 
             let main_gate_config = MainGate::<C::Scalar>::configure(meta);
             let mut overflow_bit_lengths: Vec<usize> = vec![];
@@ -420,9 +448,9 @@ mod tests {
         }
     }
 
-    #[derive(Default, Clone, Debug)]
+    #[derive(Clone, Debug)]
     struct TestEccAddition<C: CurveAffine> {
-        rns: Rns<C::Base, C::Scalar>,
+        rns: Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     }
 
     impl<C: CurveAffine> Circuit<C::Scalar> for TestEccAddition<C> {
@@ -430,7 +458,7 @@ mod tests {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self::default()
+            unimplemented!();
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
@@ -443,7 +471,8 @@ mod tests {
             mut layouter: impl Layouter<C::Scalar>,
         ) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let ecc_chip =
+                BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
@@ -514,7 +543,6 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccPublicInput<C: CurveAffine> {
-        // rns: Rns<C::Base, C::Scalar>,
         a: Option<C>,
         b: Option<C>,
     }
@@ -524,7 +552,7 @@ mod tests {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self::default()
+            unimplemented!();
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
@@ -537,7 +565,8 @@ mod tests {
             mut layouter: impl Layouter<C::Scalar>,
         ) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let ecc_chip =
+                BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
 
             let sum = layouter.assign_region(
                 || "region 0",
@@ -617,7 +646,7 @@ mod tests {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self::default()
+            unimplemented!();
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
@@ -630,10 +659,9 @@ mod tests {
             mut layouter: impl Layouter<C::Scalar>,
         ) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let mut ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip =
+                BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
             let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
-            // let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
-            // main_gate.break_here(ctx)?;
 
             layouter.assign_region(
                 || "assign aux values",
@@ -709,7 +737,7 @@ mod tests {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            Self::default()
+            unimplemented!();
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
@@ -722,7 +750,8 @@ mod tests {
             mut layouter: impl Layouter<C::Scalar>,
         ) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-            let mut ecc_chip = BaseFieldEccChip::<C>::new(ecc_chip_config, BIT_LEN_LIMB);
+            let mut ecc_chip =
+                BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
             let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
 
             layouter.assign_region(
@@ -746,17 +775,19 @@ mod tests {
                     let mut rng = thread_rng();
 
                     let mut acc = C::CurveExt::identity();
-                    let pairs: Vec<(AssignedPoint<C::Base, C::Scalar>, AssignedValue<C::Scalar>)> =
-                        (0..self.number_of_pairs)
-                            .map(|_| {
-                                let base = C::CurveExt::random(&mut rng);
-                                let s = C::Scalar::random(&mut rng);
-                                acc = acc + (base * s);
-                                let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
-                                let s = main_gate.assign_value(ctx, &Some(s).into())?;
-                                Ok((base, s))
-                            })
-                            .collect::<Result<_, Error>>()?;
+                    let pairs: Vec<(
+                        AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+                        AssignedValue<C::Scalar>,
+                    )> = (0..self.number_of_pairs)
+                        .map(|_| {
+                            let base = C::CurveExt::random(&mut rng);
+                            let s = C::Scalar::random(&mut rng);
+                            acc = acc + (base * s);
+                            let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
+                            let s = main_gate.assign_value(ctx, &Some(s).into())?;
+                            Ok((base, s))
+                        })
+                        .collect::<Result<_, Error>>()?;
 
                     let result_0 = ecc_chip.assign_point(ctx, Some(acc.into()))?;
                     let result_1 =

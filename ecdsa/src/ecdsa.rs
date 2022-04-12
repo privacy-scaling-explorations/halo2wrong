@@ -36,43 +36,67 @@ impl EcdsaConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct EcdsaSig<W: FieldExt, N: FieldExt> {
-    pub r: Integer<W, N>,
-    pub s: Integer<W, N>,
+pub struct EcdsaSig<
+    W: FieldExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    pub r: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub s: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-pub struct AssignedEcdsaSig<W: WrongExt, N: FieldExt> {
-    pub r: AssignedInteger<W, N>,
-    pub s: AssignedInteger<W, N>,
+pub struct AssignedEcdsaSig<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    pub r: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub s: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-pub struct AssignedPublicKey<W: WrongExt, N: FieldExt> {
-    pub point: AssignedPoint<W, N>,
+pub struct AssignedPublicKey<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    pub point: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-pub struct EcdsaChip<E: CurveAffine, N: FieldExt>(GeneralEccChip<E, N>);
+pub struct EcdsaChip<
+    E: CurveAffine,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+>(GeneralEccChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>);
 
-impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
-    pub fn new(ecc_chip: GeneralEccChip<E, N>) -> Self {
+impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    EcdsaChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    pub fn new(ecc_chip: GeneralEccChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
         Self(ecc_chip)
     }
 
-    pub fn scalar_field_chip(&self) -> IntegerChip<E::ScalarExt, N> {
+    pub fn scalar_field_chip(&self) -> IntegerChip<E::ScalarExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self.0.scalar_field_chip()
     }
 
-    fn ecc_chip(&self) -> GeneralEccChip<E, N> {
+    fn ecc_chip(&self) -> GeneralEccChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self.0.clone()
     }
 }
 
-impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
+impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    EcdsaChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub fn verify(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        sig: &AssignedEcdsaSig<E::Scalar, N>,
-        pk: &AssignedPublicKey<E::Base, N>,
-        msg_hash: &AssignedInteger<E::Scalar, N>,
+        sig: &AssignedEcdsaSig<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        pk: &AssignedPublicKey<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        msg_hash: &AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip();
         let scalar_chip = ecc_chip.scalar_field_chip();
@@ -80,7 +104,8 @@ impl<E: CurveAffine, N: FieldExt> EcdsaChip<E, N> {
 
         // 1. check 0 < r, s < n
 
-        // // since `assert_not_zero` already includes a in-field check, we can just call `assert_not_zero`
+        // // since `assert_not_zero` already includes a in-field check, we can just
+        // call `assert_not_zero`
         scalar_chip.assert_not_zero(ctx, &sig.r)?;
         scalar_chip.assert_not_zero(ctx, &sig.s)?;
 
@@ -140,6 +165,7 @@ mod tests {
     use crate::halo2::arithmetic::BaseExt;
 
     const BIT_LEN_LIMB: usize = 68;
+    const NUMBER_OF_LIMBS: usize = 4;
 
     #[derive(Clone, Debug)]
     struct TestCircuitEcdsaVerifyConfig {
@@ -149,7 +175,8 @@ mod tests {
 
     impl TestCircuitEcdsaVerifyConfig {
         pub fn new<C: CurveAffine, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
-            let (rns_base, rns_scalar) = GeneralEccChip::<C, N>::rns(BIT_LEN_LIMB);
+            let (rns_base, rns_scalar) =
+                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
             let main_gate_config = MainGate::<N>::configure(meta);
             let mut overflow_bit_lengths: Vec<usize> = vec![];
             overflow_bit_lengths.extend(rns_base.overflow_lengths());
@@ -203,7 +230,9 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let mut ecc_chip = GeneralEccChip::<E, N>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
+            let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
+                config.ecc_chip_config(),
+            );
             let scalar_chip = ecc_chip.scalar_field_chip();
 
             let mut rng = thread_rng();

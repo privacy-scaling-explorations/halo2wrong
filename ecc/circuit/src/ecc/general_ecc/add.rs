@@ -6,7 +6,13 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 
-impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
+impl<
+        Emulated: CurveAffine,
+        N: FieldExt,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Optimized point addition algorithm
     ///
     /// The operands `a` and `b` must be distinct and neither
@@ -15,9 +21,9 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     pub(crate) fn _add_incomplete_unsafe(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedPoint<Emulated::Base, N>,
-        b: &AssignedPoint<Emulated::Base, N>,
-    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
+        a: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let ch = self.base_field_chip();
 
         // lambda = b_y - a_y / b_x - a_x
@@ -45,8 +51,8 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     pub(crate) fn _double_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        point: &AssignedPoint<Emulated::Base, N>,
-    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
+        point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let ch = self.base_field_chip();
 
         // lambda = (3 * a_x^2) / 2 * a_y
@@ -73,9 +79,9 @@ impl<Emulated: CurveAffine, N: FieldExt> GeneralEccChip<Emulated, N> {
     pub(crate) fn _ladder_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        to_double: &AssignedPoint<Emulated::Base, N>,
-        to_add: &AssignedPoint<Emulated::Base, N>,
-    ) -> Result<AssignedPoint<Emulated::Base, N>, Error> {
+        to_double: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        to_add: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let ch = self.base_field_chip();
 
         // (P + Q) + P

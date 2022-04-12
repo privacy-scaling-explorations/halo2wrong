@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::{IntegerChip, Range};
 use crate::rns::{Common, Integer};
-use crate::{AssignedInteger, AssignedLimb, UnassignedInteger, WrongExt, NUMBER_OF_LIMBS};
+use crate::{AssignedInteger, AssignedLimb, UnassignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{
@@ -12,15 +12,17 @@ use maingate::{
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(super) fn _range_assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N>,
+        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         range: Range,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let range_chip = self.range_chip();
-        let max_val = (big_uint::one() << self.rns.bit_len_limb) - 1usize;
+        let max_val = (big_uint::one() << BIT_LEN_LIMB) - 1usize;
 
         let most_significant_limb_bit_len = match range {
             Range::Operand => self.rns.max_most_significant_operand_limb.bits() as usize,
@@ -70,7 +72,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: W,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer = Integer::from_fe(integer, Rc::clone(&self.rns));
 
         let main_gate = self.main_gate();
@@ -89,9 +91,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N>,
+        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         should_be_in_remainder_range: bool,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         if let Some(value) = integer.value() {

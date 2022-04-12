@@ -7,26 +7,28 @@ use maingate::{
     halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term,
 };
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     fn assert_zero_v0_range_tune(&self) -> usize {
         // TODO
-        self.rns.bit_len_limb
+        BIT_LEN_LIMB
     }
 
     fn assert_zero_v1_range_tune(&self) -> usize {
         // TODO
-        self.rns.bit_len_limb
+        BIT_LEN_LIMB
     }
 
     fn assert_zero_quotient_range_tune(&self) -> usize {
         // TODO
-        self.rns.bit_len_limb
+        BIT_LEN_LIMB
     }
 
     pub(super) fn _assert_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());

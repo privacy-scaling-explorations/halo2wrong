@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use crate::rns::{Common, Integer, Rns};
-use crate::{WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS};
+use crate::{WrongExt, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{halo2, AssignedCondition, AssignedValue, MainGateInstructions, RegionCtx};
@@ -41,204 +41,268 @@ impl IntegerConfig {
     }
 }
 
-pub struct IntegerChip<W: WrongExt, N: FieldExt> {
+pub struct IntegerChip<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
     config: IntegerConfig,
-    rns: Rc<Rns<W, N>>,
+    rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<'a, W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(crate) fn new_assigned_integer(
         &self,
         limbs: Vec<AssignedLimb<N>>,
         native_value: AssignedValue<N>,
-    ) -> AssignedInteger<W, N> {
+    ) -> AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         AssignedInteger::new(Rc::clone(&self.rns), limbs, native_value)
     }
 }
 
-pub trait IntegerInstructions<W: WrongExt, N: FieldExt> {
+pub trait IntegerInstructions<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+>
+{
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn assign_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: W,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn range_assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N>,
+        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         range: Range,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn decompose(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: &AssignedInteger<W, N>,
+        integer: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedCondition<N>>, Error>;
 
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn mul2(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn mul3(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn sub_sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b_0: &AssignedInteger<W, N>,
-        b_1: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_0: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn mul_into_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn square(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn div(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<(AssignedInteger<W, N>, AssignedCondition<N>), Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<
+        (
+            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedCondition<N>,
+        ),
+        Error,
+    >;
+
     fn div_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn invert(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<(AssignedInteger<W, N>, AssignedCondition<N>), Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<
+        (
+            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedCondition<N>,
+        ),
+        Error,
+    >;
+
     fn invert_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn reduce(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn assert_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_strict_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_not_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_not_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_strict_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_strict_bit(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn assert_in_field(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        input: &AssignedInteger<W, N>,
+        input: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
+
     fn select(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         cond: &AssignedCondition<N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn select_or_assign(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         cond: &AssignedCondition<N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
     fn reduce_external<T: WrongExt>(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<T, N>,
-    ) -> Result<AssignedInteger<W, N>, Error>;
+        a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
+
+    fn sign(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedCondition<N>, Error>;
 }
 
-impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerInstructions<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    for IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     fn reduce_external<T: WrongExt>(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<T, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        // TODO: external integer might have different parameter settings
+        a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let to_be_reduced = self.new_assigned_integer(a.limbs(), a.native());
         self.reduce(ctx, &to_be_reduced)
     }
@@ -246,17 +310,17 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn range_assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N>,
+        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         range: Range,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._range_assign_integer(ctx, integer, range)
     }
 
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._assign_integer(ctx, integer, true)
     }
 
@@ -264,14 +328,14 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: W,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._assign_constant(ctx, integer)
     }
 
     fn decompose(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        integer: &AssignedInteger<W, N>,
+        integer: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedCondition<N>>, Error> {
         self.assert_in_field(ctx, integer)?;
 
@@ -282,9 +346,9 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
             let number_of_bits = if idx == NUMBER_OF_LIMBS - 1 {
                 self.rns.bit_len_last_limb
             } else {
-                self.rns.bit_len_limb
+                BIT_LEN_LIMB
             };
-            let decomposed_limb = main_gate.decompose(ctx, integer.limb(idx), number_of_bits)?;
+            let decomposed_limb = main_gate.to_bits(ctx, &integer.limb(idx), number_of_bits)?;
             decomposed.extend(decomposed_limb);
         }
 
@@ -296,9 +360,9 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b)?,
@@ -309,9 +373,9 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?;
         self._add_constant(ctx, a, b)
     }
@@ -319,25 +383,25 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn mul2(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._mul2(ctx, a)
     }
 
     fn mul3(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._mul3(ctx, a)
     }
 
     fn sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b)?,
@@ -348,10 +412,10 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn sub_sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b_0: &AssignedInteger<W, N>,
-        b_1: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_0: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let (a, b_0, b_1) = (
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b_0)?,
@@ -363,8 +427,8 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?;
         self._neg(ctx, a)
     }
@@ -372,9 +436,9 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_reduced(ctx, b)?,
@@ -389,9 +453,9 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         self._mul_constant(ctx, a, b)
@@ -400,8 +464,8 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn mul_into_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?,
@@ -417,8 +481,8 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn square(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         self._square(ctx, a)
@@ -427,9 +491,15 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn div(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<(AssignedInteger<W, N>, AssignedCondition<N>), Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<
+        (
+            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedCondition<N>,
+        ),
+        Error,
+    > {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_reduced(ctx, b)?,
@@ -444,9 +514,9 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn div_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let (a, b) = (
             &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_reduced(ctx, b)?,
@@ -461,8 +531,14 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn invert(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<(AssignedInteger<W, N>, AssignedCondition<N>), Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<
+        (
+            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedCondition<N>,
+        ),
+        Error,
+    > {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         self._invert(ctx, a)
@@ -471,8 +547,8 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn invert_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         self._invert_incomplete(ctx, a)
@@ -481,16 +557,16 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn reduce(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         self._reduce(ctx, a)
     }
 
     fn assert_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let c = &self.sub(ctx, a, b)?;
         self.assert_zero(ctx, c)?;
@@ -500,12 +576,12 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn assert_strict_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for idx in 0..NUMBER_OF_LIMBS {
-            main_gate.assert_equal(ctx, a.limb(idx), b.limb(idx))?;
+            main_gate.assert_equal(ctx, &a.limb(idx), &b.limb(idx))?;
         }
         Ok(())
     }
@@ -513,8 +589,8 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn assert_not_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let c = &self.sub(ctx, a, b)?;
         self.assert_not_zero(ctx, c)?;
@@ -524,7 +600,7 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn assert_not_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
@@ -535,7 +611,7 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn assert_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         self._assert_zero(ctx, a)
@@ -544,39 +620,39 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn assert_strict_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(ctx, a.limb(i))?;
+            main_gate.assert_zero(ctx, &a.limb(i))?;
         }
-        main_gate.assert_one(ctx, a.limb(0))
+        main_gate.assert_one(ctx, &a.limb(0))
     }
 
     fn assert_strict_bit(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(ctx, a.limb(i))?;
+            main_gate.assert_zero(ctx, &a.limb(i))?;
         }
-        main_gate.assert_bit(ctx, a.limb(0))
+        main_gate.assert_bit(ctx, &a.limb(0).into())
     }
 
     fn select(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         cond: &AssignedCondition<N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
         for i in 0..NUMBER_OF_LIMBS {
-            let res = main_gate.select(ctx, a.limb(i), b.limb(i), cond)?;
+            let res = main_gate.select(ctx, &a.limb(i), &b.limb(i), cond)?;
 
             let max_val = if a.limbs[i].max_val > b.limbs[i].max_val {
                 a.limbs[i].max_val.clone()
@@ -587,7 +663,7 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.select(ctx, a.native(), b.native(), cond)?;
+        let native_value = main_gate.select(ctx, &a.native(), &b.native(), cond)?;
 
         Ok(self.new_assigned_integer(limbs, native_value))
     }
@@ -595,10 +671,10 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn select_or_assign(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         cond: &AssignedCondition<N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
@@ -620,21 +696,32 @@ impl<W: WrongExt, N: FieldExt> IntegerInstructions<W, N> for IntegerChip<W, N> {
     fn assert_in_field(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         self._assert_in_field(ctx, a)
     }
+
+    fn sign(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedCondition<N>, Error> {
+        self.assert_in_field(ctx, a)?;
+        self.main_gate().sign(ctx, &a.limb(0))
+    }
 }
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
-    pub fn new(config: IntegerConfig, rns: Rc<Rns<W, N>>) -> Self {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    pub fn new(config: IntegerConfig, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         IntegerChip { config, rns }
     }
 
     pub fn range_chip(&self) -> RangeChip<N> {
-        let bit_len_lookup = self.rns.bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
+        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
     }
 
@@ -648,9 +735,7 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
 mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::rns::{Common, Integer, Rns};
-    use crate::{
-        AssignedInteger, UnassignedInteger, WrongExt, NUMBER_OF_LIMBS, NUMBER_OF_LOOKUP_LIMBS,
-    };
+    use crate::{AssignedInteger, UnassignedInteger, WrongExt, NUMBER_OF_LOOKUP_LIMBS};
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
@@ -666,92 +751,129 @@ mod tests {
     use secp256k1::Fq as Secp256k1_Fq;
     use std::rc::Rc;
 
-    fn rns<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>() -> Rns<W, N> {
-        Rns::<W, N>::construct(BIT_LEN_LIMB)
+    fn rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+    ) -> Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        Rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct()
     }
 
-    fn setup<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>() -> (Rns<W, N>, u32) {
-        let rns = rns::<_, _, BIT_LEN_LIMB>();
+    fn setup<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+    ) -> (Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, u32) {
+        let rns = rns();
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
         (rns, k)
     }
 
-    impl<W: WrongExt, N: FieldExt> From<Integer<W, N>> for UnassignedInteger<W, N> {
-        fn from(integer: Integer<W, N>) -> Self {
+    impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+        From<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>
+        for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
+        fn from(integer: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
             UnassignedInteger(Some(integer))
         }
     }
 
-    impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+    impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+        IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
         fn assign_integer_no_check(
             &self,
             ctx: &mut RegionCtx<'_, '_, N>,
-            integer: UnassignedInteger<W, N>,
-        ) -> Result<AssignedInteger<W, N>, Error> {
+            integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
             self._assign_integer(ctx, integer, false)
         }
     }
 
-    pub(crate) struct TestRNS<W: WrongExt, N: FieldExt> {
-        rns: Rc<Rns<W, N>>,
+    pub(crate) struct TestRNS<
+        W: WrongExt,
+        N: FieldExt,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > {
+        rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     }
 
-    impl<W: WrongExt, N: FieldExt> TestRNS<W, N> {
-        pub(crate) fn rand_in_field(&self) -> Integer<W, N> {
+    impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+        TestRNS<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
+        pub(crate) fn rand_in_field(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             let mut rng = thread_rng();
             Integer::from_fe(W::random(&mut rng), Rc::clone(&self.rns))
         }
 
-        pub(crate) fn rand_in_remainder_range(&self) -> Integer<W, N> {
+        pub(crate) fn rand_in_remainder_range(
+            &self,
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             let mut rng = thread_rng();
             let el = rng.gen_biguint(self.rns.max_remainder.bits() as u64);
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
-        pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N> {
+        pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             let mut rng = thread_rng();
             let el = rng.gen_biguint(self.rns.max_operand.bits() as u64);
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
-        pub(crate) fn rand_in_unreduced_range(&self) -> Integer<W, N> {
+        pub(crate) fn rand_in_unreduced_range(
+            &self,
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             self.rand_with_limb_bit_size(self.rns.max_unreduced_limb.bits() as usize)
         }
 
-        pub(crate) fn rand_with_limb_bit_size(&self, bit_len: usize) -> Integer<W, N> {
-            let limbs: Vec<N> = (0..NUMBER_OF_LIMBS)
+        pub(crate) fn rand_with_limb_bit_size(
+            &self,
+            bit_len: usize,
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+            let limbs = (0..NUMBER_OF_LIMBS)
                 .map(|_| {
                     let mut rng = thread_rng();
                     let el = rng.gen_biguint(bit_len as u64);
                     big_to_fe(el)
                 })
-                .collect();
+                .collect::<Vec<N>>()
+                .try_into()
+                .unwrap();
 
-            Integer::from_limbs(limbs, Rc::clone(&self.rns))
+            Integer::from_limbs(&limbs, Rc::clone(&self.rns))
         }
 
-        pub(crate) fn new_from_big(&self, e: big_uint) -> Integer<W, N> {
+        pub(crate) fn new_from_big(
+            &self,
+            e: big_uint,
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             Integer::from_big(e, Rc::clone(&self.rns))
         }
 
-        pub(crate) fn new_from_limbs(&self, e: Vec<N>) -> Integer<W, N> {
+        pub(crate) fn new_from_fe(&self, e: W) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+            Integer::from_fe(e, Rc::clone(&self.rns))
+        }
+
+        pub(crate) fn new_from_limbs(
+            &self,
+            e: &[N; NUMBER_OF_LIMBS],
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             Integer::from_limbs(e, Rc::clone(&self.rns))
         }
 
-        pub(crate) fn max_in_remainder_range(&self) -> Integer<W, N> {
+        pub(crate) fn max_in_remainder_range(
+            &self,
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             self.new_from_big(self.rns.max_remainder.clone())
         }
 
-        pub(crate) fn max_in_operand_range(&self) -> Integer<W, N> {
+        pub(crate) fn max_in_operand_range(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             self.new_from_big(self.rns.max_operand.clone())
         }
 
-        pub(crate) fn max_in_unreduced_range(&self) -> Integer<W, N> {
-            let limbs = vec![big_to_fe(self.rns.max_unreduced_limb.clone()); 4];
-            Integer::from_limbs(limbs, Rc::clone(&self.rns))
+        pub(crate) fn max_in_unreduced_range(
+            &self,
+        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+            let limbs = [big_to_fe(self.rns.max_unreduced_limb.clone()); NUMBER_OF_LIMBS];
+            Integer::from_limbs(&limbs, Rc::clone(&self.rns))
         }
 
-        pub fn zero(&self) -> Integer<W, N> {
+        pub fn zero(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             Integer::from_big(big_uint::zero(), Rc::clone(&self.rns))
         }
     }
@@ -763,12 +885,18 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+        fn new<
+            W: WrongExt,
+            N: FieldExt,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        >(
             meta: &mut ConstraintSystem<N>,
         ) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
 
-            let overflow_bit_lengths = rns::<W, N, BIT_LEN_LIMB>().overflow_lengths();
+            let overflow_bit_lengths =
+                rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>().overflow_lengths();
             let range_config =
                 RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
@@ -803,32 +931,32 @@ mod tests {
         ($circuit_name:ident, $( $synth:tt )*) => {
 
 
-            #[derive(Default, Clone, Debug)]
-            struct $circuit_name<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
-                rns: Rc<Rns<W, N>>,
+            #[derive(Clone, Debug)]
+            struct $circuit_name<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+                rns: Rc<Rns<W, N, NUMBER_OF_LIMBS,BIT_LEN_LIMB>>,
             }
 
-            impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> $circuit_name<W, N, BIT_LEN_LIMB> {
-                fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W,N>{
-                    IntegerChip::<W, N>::new(config.integer_chip_config(), Rc::clone(&self.rns))
+            impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+                fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>{
+                    IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(config.integer_chip_config(), Rc::clone(&self.rns))
                 }
 
-                fn tester(&self) -> TestRNS<W,N> {
+                fn tester(&self) -> TestRNS<W,N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     TestRNS {rns:Rc::clone(&self.rns)}
                 }
 
             }
 
-            impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
+            impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                 type Config = TestCircuitConfig;
                 type FloorPlanner = SimpleFloorPlanner;
 
                 fn without_witnesses(&self) -> Self {
-                    Self::default()
+                    unimplemented!();
                 }
 
                 fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-                    TestCircuitConfig::new::<W, N, BIT_LEN_LIMB>(meta)
+                    TestCircuitConfig::new::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
                 }
 
                 $( $synth )*
@@ -883,7 +1011,7 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let overflows = t.rand_with_limb_bit_size(self.rns.bit_len_limb + 5);
+                    let overflows = t.rand_with_limb_bit_size(BIT_LEN_LIMB + 5);
                     let unreduced = overflows.clone();
                     let reduced = overflows.reduce();
                     let reduced = reduced.result;
@@ -1571,9 +1699,9 @@ mod tests {
                         assert_eq!(expected.len(), decomposed.len());
                         for (c, expected) in decomposed.iter().zip(expected.into_iter()) {
                             if expected != W::zero() {
-                                main_gate.assert_one(ctx, c)?;
+                                main_gate.assert_one(ctx, &c.into())?;
                             } else {
-                                main_gate.assert_zero(ctx, c)?;
+                                main_gate.assert_zero(ctx, &c.into())?;
                             }
                         }
                     }
@@ -1584,13 +1712,48 @@ mod tests {
         }
     );
 
+    impl_circuit!(
+        TestCircuitSign,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<N>,
+        ) -> Result<(), Error> {
+            let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
+            let integer_chip = self.integer_chip(config.clone());
+            let t = self.tester();
+            layouter.assign_region(
+                || "region 0",
+                |mut region| {
+                    let offset = &mut 0;
+                    let ctx = &mut RegionCtx::new(&mut region, offset);
+
+                    let integer = t.new_from_big(big_uint::from(20u64));
+                    let assigned =
+                        integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
+                    let assigned_sign = integer_chip.sign(ctx, &assigned)?;
+                    main_gate.assert_zero(ctx, &assigned_sign.into())?;
+
+                    let integer = t.new_from_big(big_uint::from(21u64));
+                    let assigned =
+                        integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
+                    let assigned_sign = integer_chip.sign(ctx, &assigned)?;
+                    main_gate.assert_one(ctx, &assigned_sign.into())?;
+
+                    Ok(())
+                },
+            )?;
+            config.config_range(&mut layouter, BIT_LEN_LIMB)
+        }
+    );
+
     macro_rules! test_circuit_runner {
         (
-            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $bit_len_limb:expr]),*
+            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $number_of_limbs:expr, $bit_len_limb:expr]),*
         ) => {
             $(
-                let (rns, k) = setup::<_, _, $bit_len_limb>();
-                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns: Rc::new(rns) };
+                let (rns, k) = setup();
+                let circuit = $circuit::<$wrong_field, $native_field, $number_of_limbs, $bit_len_limb> { rns: Rc::new(rns) };
                 let public_inputs = vec![vec![]];
                 let prover = match MockProver::run(k, &circuit, public_inputs) {
                     Ok(prover) => prover,
@@ -1610,12 +1773,12 @@ mod tests {
                 use halo2::pasta::{Fp as Pasta_Fp, Fq as Pasta_Fq};
                 test_circuit_runner!(
                     $circuit,
-                    [Pasta_Fp, Pasta_Fq, 68],
-                    [Pasta_Fq, Pasta_Fp, 68],
-                    [Secp256k1_Fp, Pasta_Fq, 68],
-                    [Secp256k1_Fp, Pasta_Fp, 68],
-                    [Secp256k1_Fq, Pasta_Fq, 68],
-                    [Secp256k1_Fq, Pasta_Fp, 68]
+                    [Pasta_Fp, Pasta_Fq, 4, 68],
+                    [Pasta_Fq, Pasta_Fp, 4, 68],
+                    [Secp256k1_Fp, Pasta_Fq, 4, 68],
+                    [Secp256k1_Fp, Pasta_Fp, 4, 68],
+                    [Secp256k1_Fq, Pasta_Fq, 4, 68],
+                    [Secp256k1_Fq, Pasta_Fp, 4, 68]
                 );
             }
             #[cfg(feature = "kzg")]
@@ -1623,10 +1786,10 @@ mod tests {
                 use halo2::pairing::bn256::{Fq, Fr};
                 test_circuit_runner!(
                     $circuit,
-                    [Fq, Fr, 68],
-                    [Fr, Fr, 68],
-                    [Secp256k1_Fp, Fr, 68],
-                    [Secp256k1_Fq, Fr, 68]
+                    [Fq, Fr, 4, 68],
+                    [Fr, Fr, 4, 68],
+                    [Secp256k1_Fp, Fr, 4, 68],
+                    [Secp256k1_Fq, Fr, 4, 68]
                 );
             }
         };
@@ -1671,5 +1834,9 @@ mod tests {
     #[test]
     fn test_integer_circuit_decomposition() {
         test_circuit!(TestCircuitDecomposition);
+    }
+    #[test]
+    fn test_integer_circuit_sign() {
+        test_circuit!(TestCircuitSign);
     }
 }

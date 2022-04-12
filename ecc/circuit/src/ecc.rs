@@ -16,15 +16,21 @@ pub use general_ecc::*;
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
-pub struct Point<W: WrongExt, N: FieldExt> {
-    x: Integer<W, N>,
-    y: Integer<W, N>,
+pub struct Point<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+{
+    x: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    y: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: WrongExt, N: FieldExt> Point<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Returns `Point` form a point in a EC with W as its base field
     /// Infinity point is not allowed
-    fn from(rns: Rc<Rns<W, N>>, point: impl CurveAffine<Base = W>) -> Self {
+    fn from(
+        rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+        point: impl CurveAffine<Base = W>,
+    ) -> Self {
         let coords = point.coordinates();
         // disallow point of infinity
         let coords = coords.unwrap();
@@ -45,12 +51,19 @@ impl<W: WrongExt, N: FieldExt> Point<W, N> {
 
 #[derive(Clone)]
 /// point that is assumed to be on curve and not infinity
-pub struct AssignedPoint<W: WrongExt, N: FieldExt> {
-    x: AssignedInteger<W, N>,
-    y: AssignedInteger<W, N>,
+pub struct AssignedPoint<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    x: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: WrongExt, N: FieldExt> fmt::Debug for AssignedPoint<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
+    for AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AssignedPoint")
             .field("xn", &self.x.native().value())
@@ -60,16 +73,26 @@ impl<W: WrongExt, N: FieldExt> fmt::Debug for AssignedPoint<W, N> {
     }
 }
 
-impl<W: WrongExt, N: FieldExt> AssignedPoint<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Returns a new `AssignedPoint` given its coordinates as `AssignedInteger`
     /// Does not check for validity (the point is in a specific curve)
-    pub fn new(x: AssignedInteger<W, N>, y: AssignedInteger<W, N>) -> AssignedPoint<W, N> {
+    pub fn new(
+        x: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         AssignedPoint { x, y }
     }
 
     /// Returns $x$ coordinate
-    pub fn get_x(&self) -> AssignedInteger<W, N> {
+    pub fn get_x(&self) -> AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self.x.clone()
+    }
+
+    /// Returns $y$ coordinate
+    pub fn get_y(&self) -> AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        self.y.clone()
     }
 }
 
@@ -92,9 +115,15 @@ impl EccConfig {
         }
     }
 
-    /// Returns new `IntegerConfig` with matching `RangeConfig` and `MainGateConfig`
+    /// Returns new `IntegerConfig` with matching `RangeConfig` and
+    /// `MainGateConfig`
     fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    }
+
+    /// Returns new `MainGateConfig`
+    fn main_gate_config(&self) -> MainGateConfig {
+        self.main_gate_config.clone()
     }
 }
 
@@ -124,9 +153,11 @@ fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pai
     (-aux_to_add * big_to_fe::<C::Scalar>(k)).to_affine()
 }
 
-/// Vector of `AssignedCondition` which is the binary representation of a scalar.
+/// Vector of `AssignedCondition` which is the binary representation of a
+/// scalar.
 ///
-/// Allows to select values of precomputed table in efficient multiplication algorithm
+/// Allows to select values of precomputed table in efficient multiplication
+/// algorithm
 #[derive(Default)]
 struct Selector<F: FieldExt>(Vec<AssignedCondition<F>>);
 
@@ -159,9 +190,13 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
 }
 
 /// Table of precomputed values for efficient multiplication algorithm.
-struct Table<W: WrongExt, N: FieldExt>(Vec<AssignedPoint<W, N>>);
+struct Table<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+    Vec<AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+);
 
-impl<W: FieldExt, N: FieldExt> fmt::Debug for Table<W, N> {
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
+    for Table<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Table");
         for (i, entry) in self.0.iter().enumerate() {
@@ -177,14 +212,24 @@ impl<W: FieldExt, N: FieldExt> fmt::Debug for Table<W, N> {
 
 /// Auxiliary points for efficient multiplication algorithm
 /// See: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg
-pub(super) struct MulAux<W: WrongExt, N: FieldExt> {
-    to_add: AssignedPoint<W, N>,
-    to_sub: AssignedPoint<W, N>,
+pub(super) struct MulAux<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    to_add: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    to_sub: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
 /// Constructs `MulAux`
-impl<W: WrongExt, N: FieldExt> MulAux<W, N> {
-    pub(super) fn new(to_add: AssignedPoint<W, N>, to_sub: AssignedPoint<W, N>) -> Self {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    MulAux<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    pub(super) fn new(
+        to_add: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        to_sub: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Self {
         // TODO Should we ensure that these 2 point are coherent:
         // to_sub = (to_add * (1 << ec_order ) -1)
         MulAux { to_add, to_sub }

@@ -9,12 +9,20 @@ use maingate::{
     Term,
 };
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(super) fn _invert(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<(AssignedInteger<W, N>, AssignedCondition<N>), Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<
+        (
+            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedCondition<N>,
+        ),
+        Error,
+    > {
         let main_gate = self.main_gate();
 
         let one = N::one();
@@ -71,8 +79,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _invert_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a_int = a.integer();
         let inv = match a_int.as_ref() {
             Some(a) => match a.invert() {

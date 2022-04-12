@@ -7,12 +7,14 @@ use maingate::{
     halo2, CombinationOptionCommon, MainGateInstructions, RangeInstructions, RegionCtx, Term,
 };
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(super) fn reduce_if_limb_values_exceeds_unreduced(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let exceeds_max_limb_value = a.limbs.iter().fold(false, |must_reduce, limb| {
             must_reduce | (limb.max_val() > self.rns.max_unreduced_limb)
         });
@@ -27,23 +29,23 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn reduce_if_limb_values_exceeds_reduced(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let exceeds_max_limb_value = a.limbs.iter().fold(false, |must_reduce, limb| {
             must_reduce | (limb.max_val() > self.rns.max_reduced_limb)
         });
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(a.limbs.clone(), a.native_value.clone()))
+            Ok(self.new_assigned_integer(a.limbs.clone(), a.native_value))
         }
     }
 
     pub(super) fn reduce_if_max_operand_value_exceeds(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let exceeds_max_value = a.max_val() > self.rns.max_operand;
         if exceeds_max_value {
             self.reduce(ctx, a)
@@ -55,14 +57,14 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _reduce(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
         let a_int = a.integer();
-        let reduction_witness: MaybeReduced<W, N> =
+        let reduction_witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
             a_int.as_ref().map(|a_int| a_int.reduce()).into();
         let quotient = reduction_witness.short();
         let result = reduction_witness.result();

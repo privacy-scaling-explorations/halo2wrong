@@ -1,14 +1,16 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::{AssignedInteger, AssignedValue, WrongExt};
+use crate::{AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(super) fn _assert_in_field(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        input: &AssignedInteger<W, N>,
+        input: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         // Constraints:
         // 0 = -c_0 + p_0 - a_0 + b_0 * R

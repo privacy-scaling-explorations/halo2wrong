@@ -1,6 +1,6 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::rns::{Common, Integer, MaybeReduced};
-use crate::{AssignedInteger, WrongExt, NUMBER_OF_LIMBS};
+use crate::{AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::Assigned;
@@ -9,23 +9,26 @@ use maingate::{
     RegionCtx, Term,
 };
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(super) fn _mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
-        let reduction_witness: MaybeReduced<W, N> = match (a.integer(), b.integer()) {
-            (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
-            _ => None,
-        }
-        .into();
+        let reduction_witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+            match (a.integer(), b.integer()) {
+                (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
+                _ => None,
+            }
+            .into();
 
         let quotient = reduction_witness.long();
         let result = reduction_witness.result();
@@ -490,19 +493,20 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _mul_into_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
 
-        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed.clone();
+        let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
-        let reduction_witness: MaybeReduced<W, N> = match (a.integer(), b.integer()) {
-            (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
-            _ => None,
-        }
-        .into();
+        let reduction_witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+            match (a.integer(), b.integer()) {
+                (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
+                _ => None,
+            }
+            .into();
 
         let quotient = reduction_witness.long();
         let (t_0, t_1, t_2, t_3) = reduction_witness.intermediate_values();

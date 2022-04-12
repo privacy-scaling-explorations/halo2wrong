@@ -3,16 +3,18 @@ use crate::rns::Integer;
 use crate::{AssignedInteger, AssignedLimb, Common, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
-use maingate::{halo2, utils::fe_to_big, MainGateInstructions, RegionCtx};
+use maingate::{fe_to_big, halo2, MainGateInstructions, RegionCtx};
 use std::rc::Rc;
 
-impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
+impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     pub(super) fn _add(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let c_limbs = a
@@ -32,9 +34,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
         let aux = Integer::subtracion_aux(b.max_vals(), Rc::clone(&self.rns));
 
@@ -57,10 +59,10 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _sub_sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b_0: &AssignedInteger<W, N>,
-        b_1: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_0: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let max_vals = b_0
@@ -102,8 +104,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(super) fn _neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
         let aux = a.make_aux();
 
@@ -123,8 +125,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _mul2(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let c_limbs = a
@@ -143,8 +145,8 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _mul3(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let c_limbs = a
@@ -163,9 +165,9 @@ impl<W: WrongExt, N: FieldExt> IntegerChip<W, N> {
     pub(crate) fn _add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N>,
-        b: &Integer<W, N>,
-    ) -> Result<AssignedInteger<W, N>, Error> {
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
 
         let c_limbs = a
