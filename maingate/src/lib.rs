@@ -18,8 +18,8 @@ pub use range::*;
 
 pub trait Assigned<F: FieldExt> {
     fn value(&self) -> Option<F>;
-    fn constrain_equal(&self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
-        region.constrain_equal(self.cell(), new_cell)
+    fn constrain_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, other: &Self) -> Result<(), Error> {
+        ctx.region.constrain_equal(self.cell(), other.cell())
     }
     fn cell(&self) -> Cell;
     fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {

@@ -302,11 +302,31 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             }
         };
 
-        terms[0].constrain_equal(ctx.region, cell_0)?;
-        terms[1].constrain_equal(ctx.region, cell_1)?;
-        terms[2].constrain_equal(ctx.region, cell_2)?;
-        terms[3].constrain_equal(ctx.region, cell_3)?;
-        terms[4].constrain_equal(ctx.region, cell_4)?;
+        // If given witness is already assigned apply copy constains
+        match terms[0] {
+            Term::Assigned(assigned, _) => ctx.region.constrain_equal(assigned.cell(), cell_0),
+            _ => Ok(()),
+        }?;
+
+        match terms[1] {
+            Term::Assigned(assigned, _) => ctx.region.constrain_equal(assigned.cell(), cell_1),
+            _ => Ok(()),
+        }?;
+
+        match terms[2] {
+            Term::Assigned(assigned, _) => ctx.region.constrain_equal(assigned.cell(), cell_2),
+            _ => Ok(()),
+        }?;
+
+        match terms[3] {
+            Term::Assigned(assigned, _) => ctx.region.constrain_equal(assigned.cell(), cell_3),
+            _ => Ok(()),
+        }?;
+
+        match terms[4] {
+            Term::Assigned(assigned, _) => ctx.region.constrain_equal(assigned.cell(), cell_4),
+            _ => Ok(()),
+        }?;
 
         ctx.next();
 
