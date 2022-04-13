@@ -1,8 +1,9 @@
+//! `maingate` defines basic instructions for a starndart like PLONK gate and
+//! implments a 5 width gate with two multiplication and one rotation
+//! customisation
+
 use halo2::plonk::Error;
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::{Cell, Region},
-};
+use halo2::{arithmetic::FieldExt, circuit::Cell};
 use halo2wrong::utils::decompose;
 use std::marker::PhantomData;
 
@@ -16,17 +17,27 @@ pub use instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use main_gate::*;
 pub use range::*;
 
+/// Helper trait for assigned values across halo2stack.
 pub trait Assigned<F: FieldExt> {
+    // Returns witness value
     fn value(&self) -> Option<F>;
+    // Applies copy constraion to the given `Assigned` witness
     fn constrain_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, other: &Self) -> Result<(), Error> {
         ctx.region.constrain_equal(self.cell(), other.cell())
     }
+    // Returns cell of the assigned value
     fn cell(&self) -> Cell;
+    // Decomposes witness values as
+    // `W = a_0 + a_1 * R + a_1 * R^2 + ...`
+    // where
+    // `R = 2 ** bit_len`
     fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
         self.value().map(|e| decompose(e, number_of_limbs, bit_len))
     }
 }
 
+/// `AssignedCondition` is expected to be a witness their assigned value is `1`
+/// or `0`.
 #[derive(Debug, Copy, Clone)]
 pub struct AssignedCondition<F: FieldExt> {
     bool_value: Option<bool>,
@@ -71,9 +82,14 @@ impl<F: FieldExt> Assigned<F> for &AssignedCondition<F> {
     }
 }
 
+/// `AssignedValue` is a witness value we enforce their validity in gates and
+/// apply equality constraint between other assigned values.
 #[derive(Debug, Copy, Clone)]
 pub struct AssignedValue<F: FieldExt> {
+    // Witness value. shoulde be `None` at synthesis time must be `Some ` at prover time.
     value: Option<F>,
+    // `cell` is where this witness accomadates. `cell` will be needed to constrain equality
+    // between assigned values.
     cell: Cell,
 }
 
@@ -119,6 +135,7 @@ impl<F: FieldExt> AssignedValue<F> {
     }
 }
 
+/// `UnassignedValue` is value is about to be assigned.
 #[derive(Debug, Clone)]
 pub struct UnassignedValue<F: FieldExt>(Option<F>);
 

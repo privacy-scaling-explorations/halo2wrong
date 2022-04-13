@@ -1,3 +1,7 @@
+//! Basic arithmetic, logic and branching instructions for a standard like PLONK
+//! gate. While many of implmentations takes place here they can be overriden
+//! for optimisation purposes.
+
 use halo2wrong::{
     utils::{big_to_fe, decompose, fe_to_big, power_of_two},
     RegionCtx,
@@ -5,12 +9,22 @@ use halo2wrong::{
 
 use crate::halo2::{
     arithmetic::FieldExt,
-    circuit::{Cell, Chip, Layouter, Region},
+    circuit::{Chip, Layouter},
     plonk::Error,
 };
 
 use crate::{Assigned, AssignedCondition, AssignedValue, UnassignedValue};
 
+/// `Term`s are input arguments for the current rows that is about to be
+/// constrained in the main gate equation. Three types or terms can be expected.
+/// `Assigned` is a witness that is already assigned and is about to be copy
+/// constrained at current level. `Unassigned` a new witness value which will be
+/// turned into a `AssignedValue`. `Zero` should be used for unused cells at the
+/// current row. Non zero terms has a field element couples which are
+/// multiplication factors of the term and will be assigned as fixed value in
+/// synthesis time. For example in and addition circuit:
+/// `... + assigned_or_unassigned_witness_0 * fixed_0 +
+/// assigned_or_unassigned_witness_1 * fixed_1 + ... `
 #[derive(Clone)]
 pub enum Term<F: FieldExt> {
     Assigned(AssignedValue<F>, F),
@@ -19,13 +33,17 @@ pub enum Term<F: FieldExt> {
 }
 
 impl<F: FieldExt> Term<F> {
+    /// Given constant `WIDTH` returns all zero terms
     pub(crate) fn empty<const WIDTH: usize>() -> [Self; WIDTH] {
         vec![Self::Zero; WIDTH].try_into().unwrap()
     }
 }
 
+/// This macro converts an array of terms sized less than `WIDTH` to the `WIDTH`
+/// sized array
 macro_rules! terms {
     ($arr:expr) => {{
+        assert!($arr.len() < WIDTH + 1);
         let mut terms = Term::empty();
         for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
             *term = e
@@ -34,8 +52,14 @@ macro_rules! terms {
     }};
 }
 
+/// This macro converts an array of terms sized less than `WIDTH - 1` to the
+/// `WIDTH` sized array as well as it assigns $acc value as the last term of the
+/// result
 macro_rules! terms_with_acc {
+    // TODO/FIX: for other implementations of a standart like gate aggregation cell might be
+    // different than last one
     ($arr:expr, $acc:expr) => {{
+        assert!($arr.len() < WIDTH);
         let mut terms = Term::empty();
         for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
             *term = e.clone()
@@ -65,30 +89,39 @@ impl<'a, F: FieldExt> std::fmt::Debug for Term<F> {
 }
 
 impl<'a, F: FieldExt> Term<F> {
+    /// Wrap an assigned value that is about to be multiplied by other term
     pub fn assigned_to_mul(e: &AssignedValue<F>) -> Self {
         Term::Assigned(*e, F::zero())
     }
 
+    /// Wrap an assigned value that is about to be added to the other terms
     pub fn assigned_to_add(e: &AssignedValue<F>) -> Self {
         Term::Assigned(*e, F::one())
     }
 
+    /// Wrap an assigned value that is about to be subtracted from the other
+    /// terms
     pub fn assigned_to_sub(e: &AssignedValue<F>) -> Self {
         Term::Assigned(*e, -F::one())
     }
 
+    /// Wrap an unassigned value that is about to be multiplied by other term
     pub fn unassigned_to_mul(e: Option<F>) -> Self {
         Term::Unassigned(e, F::zero())
     }
 
+    /// Wrap an unassigned value that is about to be added to the other terms
     pub fn unassigned_to_add(e: Option<F>) -> Self {
         Term::Unassigned(e, F::one())
     }
 
+    /// Wrap an unassigned value that is about to be subtracted from the other
+    /// terms
     pub fn unassigned_to_sub(e: Option<F>) -> Self {
         Term::Unassigned(e, -F::one())
     }
 
+    /// Retuns the witness part of this term
     pub fn coeff(&self) -> Option<F> {
         match self {
             Self::Assigned(assigned, _) => assigned.value(),
@@ -97,6 +130,7 @@ impl<'a, F: FieldExt> Term<F> {
         }
     }
 
+    /// Retuns the fixed part of this term
     pub fn base(&self) -> F {
         match self {
             Self::Assigned(_, base) => *base,
@@ -105,13 +139,9 @@ impl<'a, F: FieldExt> Term<F> {
         }
     }
 
-    pub fn constrain_equal(&self, region: &mut Region<'_, F>, new_cell: Cell) -> Result<(), Error> {
-        match self {
-            Self::Assigned(assigned, _) => assigned.constrain_equal(region, new_cell),
-            _ => Ok(()),
-        }
-    }
-
+    /// Composes terms as
+    /// `w_0 * s_0 + w_1 * s_1 + ...`
+    /// And retuns the calculated witness
     pub fn compose(terms: &[Self], constant: F) -> Option<F> {
         terms
             .iter()
@@ -119,14 +149,21 @@ impl<'a, F: FieldExt> Term<F> {
                 (Some(acc), Some(coeff)) => Some(acc + coeff * term.base()),
                 _ => None,
             })
+            .into()
     }
 }
 
+/// `ColumnTags` is an helper to find special columns that are frequently used
+/// across gates
 pub trait ColumnTags<Column> {
     fn accumulator() -> Column;
     fn first() -> Column;
 }
 
+/// Common combination options defines the behaviour of the `main_gate` at the
+/// current row. Options here can be applied most of the standart like circuits
+/// when it has one multiplication gate one addition gate and one further
+/// rotation gate.
 #[derive(Clone, Debug)]
 pub enum CombinationOptionCommon<F: FieldExt> {
     OneLinerMul,
@@ -140,6 +177,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     type CombinationOption: From<CombinationOptionCommon<F>>;
     type MainGateColumn: ColumnTags<Self::MainGateColumn>;
 
+    /// Expect an assigned value to be equal to a public input
     fn expose_public(
         &self,
         layouter: impl Layouter<F>,
@@ -147,6 +185,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         row: usize,
     ) -> Result<(), Error>;
 
+    /// Constrain a witness to be equal to a fixed value. This should allow us
+    /// to move a fixed value around
     fn assign_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -160,6 +200,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[0])
     }
 
+    /// Assigns a value at the current row
     fn assign_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -168,6 +209,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::first())
     }
 
+    /// Assigns a value to the column that is allocated for accumulation purpose
     fn assign_to_acc(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -176,18 +218,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::accumulator())
     }
 
+    /// Assigns given value and enforces that the value is `0` or `1`
+    /// `val * val - val  = 0`
     fn assign_bit(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         bit: &UnassignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
-        // val * val - val  = 0
-
-        // Witness layout:
-        // | A   | B   | C   | D |
-        // | --- | --- | --- | - |
-        // | val | val | val | - |
-
         let assigned = self.combine(
             ctx,
             terms!([
@@ -205,6 +242,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(assigned[2].into())
     }
 
+    /// Enforces given witness value is `0` or `1`
+    /// `val * val - val  = 0`
     fn assert_bit(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -227,19 +266,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    /// Enforces one of given two values is `1`
+    /// `(a-1) * (b-1)  = 0`
     fn one_or_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<(), Error> {
-        // (a-1) * (b-1)  = 0
-
-        // Witness layout:
-        // | A   | B   | C   | D |
-        // | --- | --- | --- | - |
-        // | val | val | -   | - |
-
         let one = F::one();
         self.combine(
             ctx,
@@ -251,20 +285,22 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    /// Assigns new value equal to `1` if `c1 | c0 = 1`,
+    /// equal to `0` if `c1 | c0 = 0`,
+    // `new_assigned_value + c1 * c2 - c1 - c2 = 0`.
     fn or(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         c1: &AssignedCondition<F>,
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
+        // Find the new witness
         let c = match (c1.value(), c2.value()) {
             (Some(c1), Some(c2)) => Some(c1 + c2 - c1 * c2),
             _ => None,
         };
 
         let zero = F::zero();
-
-        // c + c1 * c2 - c1 - c2 = 0
 
         Ok(self.combine(
             ctx,
@@ -279,12 +315,15 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .into())
     }
 
+    /// Assigns new value equal to `1` if `c1 && c0 = 1`,
+    /// equal to `0` if `c1 && c0 = 0`
     fn and(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         c1: &AssignedCondition<F>,
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
+        // Find the new witness
         let c = match (c1.value(), c2.value()) {
             (Some(c1), Some(c2)) => Some(c1 * c2),
             _ => None,
@@ -303,11 +342,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .into())
     }
 
+    // Assigns new value that is logic inverse of the given assigned value.
     fn not(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         c: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
+        // Find the new witness
         let not_c = c.value().map(|c| F::one() - c);
 
         Ok(self.combine(
@@ -322,17 +363,21 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .into())
     }
 
+    /// Assigns new witness that should be equal to `a/b`. This function is
+    /// unsafe because if witenss `b` is zero it cannot find a valid witness.
     fn div_unsafe(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
+        // Find the new witness
         let c = match (a.value(), b.value()) {
             (Some(a), Some(b)) => {
                 let b_maybe_inverted: Option<F> = b.invert().into();
                 match b_maybe_inverted {
                     Some(b_inverted) => Some(a * b_inverted),
+
                     // Non inversion case will never be verified
                     _ => Some(F::zero()),
                 }
@@ -352,6 +397,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[1])
     }
 
+    /// Assigns new witness that should be equal to `a/b`. if `b` is non
+    /// invertible expect `cond` flag is assigned to `0` otherwise `1`.
     fn div(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -363,6 +410,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok((res, cond))
     }
 
+    /// Assigns new witness that should be equal to `1/a`. This function is
+    /// unsafe because if the witness eqauls to zero a valid witness cannot be
+    /// found.
     fn invert_unsafe(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -371,7 +421,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         let inverse = match a.value() {
             Some(a) => match a.invert().into() {
                 Some(a) => Some(a),
-                // Non inversion case will never be verified
+
+                // Non inversion case will never be verified.
                 _ => Some(F::zero()),
             },
             _ => None,
@@ -385,6 +436,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[1])
     }
 
+    /// Assigns new witness that should be equal to `1/a`. if `a` is non
+    /// invertible expect `cond` flag is assigned to `0` otherwise `1`.
     fn invert(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -393,7 +446,6 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         let (one, zero) = (F::one(), F::zero());
 
         // Returns 'r' as a condition bit that defines if inversion successful or not
-
         // First enfoce 'r' to be a bit
         // (a * a') - 1 + r = 0
         // r * a' - r = 0
@@ -401,10 +453,10 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // if r = 0 then a' = 1/a
 
         // Witness layout:
-        // | A | B  | C | D |
-        // | - | -- | - | - |
-        // | a | a' | r | - |
-        // | r | a' | r | - |
+        // | A | B  | C |
+        // | - | -- | - |
+        // | a | a' | r |
+        // | r | a' | r |
 
         let (r, a_inv) = match a.value() {
             Some(a) => match a.invert().into() {
@@ -417,9 +469,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         let r = &self.assign_bit(ctx, &r.into())?;
 
         // (a * a') - 1 + r = 0
-        // | A | B  | C | D |
-        // | - | -- | - | - |
-        // | a | a' | r | - |
+        // | A | B  | C |
+        // | - | -- | - |
+        // | a | a' | r |
 
         let a_inv = self.combine(
             ctx,
@@ -433,9 +485,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[1];
 
         // r * a' - r = 0
-        // | A | B  | C | D |
-        // | - | -- | - | - |
-        // | r | a' | r | - |
+        // | A | B  | C |
+        // | - | -- | - |
+        // | r | a' | r |
 
         self.combine(
             ctx,
@@ -451,6 +503,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok((a_inv, *r))
     }
 
+    /// Enforces an assinged value to be equal to a fixed value.
     fn assert_equal_to_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -467,6 +520,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    /// Enforces two witnesses are equal.
     fn assert_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -483,6 +537,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    // Enforces two witness is not equal
     fn assert_not_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -494,6 +549,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assert_not_zero(ctx, &c)
     }
 
+    // Assigns new value that flags if two value is equal
     fn is_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -507,11 +563,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // Where r and x is witnesses and r is enforced to be a bit
 
         // Witness layout:
-        // | A   | B | C | D |
-        // | --- | - | - | - |
-        // | dif | a | b | - |
-        // | r   | x | u | - |
-        // | dif | u | r | - |
+        // | A   | B | C |
+        // | --- | - | - |
+        // | dif | a | b |
+        // | r   | x | u |
+        // | dif | u | r |
 
         let (x, r) = match (a.value(), b.value()) {
             (Some(a), Some(b)) => {
@@ -528,9 +584,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         let dif = self.sub(ctx, a, b)?;
 
         // 0 = rx - r - x + u
-        // | A   | B | C | D |
-        // | --- | - | - | - |
-        // | r   | x | u | - |
+        // | A   | B | C |
+        // | --- | - | - |
+        // | r   | x | u |
 
         let u = match (r.value(), x) {
             (Some(r), Some(x)) => Some(r - r * x + x),
@@ -549,9 +605,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[2];
 
         // 0 = u * dif + r - 1
-        // | A   | B | C | D |
-        // | --- | - | - | - |
-        // | dif | u | r | - |
+        // | A   | B | C |
+        // | --- | - | - |
+        // | dif | u | r |
 
         self.combine(
             ctx,
@@ -567,6 +623,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(*r)
     }
 
+    /// Enforces that assigned value is zero
     fn assert_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -575,6 +632,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assert_equal_to_constant(ctx, a, F::zero())
     }
 
+    /// Enforces that assigned value is not zero.
     fn assert_not_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -602,6 +660,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    /// Assigns new bit flag `1` if given value eqauls to `0` otherwise assigns
+    /// `0`
     fn is_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -611,6 +671,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(is_zero)
     }
 
+    /// Assigns new bit flag `1` if given value eqauls to `1` otherwise assigns
+    /// `0`
     fn assert_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -619,6 +681,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assert_equal_to_constant(ctx, a, F::one())
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a + constant`
     fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -634,6 +698,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[1])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a - b`
     fn sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -643,6 +709,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.sub_with_constant(ctx, a, b, F::zero())
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a - b + constant`
     fn sub_with_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -667,6 +735,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[2])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = -a + constant`
     fn neg_with_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -683,6 +753,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[1])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a + a`
     fn mul2(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -701,6 +773,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[2])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a + a + a`
     fn mul3(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -720,6 +794,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[3])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a * b`
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -743,6 +819,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[2])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a * b + to_add`
     fn mul_add(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -768,6 +846,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[3])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a * b + constant`
     fn mul_add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -792,6 +872,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[2])
     }
 
+    /// Assigns a new bit witness `r` to `0` if both given witneeses are not `0`
+    /// otherwise `1`
     fn nand(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -810,6 +892,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    // Assigns new witness to the specified column
     fn assign_to_column(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -817,6 +900,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         column: Self::MainGateColumn,
     ) -> Result<AssignedValue<F>, Error>;
 
+    /// Assigns a new witness `r` as:
+    /// `r = a * b`
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -826,6 +911,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.add_with_constant(ctx, a, b, F::zero())
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a * b + constant`
     fn add_with_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -850,6 +937,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?[2])
     }
 
+    /// Assigns a new witness `r` as:
+    /// `r = a - b_0 - b_1 + constant`
     fn sub_sub_with_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -859,6 +948,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         constant: F,
     ) -> Result<AssignedValue<F>, Error>;
 
+    /// Assings new witness that equals to `a` if `cond` is true or assigned to
+    /// `b` if `cond is false
     fn select(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -867,6 +958,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         cond: &AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
 
+    /// Assings new witness that equals to `to_be_selected` if `cond` is true or
+    /// assigned to `to_be_assigned` which is a constat if `cond is false
     fn select_or_assign(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -875,6 +968,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         cond: &AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
 
+    /// Assignes new value equals to `1` if first bit of `a` is `1` or assigns
+    /// `0` if first bit of `a` is `0`
     fn sign(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -905,6 +1000,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(sign)
     }
 
+    /// Assigns array values of bit values which is equal to decomposition of
+    /// given assigned value
     fn to_bits(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -934,6 +1031,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(bits)
     }
 
+    // Assigns a new witness composed of given array of terms
+    // `constant + term_0 + term_1 + ... `
+    // where `term_i = a_i * q_i`
     fn compose(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -961,13 +1061,16 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 (Some(composed), Some(remaining)) => Some(remaining - composed),
                 _ => None,
             };
+
+            // Final round
             let combination_option = if i == number_of_chunks - 1 {
-                // Final round sanity check
+                // Sanity check
                 if let Some(value) = remaining {
                     assert_eq!(value, F::zero())
                 };
 
                 CombinationOptionCommon::OneLinerAdd
+            // Intermediate round should accumulate the sum
             } else {
                 CombinationOptionCommon::CombineToNextAdd(F::one())
             };
@@ -987,6 +1090,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
     fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error>;
 
+    // Given specific option combines `WIDTH` sized terms and assigns new value.
     fn combine(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,

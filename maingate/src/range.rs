@@ -1,3 +1,20 @@
+//! `RangeChip` decomposes given `AssignedValue` upto 5 limbs and checks if
+//! limbs are in the range and ensures composition of limbs are equal to the
+//! input. `RangeChip` only applies bit range check rather than more general
+//! purpose check.
+//! `B` column is special to check overflows and smaller ranges and `E` column
+//! is allocated for the input. For example if our application requires to check
+//! if a value is in 50 bit range we should configure `base_bit_len` to 16 bits
+//! and for the overflow `B` column also should be able to check 2 bit ranges.
+//! And layout will look like:
+//!
+//! | A   | B   | C   | D   | E   |
+//! | --- | --- | --- | --- | --- |
+//! | a_0 | a_3 | a_1 | a_2 | in  |
+//!
+//! Where `a_3` is the overflow check and other columns are ensuring that limbs
+//! of decomposed value is in 16 bit range.
+
 use super::main_gate::{MainGate, MainGateColumn, MainGateConfig};
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
@@ -154,7 +171,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             // | A   | B   | C   | D   | E   |
             // | --- | --- | --- | --- | --- |
             // | a_0 | a_3 | a_1 | a_2 | -   |
-            // | -   | a_4 | -   | in  | t  |
+            // | -   | a_4 | -   | in  | t   |
 
             // Least significant Term in first row
             let term_0 = Term::Unassigned(limbs.as_ref().map(|limbs| limbs[0]), bases[0]);

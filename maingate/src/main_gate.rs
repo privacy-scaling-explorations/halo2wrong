@@ -1,3 +1,13 @@
+//! `main_gate` is a five width stardart like PLONK gate that constrains the
+//! equation below
+//!
+//! q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+//! q_mul_ab * a * b +
+//! q_mul_cd * c * d +
+//! q_e_next * e +
+//! public_input +
+//! q_constant = 0
+
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::{Chip, Layouter};
 use crate::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance};
@@ -72,8 +82,9 @@ impl<F: FieldExt> Chip<F> for MainGate<F> {
 #[derive(Clone, Debug)]
 pub enum CombinationOption<F: FieldExt> {
     Common(CombinationOptionCommon<F>),
-    OneLinerDoubleMul,
-    OneLinerDoubleNegMul,
+    // Activates both multiplication gate
+    OneLinerDoubleMul(F),
+    // Activates both multiplication gate and combines the result to the next row
     CombineToNextDoubleMul(F),
 }
 
@@ -176,7 +187,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::unassigned_to_sub(res),
             ],
             F::zero(),
-            CombinationOption::OneLinerDoubleNegMul,
+            CombinationOption::OneLinerDoubleMul(-F::one()),
         )?;
         ctx.constrain_equal(assigned[0].cell(), assigned[2].cell())?;
         Ok(assigned[4])
@@ -235,18 +246,21 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         constant: F,
         option: CombinationOption<F>,
     ) -> Result<[AssignedValue<F>; WIDTH], Error> {
+        // Break witness and fixed value
         let (c_0, u_0) = (terms[0].coeff(), terms[0].base());
         let (c_1, u_1) = (terms[1].coeff(), terms[1].base());
         let (c_2, u_2) = (terms[2].coeff(), terms[2].base());
         let (c_3, u_3) = (terms[3].coeff(), terms[3].base());
         let (c_4, u_4) = (terms[4].coeff(), terms[4].base());
 
+        // Assign witnesses
         let cell_0 = ctx.assign_advice("coeff_0", self.config.a, c_0)?.cell();
         let cell_1 = ctx.assign_advice("coeff_1", self.config.b, c_1)?.cell();
         let cell_2 = ctx.assign_advice("coeff_2", self.config.c, c_2)?.cell();
         let cell_3 = ctx.assign_advice("coeff_3", self.config.d, c_3)?.cell();
         let cell_4 = ctx.assign_advice("coeff_4", self.config.e, c_4)?.cell();
 
+        // All combination options allows addition gates to be configured
         ctx.assign_fixed("base_0", self.config.sa, u_0)?;
         ctx.assign_fixed("base_1", self.config.sb, u_1)?;
         ctx.assign_fixed("base_2", self.config.sc, u_2)?;
@@ -255,29 +269,49 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
         ctx.assign_fixed("s_constant", self.config.s_constant, constant)?;
 
+        // Given specific option configure multiplication and rotation gates
         match option {
             CombinationOption::Common(option) => match option {
+                // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+                // a * b +
+                // q_e_next * e +
+                // q_constant = 0
                 CombinationOptionCommon::CombineToNextMul(next) => {
                     ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
                     ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
                     ctx.assign_fixed("se_next", self.config.se_next, next)?;
                 }
 
+                // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+                // q_mul_ab * a * b +
+                // q_e_next * e +
+                // q_constant = 0
                 CombinationOptionCommon::CombineToNextScaleMul(next, n) => {
                     ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, n)?;
                     ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
                     ctx.assign_fixed("se_next", self.config.se_next, next)?;
                 }
+
+                // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+                // q_e_next * e +
+                // q_constant = 0
                 CombinationOptionCommon::CombineToNextAdd(next) => {
                     ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::zero())?;
                     ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
                     ctx.assign_fixed("se_next", self.config.se_next, next)?;
                 }
+
+                // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+                // q_mul_ab * a * b +
+                // q_constant = 0
                 CombinationOptionCommon::OneLinerMul => {
                     ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
                     ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
                     ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
                 }
+
+                // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+                // q_constant = 0
                 CombinationOptionCommon::OneLinerAdd => {
                     ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
                     ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::zero())?;
@@ -285,19 +319,24 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 }
             },
 
+            // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+            // q_mul_ab * a * b +
+            // q_mul_cd * c * d +
+            // q_e_next * e +
+            // q_constant = 0
             CombinationOption::CombineToNextDoubleMul(next) => {
                 ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
                 ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::one())?;
                 ctx.assign_fixed("se_next", self.config.se_next, next)?;
             }
-            CombinationOption::OneLinerDoubleMul => {
+
+            // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
+            // q_mul_ab * a * b +
+            // q_mul_cd * c * d +
+            // q_constant = 0
+            CombinationOption::OneLinerDoubleMul(e) => {
                 ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
-                ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::one())?;
-                ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
-            }
-            CombinationOption::OneLinerDoubleNegMul => {
-                ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
-                ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, -F::one())?;
+                ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, e)?;
                 ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
             }
         };
@@ -328,8 +367,11 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             _ => Ok(()),
         }?;
 
+        // Proceed to next row
         ctx.next();
 
+        // Return new assigned values at this level os that they can be used for further
+        // constaints
         let a_0 = AssignedValue::new(cell_0, c_0);
         let a_1 = AssignedValue::new(cell_1, c_1);
         let a_2 = AssignedValue::new(cell_2, c_2);
@@ -339,6 +381,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         Ok([a_0, a_1, a_2, a_3, a_4])
     }
 
+    /// Skip this row without any operation
     fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
         ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::zero())?;
         ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
