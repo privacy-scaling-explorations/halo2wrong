@@ -98,7 +98,8 @@ pub trait IntegerInstructions<
         integer: W,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
-    /// Assigns a [`Range`] element to a cell in the circuit.
+    /// Assigns an [`Integer`] to a cell in the circuit with range check for the
+    /// appropriate [`Range`].
     fn range_assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -143,7 +144,7 @@ pub trait IntegerInstructions<
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
-    /// Substracts 2 [`AssignedInteger`].
+    /// Substracts an [`AssignedInteger`].
     fn sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -151,6 +152,7 @@ pub trait IntegerInstructions<
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Substracts 2 [`AssignedInteger`].
     fn sub_sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -159,12 +161,14 @@ pub trait IntegerInstructions<
         b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Multiplies an [`AssignedInteger`] by -1.
     fn neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Multiplies 2 [`AssignedInteger`].
     fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -172,6 +176,7 @@ pub trait IntegerInstructions<
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Multiplies  [`AssignedInteger`] by constant.
     fn mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

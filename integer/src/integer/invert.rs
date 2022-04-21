@@ -12,6 +12,10 @@ use maingate::{
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Inverts an [`AssignedInteger`].
+    ///
+    /// Returns the inverse of `a` and an [`AssignedCondition`] indicating if
+    /// the inversion was successful.
     pub(super) fn _invert(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -76,6 +80,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok((inv_or_one, cond.into()))
     }
 
+    /// Inverts an [`AssignedInteger`]. This integer must be non-zero.
     pub(crate) fn _invert_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

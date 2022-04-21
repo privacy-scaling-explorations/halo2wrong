@@ -12,6 +12,10 @@ use maingate::{
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Multiplies 2 [`AssignedInteger`]
+    ///
+    /// Multiplication algorithm as described in <https://hackmd.io/@arielg/B13JoihA8>.
+    /// Cost: 15 rows + 4 range checks.
     pub(super) fn _mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -217,6 +221,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(result.clone())
     }
 
+    /// Multiplies an [`AssignedInteger`] by a constant [`Integer`].
+    ///
+    /// Multiplication algorithm as described in <https://hackmd.io/@arielg/B13JoihA8>.
+    /// Cost: 13 rows + 4 range cheks.
     pub(crate) fn _mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -624,13 +632,11 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
-        // u_1 = t_2 + (t_3 * R) - r_2 - (r_3 * R)
-        // v_1 * 2R = u_1 + v_0
+        // t_2 + (t_3 * R) + v_0 - (v_1 * 2R) = 0
 
         // | A   | B   | C   | D     |
         // | --- | --- | --- | ----- |
-        // | t_2 | t_3 | r_2 | r_3   |
-        // | -   | v_1 | v_0 | u_1   |
+        // | t_2 | t_3 | v_0 | v_1   |
 
         main_gate.combine(
             ctx,

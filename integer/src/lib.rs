@@ -34,7 +34,8 @@ pub struct AssignedLimb<F: FieldExt> {
     value: Option<Limb<F>>,
     /// Cell assigned in the circuit
     cell: Cell,
-    /// TODO
+    /// Maximum value supported by the limb
+    // This value depends on the position of the limb and the function of the represented Integer
     max_val: big_uint,
 }
 
