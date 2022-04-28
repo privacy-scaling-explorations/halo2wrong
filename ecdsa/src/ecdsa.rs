@@ -210,10 +210,11 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
     pub fn batch_verify_star(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
-        pk_sig_msg: Vec<(
+        pk_sig_msg_c: Vec<(
             AssignedPublicKey<E::Base, N>,               // signer pk
             AssignedEcdsaStarSig<E::Base, E::Scalar, N>, // signature
             AssignedInteger<E::Scalar, N>,               // msg_hash
+            AssignedInteger<E::Scalar, N>,               // challenge power
         )>,
     ) -> Result<(), Error> {
         let window_size = 4;
@@ -224,59 +225,65 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         // 1. check 0 < r, s < n
         // since `assert_not_zero` already includes a in-field check, we can just call
         // `assert_not_zero`
-        scalar_chip.assert_not_zero(ctx, &pk_sig_msg[0].1.r)?;
-        scalar_chip.assert_not_zero(ctx, &pk_sig_msg[0].1.s)?;
+        scalar_chip.assert_not_zero(ctx, &pk_sig_msg_c[0].1.r)?;
+        scalar_chip.assert_not_zero(ctx, &pk_sig_msg_c[0].1.s)?;
         // 2. w = s^(-1) (mod n)
-        let (s_inv, _) = scalar_chip.invert(ctx, &pk_sig_msg[0].1.s)?;
+        let (w, _) = scalar_chip.div(ctx, &pk_sig_msg_c[0].3, &pk_sig_msg_c[0].1.s)?;
 
         // 3. u1 = m' * w (mod n)
-        let mut u1_acc = scalar_chip.mul(ctx, &pk_sig_msg[0].2, &s_inv)?;
+        let mut u1_acc = scalar_chip.mul(ctx, &pk_sig_msg_c[0].2, &w)?;
 
         // 4. u2 = r * w (mod n)
-        let u2 = scalar_chip.mul(ctx, &pk_sig_msg[0].1.r, &s_inv)?;
-        let mut batch_mul_input = vec![(pk_sig_msg[0].0.point.clone(), u2)];
+        let u2 = scalar_chip.mul(ctx, &pk_sig_msg_c[0].1.r, &w)?;
 
-        // 5. Initialize r_acc
-        let mut r_acc = pk_sig_msg[0].1.point.clone();
+        // Prepare batch multiplications:
+        // 1. sum{ u2 * pk } + sum_u1 * G
+        // 2. sum{ challenge * R}
+        let mut batch_mul_input_1 = vec![(pk_sig_msg_c[0].0.point.clone(), u2)];
+        let mut batch_mul_input_2 =
+            vec![(pk_sig_msg_c[0].1.point.clone(), pk_sig_msg_c[0].3.clone())];
 
-        for (pk, sig, msg) in pk_sig_msg.into_iter().skip(1) {
+        for (pk, sig, msg, c) in pk_sig_msg_c.into_iter().skip(1) {
             // 1. check 0 < r, s < n
             // since `assert_not_zero` already includes a in-field check, we can just call
             // `assert_not_zero`
             scalar_chip.assert_not_zero(ctx, &sig.r)?;
             scalar_chip.assert_not_zero(ctx, &sig.s)?;
-            // 2. w = s^(-1) (mod n)
-            let (s_inv, _) = scalar_chip.invert(ctx, &sig.s)?;
+            // 2. w = c * s^(-1) (mod n)
+            let (w, _) = scalar_chip.div(ctx, &c, &sig.s)?;
 
             // 3. u1 = m' * w (mod n)
-            let u1 = scalar_chip.mul(ctx, &msg, &s_inv)?;
+            let u1 = scalar_chip.mul(ctx, &msg, &w)?;
             u1_acc = scalar_chip.add(ctx, &u1_acc, &u1)?;
 
             // 4. u2 = r * w (mod n)
-            let u2 = scalar_chip.mul(ctx, &sig.r, &s_inv)?;
-            batch_mul_input.push((pk.point, u2));
+            let u2 = scalar_chip.mul(ctx, &sig.r, &w)?;
+            batch_mul_input_1.push((pk.point, u2));
 
-            //5. r_acc += R
-            r_acc = ecc_chip.add(ctx, &r_acc, &sig.point)?;
+            batch_mul_input_2.push((sig.point, c));
         }
 
         u1_acc = scalar_chip.reduce(ctx, &u1_acc)?;
 
+        // Add generator term to batch multiplication 1
         let e_gen = ecc_chip.assign_point(ctx, Some(E::generator()))?;
-        batch_mul_input.push((e_gen, u1_acc));
+        batch_mul_input_1.push((e_gen, u1_acc));
 
-        // 6. sum (u2_i * Q_i) + u1_acc * G
-        let sum_point = ecc_chip.mul_batch_1d_horizontal(ctx, batch_mul_input, window_size)?;
+        // 5. sum (u2_i * Q_i) + u1_acc * G
+        let sum_point_1 = ecc_chip.mul_batch_1d_horizontal(ctx, batch_mul_input_1, window_size)?;
 
-        let sum_x = sum_point.get_x();
+        // 6. sum (challenge * R)
+        let sum_point_2 = ecc_chip.mul_batch_1d_horizontal(ctx, batch_mul_input_2, window_size)?;
+
+        let sum_x = sum_point_1.get_x();
         let sum_x_reduced_in_q = base_chip.reduce(ctx, &sum_x)?;
         let sum_x_reduced_in_r = scalar_chip.reduce_external(ctx, &sum_x_reduced_in_q)?;
-        let r_x = r_acc.get_x();
+        let r_x = sum_point_2.get_x();
         let r_x_reduced_in_q = base_chip.reduce(ctx, &r_x)?;
         let r_x_reduced_in_r = scalar_chip.reduce_external(ctx, &r_x_reduced_in_q)?;
         scalar_chip.assert_equal(ctx, &r_x_reduced_in_r, &sum_x_reduced_in_r)?;
-        let main_gate = scalar_chip.main_gate();
-        main_gate.break_here(ctx)?;
+        // let main_gate = scalar_chip.main_gate();
+        // main_gate.break_here(ctx)?;
 
         Ok(())
     }
@@ -582,6 +589,7 @@ mod tests {
         sig_s: Vec<E::ScalarExt>,
         sig_point: Vec<E>,
         x_bytes_n: Vec<E::ScalarExt>,
+        challenge: Vec<E::ScalarExt>,
     }
 
     impl<E: CurveAffine> BatchEcdsaStarVerifyInput<E> {
@@ -592,6 +600,7 @@ mod tests {
                 sig_s: vec![],
                 sig_point: vec![],
                 x_bytes_n: vec![],
+                challenge: vec![],
             }
         }
     }
@@ -626,7 +635,7 @@ mod tests {
             let mut rng = thread_rng();
 
             let mut bevi = BatchEcdsaStarVerifyInput::new();
-            // generate a batch of valid signatures
+            // generate a batch of valid signatures and challenge powers
             let generator = <E as PrimeCurveAffine>::generator();
             for _ in 0..self.batch_size {
                 let sk = <E as CurveAffine>::ScalarExt::random(&mut rng);
@@ -662,6 +671,15 @@ mod tests {
                 bevi.sig_point.push(sig_point);
             }
 
+            // Add challenge powers
+            let challenge = <E as CurveAffine>::ScalarExt::random(&mut rng);
+            let mut challenge_power = <E as CurveAffine>::ScalarExt::one();
+            for _ in 0..self.batch_size - 1 {
+                bevi.challenge.push(challenge_power);
+                challenge_power = challenge_power * challenge;
+            }
+            bevi.challenge.push(challenge_power);
+
             layouter.assign_region(
                 || "assign aux values",
                 |mut region| {
@@ -670,6 +688,7 @@ mod tests {
 
                     ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, self.batch_size + 1)?;
+                    ecc_chip.assign_aux(ctx, self.window_size, self.batch_size)?;
                     Ok(())
                 },
             )?;
@@ -679,10 +698,12 @@ mod tests {
                 .assign_region(
                     || "region 0",
                     |mut region| {
+                        // bevi: batch ecdsa verifier input
                         let mut assigned_bevi: Vec<(
-                            AssignedPublicKey<E::Base, N>,
-                            AssignedEcdsaStarSig<E::Base, E::Scalar, N>,
-                            AssignedInteger<E::Scalar, N>,
+                            AssignedPublicKey<E::Base, N>,               // Public Key
+                            AssignedEcdsaStarSig<E::Base, E::Scalar, N>, // ECDSA* signature
+                            AssignedInteger<E::Scalar, N>,               // Message hash
+                            AssignedInteger<E::Scalar, N>,               // Challenge power
                         )> = Vec::with_capacity(self.batch_size);
                         let offset = &mut 0;
                         let ctx = &mut RegionCtx::new(&mut region, offset);
@@ -691,6 +712,8 @@ mod tests {
                             let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.x_bytes_n[i]));
                             let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.sig_s[i]));
                             let msg_hash = ecc_chip.new_unassigned_scalar(Some(bevi.m_hash[i]));
+                            let challenge_p =
+                                ecc_chip.new_unassigned_scalar(Some(bevi.challenge[i]));
                             let sig_point_assigned =
                                 ecc_chip.assign_point(ctx, Some(bevi.sig_point[i].into()))?;
 
@@ -708,7 +731,8 @@ mod tests {
                                 point: pk_in_circuit,
                             };
                             let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
-                            assigned_bevi.push((pk_assigned, sig, msg_hash));
+                            let challenge_p = scalar_chip.assign_integer(ctx, challenge_p)?;
+                            assigned_bevi.push((pk_assigned, sig, msg_hash, challenge_p));
                         }
 
                         ecdsa_chip.batch_verify_star(ctx, assigned_bevi).unwrap();
