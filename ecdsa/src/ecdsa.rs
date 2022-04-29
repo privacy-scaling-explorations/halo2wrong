@@ -158,10 +158,6 @@ mod tests {
     use rand::thread_rng;
     use std::marker::PhantomData;
 
-    #[cfg(not(feature = "kzg"))]
-    use group::ff::PrimeField;
-
-    #[cfg(feature = "kzg")]
     use crate::halo2::arithmetic::BaseExt;
 
     const BIT_LEN_LIMB: usize = 68;
@@ -249,15 +245,8 @@ mod tests {
             let sig_point = generator * randomness;
             let x = sig_point.to_affine().coordinates().unwrap().x().clone();
 
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "kzg")] {
-                    let x_repr = &mut Vec::with_capacity(32);
-                    x.write(x_repr)?;
-                } else {
-                    let mut x_repr = [0u8; 32];
-                    x_repr.copy_from_slice(x.to_repr().as_ref());
-                }
-            }
+            let x_repr = &mut Vec::with_capacity(32);
+            x.write(x_repr)?;
 
             let mut x_bytes = [0u8; 64];
             x_bytes[..32].copy_from_slice(&x_repr[..]);

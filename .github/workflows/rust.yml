@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-test-IPA:
 
     runs-on: ubuntu-latest
 
@@ -20,3 +20,14 @@ jobs:
       run: cargo build --verbose --release
     - name: Run tests
       run: cargo test --verbose --release
+
+  build-test-KZG:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build --no-default-features --features kzg --verbose --release
+    - name: Run tests
+      run: cargo test --no-default-features --features kzg --verbose --release

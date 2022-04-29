@@ -980,7 +980,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             use num_traits::{One, Zero};
             let value = &fe_to_big(value);
             let half = big_to_fe(value / 2usize);
-            let sign = (value & BigUint::one() != BigUint::zero()).into();
+            let sign = ((value & BigUint::one() != BigUint::zero()) as u64).into();
             (sign, half)
         });
 
