@@ -11,6 +11,11 @@ use maingate::{
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Square an [`AssignedInteger`].
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::square`].
+    /// Cost: 8 rows + 4 range checks.
     pub(super) fn _square(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

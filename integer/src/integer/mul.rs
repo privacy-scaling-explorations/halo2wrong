@@ -14,6 +14,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     /// Multiplies 2 [`AssignedInteger`]
     ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::mul`].
     /// Multiplication algorithm as described in <https://hackmd.io/@arielg/B13JoihA8>.
     /// Cost: 15 rows + 4 range checks.
     pub(super) fn _mul(
@@ -223,8 +225,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
     /// Multiplies an [`AssignedInteger`] by a constant [`Integer`].
     ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::mul_constant`].
     /// Multiplication algorithm as described in <https://hackmd.io/@arielg/B13JoihA8>.
-    /// Cost: 13 rows + 4 range cheks.
+    /// Cost: 13 rows + 4 range checks.
     pub(crate) fn _mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -453,7 +457,6 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // | --- | --- | --- | ----- |
         // | t_2 | t_3 | r_2 | r_3   |
         // | -   | v_1 | v_0 | u_1   |
-
         main_gate.combine(
             ctx,
             &[
@@ -498,6 +501,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(result.clone())
     }
 
+    /// Check 2 [`AssignedInteger`]s are inverses, equivalently, their multiplication is 1.
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::mul_into_one`].
+    /// Multiplication algorithm as described in <https://hackmd.io/@arielg/B13JoihA8>.
+    /// Cost: 10 rows.
     pub(crate) fn _mul_into_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -652,7 +661,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         )?;
 
         // update native value
-
+        // a * b - q * p - 1 = 0
         main_gate.combine(
             ctx,
             &[

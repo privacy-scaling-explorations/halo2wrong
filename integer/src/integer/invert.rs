@@ -16,6 +16,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ///
     /// Returns the inverse of `a` and an [`AssignedCondition`] indicating if
     /// the inversion was successful.
+    /// The input [`AssignedInteger`] must be reduced. This function is intended
+    /// to be called through [`IntegerChip::invert`].
     pub(super) fn _invert(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -81,6 +83,9 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Inverts an [`AssignedInteger`]. This integer must be non-zero.
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::invert_incomplete`].
     pub(crate) fn _invert_incomplete(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

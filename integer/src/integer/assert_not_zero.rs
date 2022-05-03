@@ -10,6 +10,10 @@ use std::convert::TryInto;
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Asserts an [`AssignedInteger`] is not zero (as Wrong field element).
+    ///
+    /// The input [`AssignedInteger`] must be reduced. This function is intended
+    /// to be called through [`IntegerChip::assert_not_zero`].
     pub(super) fn _assert_not_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

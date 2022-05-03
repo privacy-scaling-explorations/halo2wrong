@@ -25,6 +25,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         BIT_LEN_LIMB
     }
 
+    /// Asserts an [`AssignedInteger`] is zero.
+    ///
+    /// The input [`AssignedInteger`] must be reduced. This function is intended
+    /// to be called through [`IntegerChip::assert_zero`].
     pub(super) fn _assert_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

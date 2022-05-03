@@ -12,7 +12,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     /// Adds 2 [`AssignedIntegers`].
     ///
     /// The input integers must be reduced. This function is intended
-    /// to be called throught [`IntegerChip::add`].
+    /// to be called through [`IntegerChip::add`].
     pub(super) fn _add(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -35,10 +35,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
-    /// Subtracts 2 [`AssignedIntegers`].
+    /// Subtracts an [`AssignedInteger`].
     ///
     /// The input integers must be reduced. This function is intended
-    /// to be called throught [`IntegerChip::sub`].
+    /// to be called through [`IntegerChip::sub`].
     pub(super) fn _sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -64,6 +64,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
+    /// Performs 2 subtractions of [`AssignedInteger`].
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::sub_sub`].
     pub(super) fn _sub_sub(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -109,6 +113,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
+    /// Multiplies an [`AssignedInteger`] by -1.
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::neg`].
     pub(super) fn _neg(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -130,6 +138,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
+    /// Multiplies an [`AssignedInteger`] by 2.
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::mul2`].
     pub(crate) fn _mul2(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -150,6 +162,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
+    /// Multiplies an [`AssignedInteger`] by 3.
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called through [`IntegerChip::mul3`].
     pub(crate) fn _mul3(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -170,6 +186,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(c_limbs, c_native))
     }
 
+    /// Adds an [`AssignedInteger`] and an [`Integer`] constant.
+    ///
+    /// The input integers must be reduced. This function is intended
+    /// to be called throught [`IntegerChip::add_constant`].
     pub(crate) fn _add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

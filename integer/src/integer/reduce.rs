@@ -63,7 +63,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
     }
 
-    /// Reduction circuit for an integer value.
+    /// Reduction circuit for an [`AssignedInteger`].
     pub(super) fn _reduce(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
