@@ -167,7 +167,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             // | --- | --- | --- | --- | --- |
             // | a_0 | a_1 | -   | -   | in  |
 
-            // number_of_dense_limbs = 4 & fine_limb_len > 1
+            // number_of_dense_limbs = 4 & fine_limb_len > 0
             // | A   | B   | C   | D   | E   |
             // | --- | --- | --- | --- | --- |
             // | a_0 | a_3 | a_1 | a_2 | -   |

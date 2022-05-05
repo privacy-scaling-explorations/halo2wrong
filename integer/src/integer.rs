@@ -176,7 +176,7 @@ pub trait IntegerInstructions<
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
-    /// Multiplies  [`AssignedInteger`] by constant.
+    /// Multiplies [`AssignedInteger`] by constant.
     fn mul_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -184,6 +184,8 @@ pub trait IntegerInstructions<
         b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Check 2 [`AssignedInteger`] are inverses, equivalently their product is
+    /// 1.
     fn mul_into_one(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -191,12 +193,16 @@ pub trait IntegerInstructions<
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error>;
 
+    /// Square an [`AssignedInteger`].
     fn square(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Divides 2 [`AssignedInteger`]. An [`AssignedCondition`] is returned
+    /// along with the division result indicating if the operation was
+    /// successful.
     fn div(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
