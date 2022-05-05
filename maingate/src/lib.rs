@@ -11,11 +11,13 @@ use std::marker::PhantomData;
 mod instructions;
 mod main_gate;
 mod range;
+mod to_bytes;
 
 pub use halo2wrong::{halo2, utils::*, RegionCtx};
 pub use instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use main_gate::*;
 pub use range::*;
+pub use to_bytes::*;
 
 /// Helper trait for assigned values across halo2stack.
 pub trait Assigned<F: FieldExt> {
