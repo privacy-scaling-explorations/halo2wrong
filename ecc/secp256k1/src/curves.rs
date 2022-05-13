@@ -667,6 +667,25 @@ macro_rules! new_curve_impl {
             fn b() -> Self::Base {
                 $name::curve_constant_b()
             }
+
+            fn get_endomorphism_base(_: &Self) -> Self {
+                todo!()
+            }
+
+            fn get_endomorphism_scalars(_: &<Self as CurveAffine>::ScalarExt) -> (u128, u128) {
+                todo!()
+            }
+
+            fn batch_add<const COMPLETE: bool, const LOAD_POINTS: bool>(
+                _: &mut [Self],
+                _: &[u32],
+                _: usize,
+                _: usize,
+                _: &[Self],
+                _: &[u32],
+            ) {
+                todo!()
+            }
         }
 
         impl Default for $name_affine {

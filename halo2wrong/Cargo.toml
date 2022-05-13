@@ -23,7 +23,7 @@ optional = true
 [dependencies.halo2_kzg]
 package = "halo2_proofs"
 git = "https://github.com/appliedzkp/halo2.git"
-rev = "fea000f5ce1a573bd61368d7465a3caaff94cf92"
+tag = "v2022_05_09"
 optional = true
 
 [features]
