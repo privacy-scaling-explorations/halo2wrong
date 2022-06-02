@@ -1,20 +1,25 @@
 #![allow(dead_code)]
 #![feature(trait_alias)]
 
-use std::rc::Rc;
-
 use crate::rns::{Common, Integer, Limb};
 use halo2::{arithmetic::FieldExt, circuit::Cell};
 use maingate::{big_to_fe, compose, fe_to_big, Assigned, AssignedValue, UnassignedValue};
 use num_bigint::BigUint as big_uint;
+use rns::Rns;
+use std::rc::Rc;
 
+pub use chip::{IntegerChip, IntegerConfig};
+pub use instructions::{IntegerInstructions, Range};
 pub use maingate;
 pub use maingate::halo2;
-use rns::Rns;
-pub mod integer;
-pub use crate::integer::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
+
+pub mod chip;
+pub mod instructions;
 pub mod rns;
 
+/// `RangeChip` supports upto four full limbs decomposition of a value
+/// `AssignedLimb` is mostly subjected to the range check. Say we have 68-bit
+/// limb and it is decomposed to four 17-bit limbs.
 pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
 cfg_if::cfg_if! {
@@ -26,19 +31,25 @@ cfg_if::cfg_if! {
   }
 }
 
+/// AssignedLimb is a limb of an non native integer
 #[derive(Debug, Clone)]
 pub struct AssignedLimb<F: FieldExt> {
+    // Witness value
     value: Option<Limb<F>>,
+    // Cell that this value accomadates
     cell: Cell,
+    // Maximum value to track overflow and reduction flow
     max_val: big_uint,
 }
 
+/// `AssignedLimb` can be also represented as `AssignedValue`
 impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
     fn from(limb: AssignedLimb<F>) -> Self {
         AssignedValue::new(limb.cell(), limb.value())
     }
 }
 
+/// `AssignedLimb` can be also represented as `AssignedValue`
 impl<F: FieldExt> From<&AssignedLimb<F>> for AssignedValue<F> {
     fn from(limb: &AssignedLimb<F>) -> Self {
         AssignedValue::new(limb.cell(), limb.value())
@@ -64,6 +75,7 @@ impl<F: FieldExt> Assigned<F> for &AssignedLimb<F> {
 }
 
 impl<F: FieldExt> AssignedLimb<F> {
+    /// Constructs new `AssignedLimb`
     fn new(cell: Cell, value: Option<F>, max_val: big_uint) -> Self {
         let value = value.map(|value| Limb::<F>::new(value));
         AssignedLimb {
@@ -73,6 +85,8 @@ impl<F: FieldExt> AssignedLimb<F> {
         }
     }
 
+    /// Given an assigned value and expected maximum value constructs new
+    /// `AssignedLimb`
     fn from(assigned: AssignedValue<F>, max_val: big_uint) -> Self {
         let value = assigned.value().map(|value| Limb::<F>::new(value));
         let cell = assigned.cell();
@@ -82,6 +96,8 @@ impl<F: FieldExt> AssignedLimb<F> {
             max_val,
         }
     }
+
+    /// Helper functions for maximum value tracking
 
     fn limb(&self) -> Option<Limb<F>> {
         self.value.clone()
@@ -112,6 +128,7 @@ impl<F: FieldExt> AssignedLimb<F> {
     }
 }
 
+/// Witness integer that is about to be assigned.
 #[derive(Debug, Clone)]
 pub struct UnassignedInteger<
     W: WrongExt,
@@ -140,19 +157,23 @@ impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Returns value in BigUint form to calculate further witnesses
     fn value(&self) -> Option<big_uint> {
         self.0.as_ref().map(|e| e.value())
     }
 
+    /// Returns indexed limb as ÏUnassignedValue`
     fn limb(&self, idx: usize) -> UnassignedValue<N> {
         self.0.as_ref().map(|e| e.limb(idx).fe()).into()
     }
 
+    /// Returns unassigned value under scalar field modulus
     fn native(&self) -> UnassignedValue<N> {
         self.0.as_ref().map(|integer| integer.native()).into()
     }
 }
 
+///
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<
     W: WrongExt,
@@ -160,8 +181,11 @@ pub struct AssignedInteger<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    limbs: Vec<AssignedLimb<N>>,
+    // Limbs of the emulated integer
+    limbs: [AssignedLimb<N>; NUMBER_OF_LIMBS],
+    /// Value in the scalar field
     native_value: AssignedValue<N>,
+    /// Share rns across all `AssignedIntegers`s
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
@@ -170,29 +194,34 @@ impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 {
     pub fn new(
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
-        limbs: Vec<AssignedLimb<N>>,
+        limbs: &[AssignedLimb<N>; NUMBER_OF_LIMBS],
         native_value: AssignedValue<N>,
     ) -> Self {
         AssignedInteger {
-            limbs,
+            limbs: limbs.clone(),
             native_value,
             rns,
         }
     }
 
     fn max_val(&self) -> big_uint {
-        compose(self.max_vals(), BIT_LEN_LIMB)
+        compose(self.max_vals().to_vec(), BIT_LEN_LIMB)
     }
 
-    fn max_vals(&self) -> Vec<big_uint> {
-        self.limbs.iter().map(|limb| limb.max_val()).collect()
+    fn max_vals(&self) -> [big_uint; NUMBER_OF_LIMBS] {
+        self.limbs
+            .iter()
+            .map(|limb| limb.max_val())
+            .collect::<Vec<big_uint>>()
+            .try_into()
+            .unwrap()
     }
 
     fn limb(&self, idx: usize) -> AssignedValue<N> {
         self.limbs[idx].clone().into()
     }
 
-    pub fn limbs(&self) -> Vec<AssignedLimb<N>> {
+    pub fn limbs(&self) -> [AssignedLimb<N>; NUMBER_OF_LIMBS] {
         self.limbs.clone()
     }
 

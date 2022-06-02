@@ -1,15 +1,16 @@
-use super::IntegerChip;
+use crate::chip::IntegerChip;
 use crate::rns::Integer;
 use crate::{AssignedInteger, AssignedLimb, Common, WrongExt};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{fe_to_big, halo2, MainGateInstructions, RegionCtx};
+use num_bigint::BigUint as big_uint;
 use std::rc::Rc;
 
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    pub(super) fn _add(
+    pub(super) fn add_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -26,21 +27,23 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 let c_limb = main_gate.add(ctx, &a_limb.into(), &b_limb.into())?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.add(ctx, &a.native(), &b.native())?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
-    pub(super) fn _sub(
+    pub(super) fn sub_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let main_gate = self.main_gate();
-        let aux = Integer::subtracion_aux(b.max_vals(), Rc::clone(&self.rns));
+        let aux = Integer::subtracion_aux(&b.max_vals(), Rc::clone(&self.rns));
 
-        let c_limbs: Vec<AssignedLimb<N>> = a
+        let c_limbs = a
             .limbs()
             .iter()
             .zip(b.limbs().iter())
@@ -51,12 +54,14 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     main_gate.sub_with_constant(ctx, &a_limb.into(), &b_limb.into(), *aux)?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.sub_with_constant(ctx, &a.native(), &b.native(), aux.native())?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
-    pub(super) fn _sub_sub(
+    pub(super) fn sub_sub_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -70,10 +75,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .iter()
             .zip(b_1.max_vals().iter())
             .map(|(b_0, b_1)| b_0 + b_1)
-            .collect();
-        let aux = Integer::subtracion_aux(max_vals, Rc::clone(&self.rns));
+            .collect::<Vec<big_uint>>()
+            .try_into()
+            .unwrap();
+        let aux = Integer::subtracion_aux(&max_vals, Rc::clone(&self.rns));
 
-        let c_limbs: Vec<AssignedLimb<N>> = a
+        let c_limbs = a
             .limbs()
             .iter()
             .zip(b_0.limbs().iter())
@@ -90,7 +97,9 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 )?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.sub_sub_with_constant(
             ctx,
             &a.native(),
@@ -98,10 +107,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &b_1.native(),
             aux.native(),
         )?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
-    pub(super) fn _neg(
+    pub(super) fn neg_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -117,12 +126,14 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 let c_limb = main_gate.neg_with_constant(ctx, &a_limb.into(), *aux)?;
                 Ok(AssignedLimb::from(c_limb, fe_to_big(*aux)))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.neg_with_constant(ctx, &a.native(), aux.native())?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
-    pub(crate) fn _mul2(
+    pub(crate) fn mul2_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -137,12 +148,14 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 let c_limb = main_gate.mul2(ctx, &a_limb.into())?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.mul2(ctx, &a.native())?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
-    pub(crate) fn _mul3(
+    pub(crate) fn mul3_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -157,12 +170,14 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 let c_limb = main_gate.mul3(ctx, &a_limb.into())?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.mul3(ctx, &a.native())?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
-    pub(crate) fn _add_constant(
+    pub(crate) fn add_constant_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -179,8 +194,10 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 let c_limb = main_gate.add_constant(ctx, &a_limb.into(), *b_limb)?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
-            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
         let c_native = main_gate.add_constant(ctx, &a.native(), b.native())?;
-        Ok(self.new_assigned_integer(c_limbs, c_native))
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 }

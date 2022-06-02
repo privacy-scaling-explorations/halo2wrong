@@ -10,7 +10,7 @@ use std::convert::TryInto;
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    pub(super) fn _assert_not_zero(
+    pub(super) fn assert_not_zero_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -21,7 +21,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // Reduce result (r) is restricted to be less than 1 <<
         // wrong_modulus_bit_lenght, so we only need to assert r <> 0 and r <>
         // wrong modulus.
-        let r = self._reduce(ctx, a)?;
+        let r = self.reduce_generic(ctx, a)?;
 
         // Sanity check.
         // This algorithm requires that wrong modulus * 2 <= native modulus * 2 ^
@@ -39,7 +39,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let cond_zero_0 = main_gate.is_zero(ctx, &r.limb(0))?;
         let cond_zero_1 = main_gate.is_zero(ctx, &r.native())?;
 
-        // one of them should be succeed (0), i.e. cond_zero_0 * cond_zero_1 = 0
+        // one of them might be succeeded, i.e. cond_zero_0 * cond_zero_1 = 0
         main_gate.nand(ctx, &cond_zero_0, &cond_zero_1)?;
 
         // Similar to 0,
@@ -49,7 +49,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // wrong_modulus.native())
         let wrong_modulus = self.rns.wrong_modulus_decomposed;
         let limb_diff = r.limbs[0].value().map(|value| value - wrong_modulus[0]);
-        let limb_diff = main_gate.combine(
+        let limb_diff = main_gate.apply(
             ctx,
             &[
                 Term::Assigned(r.limb(0), one),
@@ -66,7 +66,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .native()
             .value()
             .map(|value| value - self.rns.wrong_modulus_in_native_modulus);
-        let native_diff = main_gate.combine(
+        let native_diff = main_gate.apply(
             ctx,
             &[
                 Term::Assigned(r.native(), one),
@@ -82,6 +82,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let cond_wrong_0 = main_gate.is_zero(ctx, &limb_diff)?;
         let cond_wrong_1 = main_gate.is_zero(ctx, &native_diff)?;
 
+        // one of them might be succeeded, i.e. cond_zero_0 * cond_zero_1 = 0
         main_gate.nand(ctx, &cond_wrong_0, &cond_wrong_1)?;
 
         Ok(())

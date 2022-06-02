@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use super::{AssignedInteger, AssignedLimb, UnassignedInteger};
+use crate::instructions::{IntegerInstructions, Range};
 use crate::rns::{Common, Integer, Rns};
 use crate::{WrongExt, NUMBER_OF_LOOKUP_LIMBS};
 use halo2::arithmetic::FieldExt;
@@ -19,12 +20,6 @@ mod invert;
 mod mul;
 mod reduce;
 mod square;
-
-pub enum Range {
-    Remainder,
-    Operand,
-    MulQuotient,
-}
 
 #[derive(Clone, Debug)]
 pub struct IntegerConfig {
@@ -56,241 +51,11 @@ impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 {
     pub(crate) fn new_assigned_integer(
         &self,
-        limbs: Vec<AssignedLimb<N>>,
+        limbs: &[AssignedLimb<N>; NUMBER_OF_LIMBS],
         native_value: AssignedValue<N>,
     ) -> AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         AssignedInteger::new(Rc::clone(&self.rns), limbs, native_value)
     }
-}
-
-pub trait IntegerInstructions<
-    W: WrongExt,
-    N: FieldExt,
-    const NUMBER_OF_LIMBS: usize,
-    const BIT_LEN_LIMB: usize,
->
-{
-    fn assign_integer(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn assign_constant(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        integer: W,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn range_assign_integer(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        range: Range,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn decompose(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        integer: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<Vec<AssignedCondition<N>>, Error>;
-
-    fn add(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn add_constant(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn mul2(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn mul3(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn sub(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn sub_sub(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b_0: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn neg(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn mul(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn mul_constant(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn mul_into_one(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn square(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn div(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<
-        (
-            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-            AssignedCondition<N>,
-        ),
-        Error,
-    >;
-
-    fn div_incomplete(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn invert(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<
-        (
-            AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-            AssignedCondition<N>,
-        ),
-        Error,
-    >;
-
-    fn invert_incomplete(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn reduce(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn assert_equal(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_strict_equal(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_not_equal(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_not_zero(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_zero(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_strict_one(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_strict_bit(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn assert_in_field(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        input: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<(), Error>;
-
-    fn select(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        cond: &AssignedCondition<N>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn select_or_assign(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        cond: &AssignedCondition<N>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn reduce_external<T: WrongExt>(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
-
-    fn sign(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedCondition<N>, Error>;
 }
 
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
@@ -303,25 +68,17 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // TODO: external integer might have different parameter settings
         a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let to_be_reduced = self.new_assigned_integer(a.limbs(), a.native());
+        let to_be_reduced = self.new_assigned_integer(&a.limbs(), a.native());
         self.reduce(ctx, &to_be_reduced)
-    }
-
-    fn range_assign_integer(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
-        integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        range: Range,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self._range_assign_integer(ctx, integer, range)
     }
 
     fn assign_integer(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        range: Range,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self._assign_integer(ctx, integer, true)
+        self.assign_integer_generic(ctx, integer, range)
     }
 
     fn assign_constant(
@@ -329,7 +86,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ctx: &mut RegionCtx<'_, '_, N>,
         integer: W,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self._assign_constant(ctx, integer)
+        self.assign_constant_generic(ctx, integer)
     }
 
     fn decompose(
@@ -344,7 +101,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let mut decomposed = Vec::new();
         for idx in 0..NUMBER_OF_LIMBS {
             let number_of_bits = if idx == NUMBER_OF_LIMBS - 1 {
-                self.rns.bit_len_last_limb
+                self.rns.wrong_modulus.bits() as usize % BIT_LEN_LIMB
             } else {
                 BIT_LEN_LIMB
             };
@@ -352,7 +109,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             decomposed.extend(decomposed_limb);
         }
 
-        assert_eq!(decomposed.len(), self.rns.bit_len_wrong_modulus);
+        assert_eq!(decomposed.len(), self.rns.wrong_modulus.bits() as usize);
 
         Ok(decomposed)
     }
@@ -367,7 +124,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b)?,
         );
-        self._add(ctx, a, b)
+        self.add_generic(ctx, a, b)
     }
 
     fn add_constant(
@@ -377,7 +134,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         b: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?;
-        self._add_constant(ctx, a, b)
+        self.add_constant_generic(ctx, a, b)
     }
 
     fn mul2(
@@ -385,7 +142,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self._mul2(ctx, a)
+        self.mul2_generic(ctx, a)
     }
 
     fn mul3(
@@ -393,7 +150,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self._mul3(ctx, a)
+        self.mul3_generic(ctx, a)
     }
 
     fn sub(
@@ -406,7 +163,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?,
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b)?,
         );
-        self._sub(ctx, a, b)
+        self.sub_generic(ctx, a, b)
     }
 
     fn sub_sub(
@@ -421,7 +178,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b_0)?,
             &self.reduce_if_limb_values_exceeds_unreduced(ctx, b_1)?,
         );
-        self._sub_sub(ctx, a, b_0, b_1)
+        self.sub_sub_generic(ctx, a, b_0, b_1)
     }
 
     fn neg(
@@ -430,7 +187,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?;
-        self._neg(ctx, a)
+        self.neg_generic(ctx, a)
     }
 
     fn mul(
@@ -447,7 +204,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_max_operand_value_exceeds(ctx, a)?,
             &self.reduce_if_max_operand_value_exceeds(ctx, b)?,
         );
-        self._mul(ctx, a, b)
+        self.mul_generic(ctx, a, b)
     }
 
     fn mul_constant(
@@ -458,7 +215,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._mul_constant(ctx, a, b)
+        self.mul_constant_generic(ctx, a, b)
     }
 
     fn mul_into_one(
@@ -475,7 +232,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_max_operand_value_exceeds(ctx, a)?,
             &self.reduce_if_max_operand_value_exceeds(ctx, b)?,
         );
-        self._mul_into_one(ctx, a, b)
+        self.mul_into_one_generic(ctx, a, b)
     }
 
     fn square(
@@ -485,7 +242,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._square(ctx, a)
+        self.square_generic(ctx, a)
     }
 
     fn div(
@@ -508,7 +265,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_max_operand_value_exceeds(ctx, a)?,
             &self.reduce_if_max_operand_value_exceeds(ctx, b)?,
         );
-        self._div(ctx, a, b)
+        self.div_generic(ctx, a, b)
     }
 
     fn div_incomplete(
@@ -525,7 +282,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &self.reduce_if_max_operand_value_exceeds(ctx, a)?,
             &self.reduce_if_max_operand_value_exceeds(ctx, b)?,
         );
-        self._div_incomplete(ctx, a, b)
+        self.div_incomplete_generic(ctx, a, b)
     }
 
     fn invert(
@@ -541,7 +298,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     > {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._invert(ctx, a)
+        self.invert_generic(ctx, a)
     }
 
     fn invert_incomplete(
@@ -551,7 +308,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._invert_incomplete(ctx, a)
+        self.invert_incomplete_generic(ctx, a)
     }
 
     fn reduce(
@@ -559,7 +316,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self._reduce(ctx, a)
+        self.reduce_generic(ctx, a)
     }
 
     fn assert_equal(
@@ -569,7 +326,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let c = &self.sub(ctx, a, b)?;
-        self.assert_zero(ctx, c)?;
+        self.assert_zero_generic(ctx, c)?;
         Ok(())
     }
 
@@ -593,7 +350,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let c = &self.sub(ctx, a, b)?;
-        self.assert_not_zero(ctx, c)?;
+        self.assert_not_zero_generic(ctx, c)?;
         Ok(())
     }
 
@@ -604,7 +361,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._assert_not_zero(ctx, a)?;
+        self.assert_not_zero_generic(ctx, a)?;
         Ok(())
     }
 
@@ -614,7 +371,23 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._assert_zero(ctx, a)
+        let main_gate = self.main_gate();
+        for limb in a.limbs() {
+            main_gate.assert_zero(ctx, &limb.into())?;
+        }
+        Ok(())
+    }
+
+    fn assert_strict_zero(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<(), Error> {
+        let main_gate = self.main_gate();
+        for limb in a.limbs() {
+            main_gate.assert_zero(ctx, &limb.into())?;
+        }
+        Ok(())
     }
 
     fn assert_strict_one(
@@ -665,7 +438,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let native_value = main_gate.select(ctx, &a.native(), &b.native(), cond)?;
 
-        Ok(self.new_assigned_integer(limbs, native_value))
+        Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native_value))
     }
 
     fn select_or_assign(
@@ -690,7 +463,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let native_value = main_gate.select_or_assign(ctx, &a.native(), b.native(), cond)?;
 
-        Ok(self.new_assigned_integer(limbs, native_value))
+        Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native_value))
     }
 
     fn assert_in_field(
@@ -700,7 +473,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
-        self._assert_in_field(ctx, a)
+        self.assert_in_field_generic(ctx, a)
     }
 
     fn sign(
@@ -735,14 +508,15 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::rns::{Common, Integer, Rns};
-    use crate::{AssignedInteger, UnassignedInteger, WrongExt, NUMBER_OF_LOOKUP_LIMBS};
+    use crate::{UnassignedInteger, WrongExt, NUMBER_OF_LOOKUP_LIMBS};
+    use core::panic;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use maingate::{
-        big_to_fe, decompose_big, fe_to_big, halo2, AssignedCondition, MainGate, MainGateConfig,
-        MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+        big_to_fe, decompose_big, fe_to_big, halo2, Assigned, AssignedCondition, MainGate,
+        MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
     };
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
@@ -751,19 +525,21 @@ mod tests {
     use secp256k1::Fq as Secp256k1_Fq;
     use std::rc::Rc;
 
-    fn rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+    const NUMBER_OF_LIMBS: usize = 4;
+
+    fn rns<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
     ) -> Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         Rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct()
     }
 
-    fn setup<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+    fn setup<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
     ) -> (Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, u32) {
         let rns = rns();
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
         (rns, k)
     }
 
-    impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>
         From<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>
         for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
@@ -772,30 +548,11 @@ mod tests {
         }
     }
 
-    impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-        IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
-    {
-        fn assign_integer_no_check(
-            &self,
-            ctx: &mut RegionCtx<'_, '_, N>,
-            integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-            self._assign_integer(ctx, integer, false)
-        }
-    }
-
-    pub(crate) struct TestRNS<
-        W: WrongExt,
-        N: FieldExt,
-        const NUMBER_OF_LIMBS: usize,
-        const BIT_LEN_LIMB: usize,
-    > {
+    pub(crate) struct TestRNS<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     }
 
-    impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-        TestRNS<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
-    {
+    impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> TestRNS<W, N, BIT_LEN_LIMB> {
         pub(crate) fn rand_in_field(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             let mut rng = thread_rng();
             Integer::from_fe(W::random(&mut rng), Rc::clone(&self.rns))
@@ -885,18 +642,12 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<
-            W: WrongExt,
-            N: FieldExt,
-            const NUMBER_OF_LIMBS: usize,
-            const BIT_LEN_LIMB: usize,
-        >(
+        fn new<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
             meta: &mut ConstraintSystem<N>,
         ) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
 
-            let overflow_bit_lengths =
-                rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>().overflow_lengths();
+            let overflow_bit_lengths = rns::<W, N, BIT_LEN_LIMB>().overflow_lengths();
             let range_config =
                 RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
 
@@ -932,22 +683,22 @@ mod tests {
 
 
             #[derive(Clone, Debug)]
-            struct $circuit_name<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
-                rns: Rc<Rns<W, N, NUMBER_OF_LIMBS,BIT_LEN_LIMB>>,
+            struct $circuit_name<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+                rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
             }
 
-            impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-                fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>{
+            impl<W: WrongExt, N: FieldExt,  const BIT_LEN_LIMB: usize> $circuit_name<W, N, BIT_LEN_LIMB> {
+                fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS,BIT_LEN_LIMB>{
                     IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(config.integer_chip_config(), Rc::clone(&self.rns))
                 }
 
-                fn tester(&self) -> TestRNS<W,N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+                fn tester(&self) -> TestRNS<W, N, BIT_LEN_LIMB> {
                     TestRNS {rns:Rc::clone(&self.rns)}
                 }
 
             }
 
-            impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+            impl<W: WrongExt, N: FieldExt,  const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
                 type Config = TestCircuitConfig;
                 type FloorPlanner = SimpleFloorPlanner;
 
@@ -956,7 +707,7 @@ mod tests {
                 }
 
                 fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-                    TestCircuitConfig::new::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
+                    TestCircuitConfig::new::<W, N, BIT_LEN_LIMB>(meta)
                 }
 
                 $( $synth )*
@@ -980,15 +731,15 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let a = t.max_in_remainder_range();
-                    integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
+                    integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
                     // should fail
                     // let a = t.new_from_big(rns.max_remainder.clone() + 1usize);
-                    // integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
+                    // integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
                     let a = t.max_in_operand_range();
-                    integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
+                    integer_chip.assign_integer(ctx, a.into(), Range::Operand)?;
                     // should fail
                     // let a = t.new_from_big(rns.max_operand.clone() + 1usize);
-                    // integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?
+                    // integer_chip.assign_integer(ctx, a.into(), Range::Operand)?
                     Ok(())
                 },
             )?;
@@ -1015,9 +766,12 @@ mod tests {
                     let unreduced = overflows.clone();
                     let reduced = overflows.reduce();
                     let reduced = reduced.result;
-                    let overflows =
-                        &integer_chip.assign_integer_no_check(ctx, Some(unreduced).into())?;
-                    let reduced_0 = &integer_chip.range_assign_integer(
+                    let overflows = &integer_chip.assign_integer(
+                        ctx,
+                        Some(unreduced).into(),
+                        Range::Unreduced,
+                    )?;
+                    let reduced_0 = &integer_chip.assign_integer(
                         ctx,
                         Some(reduced).into(),
                         Range::Remainder,
@@ -1050,8 +804,8 @@ mod tests {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let a = t.rand_in_operand_range();
                     let b = t.rand_in_operand_range();
-                    let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
-                    let b = &integer_chip.range_assign_integer(ctx, b.into(), Range::Operand)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Operand)?;
+                    let b = &integer_chip.assign_integer(ctx, b.into(), Range::Operand)?;
                     integer_chip.assert_not_equal(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, a, a)?;
                     integer_chip.assert_not_zero(ctx, a)?;
@@ -1070,6 +824,8 @@ mod tests {
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
             let integer_chip = self.integer_chip(config.clone());
+            let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
+
             let t = self.tester();
 
             layouter.assign_region(
@@ -1083,10 +839,9 @@ mod tests {
                     let c = (a.value() * b.value()) % &self.rns.wrong_modulus;
                     let c = t.new_from_big(c);
 
-                    let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
-                    let b = &integer_chip.range_assign_integer(ctx, b.into(), Range::Operand)?;
-                    let c_0 =
-                        &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Operand)?;
+                    let b = &integer_chip.assign_integer(ctx, b.into(), Range::Operand)?;
+                    let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let c_1 = &integer_chip.mul(ctx, a, b)?;
                     assert_eq!(c_1.max_val(), self.rns.max_remainder);
 
@@ -1098,10 +853,9 @@ mod tests {
                     let c = (a.value() * b.value()) % &self.rns.wrong_modulus;
                     let c = t.new_from_big(c);
 
-                    let a = &integer_chip.assign_integer_no_check(ctx, a.into())?;
-                    let b = &integer_chip.assign_integer_no_check(ctx, b.into())?;
-                    let c_0 =
-                        &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
+                    let b = &integer_chip.assign_integer(ctx, b.into(), Range::Unreduced)?;
+                    let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let c_1 = &integer_chip.mul(ctx, a, b)?;
                     assert_eq!(c_1.max_val(), self.rns.max_remainder);
 
@@ -1113,9 +867,8 @@ mod tests {
                     let c = (a.value() * b.value()) % &self.rns.wrong_modulus;
                     let c = t.new_from_big(c);
 
-                    let a = &integer_chip.assign_integer_no_check(ctx, a.into())?;
-                    let c_0 =
-                        &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
+                    let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let c_1 = &integer_chip.mul_constant(ctx, a, &b)?;
                     assert_eq!(c_1.max_val(), self.rns.max_remainder);
 
@@ -1130,9 +883,8 @@ mod tests {
                     let a = t.new_from_big(fe_to_big(a));
                     let inv = t.new_from_big(fe_to_big(inv));
 
-                    let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
-                    let inv =
-                        &integer_chip.range_assign_integer(ctx, inv.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
+                    let inv = &integer_chip.assign_integer(ctx, inv.into(), Range::Remainder)?;
                     integer_chip.mul_into_one(ctx, a, inv)?;
 
                     Ok(())
@@ -1162,9 +914,8 @@ mod tests {
                     let c = (a.value() * a.value()) % &self.rns.wrong_modulus;
                     let c = t.new_from_big(c);
 
-                    let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Operand)?;
-                    let c_0 =
-                        &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Operand)?;
+                    let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let c_1 = &integer_chip.square(ctx, a)?;
                     assert_eq!(c_1.max_val(), self.rns.max_remainder);
 
@@ -1175,9 +926,8 @@ mod tests {
                     let c = (a.value() * a.value()) % &self.rns.wrong_modulus;
                     let c = t.new_from_big(c);
 
-                    let a = &integer_chip.assign_integer_no_check(ctx, a.into())?;
-                    let c_0 =
-                        &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
+                    let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let c_1 = &integer_chip.square(ctx, a)?;
                     assert_eq!(c_1.max_val(), self.rns.max_remainder);
 
@@ -1207,11 +957,11 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
                     let a = t.rand_in_field();
-                    let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
                     integer_chip.assert_in_field(ctx, a)?;
                     // must fail
                     // let a = t.new_from_big(rns.wrong_modulus.clone());
-                    // let a = &integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
+                    // let a = &integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
                     // integer_chip.assert_in_field(ctx, a)?;
                     Ok(())
                 },
@@ -1241,29 +991,24 @@ mod tests {
                     let inv = a.invert().unwrap();
 
                     // 1 / a
-                    let a = &integer_chip.range_assign_integer(
-                        ctx,
-                        Some(a).into(),
-                        Range::Remainder,
-                    )?;
-                    let inv_0 = &integer_chip.range_assign_integer(
-                        ctx,
-                        Some(inv).into(),
-                        Range::Remainder,
-                    )?;
+                    let a = &integer_chip.assign_integer(ctx, Some(a).into(), Range::Remainder)?;
+                    let inv_0 =
+                        &integer_chip.assign_integer(ctx, Some(inv).into(), Range::Remainder)?;
                     let (inv_1, cond) = integer_chip.invert(ctx, a)?;
                     integer_chip.assert_equal(ctx, inv_0, &inv_1)?;
                     main_gate.assert_zero(ctx, &cond.into())?;
 
                     // 1 / 0
-                    let zero = integer_chip.assign_integer(ctx, t.zero().into())?;
+                    let zero =
+                        integer_chip.assign_integer(ctx, t.zero().into(), Range::Remainder)?;
                     let (must_be_one, cond) = integer_chip.invert(ctx, &zero)?;
                     integer_chip.assert_strict_one(ctx, &must_be_one)?;
                     main_gate.assert_one(ctx, &cond.into())?;
 
                     // 1 / p
                     let wrong_modulus = t.new_from_limbs(&self.rns.wrong_modulus_decomposed);
-                    let modulus = integer_chip.assign_integer(ctx, wrong_modulus.into())?;
+                    let modulus =
+                        integer_chip.assign_integer(ctx, wrong_modulus.into(), Range::Remainder)?;
                     let (must_be_one, cond) = integer_chip.invert(ctx, &modulus)?;
                     integer_chip.assert_strict_one(ctx, &must_be_one)?;
                     main_gate.assert_one(ctx, &cond.into())?;
@@ -1279,18 +1024,9 @@ mod tests {
                     let a = t.rand_in_remainder_range();
                     let b = t.rand_in_remainder_range();
                     let c = a.div(&b).unwrap();
-                    let a = &integer_chip.range_assign_integer(
-                        ctx,
-                        Some(a).into(),
-                        Range::Remainder,
-                    )?;
-                    let b = &integer_chip.range_assign_integer(
-                        ctx,
-                        Some(b).into(),
-                        Range::Remainder,
-                    )?;
-                    let c_0 =
-                        &integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(ctx, Some(a).into(), Range::Remainder)?;
+                    let b = &integer_chip.assign_integer(ctx, Some(b).into(), Range::Remainder)?;
+                    let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let (c_1, cond) = integer_chip.div(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     main_gate.assert_zero(ctx, &cond.into())?;
@@ -1341,7 +1077,6 @@ mod tests {
         ) -> Result<(), Error> {
             let integer_chip = self.integer_chip(config.clone());
             let t = self.tester();
-
             layouter.assign_region(
                 || "region 0",
                 |mut region| {
@@ -1349,22 +1084,18 @@ mod tests {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
                     {
-                        // addition in remainder range
                         let a = t.rand_in_remainder_range();
                         let b = t.rand_in_remainder_range();
-
                         let c = a.value() + b.value();
                         let c = t.new_from_big(c);
+
                         let c_in_field = (a.value() + b.value()) % &self.rns.wrong_modulus;
                         let c_in_field = t.new_from_big(c_in_field);
-
-                        let a =
-                            integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
-                        let b =
-                            integer_chip.range_assign_integer(ctx, b.into(), Range::Remainder)?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
+                        let b = integer_chip.assign_integer(ctx, b.into(), Range::Remainder)?;
 
                         let c_0 = &integer_chip.add(ctx, &a, &b)?;
-                        let c_1 = integer_chip.assign_integer_no_check(ctx, c.into())?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Unreduced)?;
 
                         assert_eq!(a.max_val() + b.max_val(), c_0.max_val());
 
@@ -1372,7 +1103,7 @@ mod tests {
 
                         // reduce and enfoce strict equality
                         let c_0 = integer_chip.reduce(ctx, c_0)?;
-                        let c_1 = integer_chip.range_assign_integer(
+                        let c_1 = integer_chip.assign_integer(
                             ctx,
                             c_in_field.into(),
                             Range::Remainder,
@@ -1391,17 +1122,16 @@ mod tests {
                         let c_in_field = (a.value() + b.value()) % &self.rns.wrong_modulus;
                         let c_in_field = t.new_from_big(c_in_field);
 
-                        let a =
-                            integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
 
                         let c_0 = &integer_chip.add_constant(ctx, &a, &b)?;
-                        let c_1 = integer_chip.assign_integer_no_check(ctx, c.into())?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Unreduced)?;
                         assert_eq!(a.max_val() + b.value(), c_0.max_val());
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
 
                         // reduce and enfoce strict equality
                         let c_0 = integer_chip.reduce(ctx, c_0)?;
-                        let c_1 = integer_chip.range_assign_integer(
+                        let c_1 = integer_chip.assign_integer(
                             ctx,
                             c_in_field.into(),
                             Range::Remainder,
@@ -1413,18 +1143,15 @@ mod tests {
                     {
                         // go beyond unreduced range
                         let a = t.rand_in_remainder_range();
-                        let mut a = integer_chip.assign_integer(ctx, a.into())?;
+                        let mut a = integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
 
                         for _ in 0..10 {
                             let c =
                                 (a.integer().unwrap().value() * 2usize) % &self.rns.wrong_modulus;
                             let c = t.new_from_big(c);
                             a = integer_chip.add(ctx, &a, &a)?;
-                            let c_1 = integer_chip.range_assign_integer(
-                                ctx,
-                                c.into(),
-                                Range::Remainder,
-                            )?;
+                            let c_1 =
+                                integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                             let c_0 = integer_chip.reduce(ctx, &a)?;
                             integer_chip.assert_equal(ctx, &a, &c_1)?;
                             integer_chip.assert_equal(ctx, &c_0, &c_1)?;
@@ -1440,14 +1167,11 @@ mod tests {
                             let c = (a.value() + b.value()) % self.rns.wrong_modulus.clone();
                             let c = t.new_from_big(c);
 
-                            let a = integer_chip.assign_integer_no_check(ctx, a.into())?;
-                            let b = integer_chip.assign_integer_no_check(ctx, b.into())?;
+                            let a = integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
+                            let b = integer_chip.assign_integer(ctx, b.into(), Range::Unreduced)?;
                             let c_0 = &integer_chip.add(ctx, &a, &b)?;
-                            let c_1 = integer_chip.range_assign_integer(
-                                ctx,
-                                c.into(),
-                                Range::Remainder,
-                            )?;
+                            let c_1 =
+                                integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                             assert_eq!(a.max_val() + b.max_val(), c_0.max_val());
                             integer_chip.assert_equal(ctx, c_0, &c_1)?;
 
@@ -1469,15 +1193,12 @@ mod tests {
                         let c = (a_norm - b_norm) % self.rns.wrong_modulus.clone();
                         let c = t.new_from_big(c);
 
-                        let a =
-                            integer_chip.range_assign_integer(ctx, a.into(), Range::Remainder)?;
-                        let b =
-                            integer_chip.range_assign_integer(ctx, b.into(), Range::Remainder)?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
+                        let b = integer_chip.assign_integer(ctx, b.into(), Range::Remainder)?;
                         let aux = b.make_aux();
 
                         let c_0 = &integer_chip.sub(ctx, &a, &b)?;
-                        let c_1 =
-                            integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                         assert_eq!(a.max_val() + aux.value(), c_0.max_val());
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
@@ -1493,13 +1214,12 @@ mod tests {
                         let c = (a_norm - b_norm) % self.rns.wrong_modulus.clone();
                         let c = t.new_from_big(c);
 
-                        let a = integer_chip.assign_integer_no_check(ctx, a.into())?;
-                        let b = integer_chip.assign_integer_no_check(ctx, b.into())?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
+                        let b = integer_chip.assign_integer(ctx, b.into(), Range::Unreduced)?;
                         let aux = b.make_aux();
 
                         let c_0 = &integer_chip.sub(ctx, &a, &b)?;
-                        let c_1 =
-                            integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                         assert_eq!(a.max_val() + aux.value(), c_0.max_val());
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
@@ -1507,7 +1227,7 @@ mod tests {
                     {
                         // go beyond unreduced range
                         let a = t.rand_in_remainder_range();
-                        let mut a = integer_chip.assign_integer(ctx, a.into())?;
+                        let mut a = integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
 
                         for _ in 0..10 {
                             let b = t.rand_in_unreduced_range();
@@ -1519,14 +1239,11 @@ mod tests {
                             let c = (a_norm - b_norm) % self.rns.wrong_modulus.clone();
                             let c = t.new_from_big(c);
 
-                            let b = integer_chip.assign_integer_no_check(ctx, b.into())?;
+                            let b = integer_chip.assign_integer(ctx, b.into(), Range::Unreduced)?;
 
                             let c_0 = &integer_chip.sub(ctx, &a, &b)?;
-                            let c_1 = integer_chip.range_assign_integer(
-                                ctx,
-                                c.into(),
-                                Range::Remainder,
-                            )?;
+                            let c_1 =
+                                integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                             integer_chip.assert_equal(ctx, c_0, &c_1)?;
                             a = c_0.clone();
                         }
@@ -1539,12 +1256,11 @@ mod tests {
                         let c = self.rns.wrong_modulus.clone() - a_norm;
                         let c = t.new_from_big(c);
 
-                        let a = integer_chip.assign_integer_no_check(ctx, a.into())?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
                         let aux = a.make_aux();
 
                         let c_0 = &integer_chip.neg(ctx, &a)?;
-                        let c_1 =
-                            integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                         assert_eq!(aux.value(), c_0.max_val());
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
@@ -1555,11 +1271,10 @@ mod tests {
                         let c = (a.value() * 2usize) % self.rns.wrong_modulus.clone();
                         let c = t.new_from_big(c);
 
-                        let a = integer_chip.assign_integer_no_check(ctx, a.into())?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
 
                         let c_0 = &integer_chip.mul2(ctx, &a)?;
-                        let c_1 =
-                            integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                         assert_eq!(a.max_val() * 2usize, c_0.max_val());
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
@@ -1570,10 +1285,9 @@ mod tests {
                         let c = (a.value() * 3usize) % self.rns.wrong_modulus.clone();
                         let c = t.new_from_big(c);
 
-                        let a = integer_chip.assign_integer_no_check(ctx, a.into())?;
+                        let a = integer_chip.assign_integer(ctx, a.into(), Range::Unreduced)?;
                         let c_0 = &integer_chip.mul3(ctx, &a)?;
-                        let c_1 =
-                            integer_chip.range_assign_integer(ctx, c.into(), Range::Remainder)?;
+                        let c_1 = integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                         assert_eq!(a.max_val() * 3usize, c_0.max_val());
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
@@ -1609,8 +1323,8 @@ mod tests {
                     let cond = N::zero();
                     let cond = Some(cond).into();
 
-                    let a = integer_chip.range_assign_integer(ctx, a, Range::Remainder)?;
-                    let b = integer_chip.range_assign_integer(ctx, b, Range::Remainder)?;
+                    let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
+                    let b = integer_chip.assign_integer(ctx, b, Range::Remainder)?;
 
                     let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
                     let selected = integer_chip.select(ctx, &a, &b, &cond)?;
@@ -1625,8 +1339,8 @@ mod tests {
                     let cond = N::one();
                     let cond = Some(cond).into();
 
-                    let a = integer_chip.range_assign_integer(ctx, a, Range::Remainder)?;
-                    let b = integer_chip.range_assign_integer(ctx, b, Range::Remainder)?;
+                    let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
+                    let b = integer_chip.assign_integer(ctx, b, Range::Remainder)?;
 
                     let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
                     let selected = integer_chip.select(ctx, &a, &b, &cond)?;
@@ -1641,10 +1355,11 @@ mod tests {
                     let cond = N::zero();
                     let cond = Some(cond).into();
 
-                    let a = integer_chip.range_assign_integer(ctx, a, Range::Remainder)?;
+                    let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
                     let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
                     let selected = integer_chip.select_or_assign(ctx, &a, &b, &cond)?;
-                    let b_assigned = integer_chip.assign_integer(ctx, b.into())?;
+                    let b_assigned =
+                        integer_chip.assign_integer(ctx, b.into(), Range::Remainder)?;
                     integer_chip.assert_equal(ctx, &b_assigned, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &b_assigned, &selected)?;
                     assert_eq!(a.max_val(), selected.max_val());
@@ -1656,7 +1371,7 @@ mod tests {
                     let cond = N::one();
                     let cond = Some(cond).into();
 
-                    let a = integer_chip.range_assign_integer(ctx, a, Range::Remainder)?;
+                    let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
                     let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
                     let selected = integer_chip.select_or_assign(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &a, &selected)?;
@@ -1688,14 +1403,14 @@ mod tests {
                     for _ in 0..2 {
                         let integer = t.rand_in_field();
                         let integer_big = integer.value();
-                        let assigned = integer_chip.range_assign_integer(
-                            ctx,
-                            integer.into(),
-                            Range::Remainder,
-                        )?;
+                        let assigned =
+                            integer_chip.assign_integer(ctx, integer.into(), Range::Remainder)?;
                         let decomposed = integer_chip.decompose(ctx, &assigned)?;
-                        let expected =
-                            decompose_big::<W>(integer_big, self.rns.bit_len_wrong_modulus, 1);
+                        let expected = decompose_big::<W>(
+                            integer_big,
+                            self.rns.wrong_modulus.bits() as usize,
+                            1,
+                        );
                         assert_eq!(expected.len(), decomposed.len());
                         for (c, expected) in decomposed.iter().zip(expected.into_iter()) {
                             if expected != W::zero() {
@@ -1730,13 +1445,13 @@ mod tests {
 
                     let integer = t.new_from_big(big_uint::from(20u64));
                     let assigned =
-                        integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
+                        integer_chip.assign_integer(ctx, integer.into(), Range::Remainder)?;
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
                     main_gate.assert_zero(ctx, &assigned_sign.into())?;
 
                     let integer = t.new_from_big(big_uint::from(21u64));
                     let assigned =
-                        integer_chip.range_assign_integer(ctx, integer.into(), Range::Remainder)?;
+                        integer_chip.assign_integer(ctx, integer.into(), Range::Remainder)?;
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
                     main_gate.assert_one(ctx, &assigned_sign.into())?;
 
@@ -1749,11 +1464,12 @@ mod tests {
 
     macro_rules! test_circuit_runner {
         (
-            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $number_of_limbs:expr, $bit_len_limb:expr]),*
+            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $bit_len_limb:expr]),*
         ) => {
             $(
-                let (rns, k) = setup();
-                let circuit = $circuit::<$wrong_field, $native_field, $number_of_limbs, $bit_len_limb> { rns: Rc::new(rns) };
+                let (rns, k):(Rns<$wrong_field, $native_field, NUMBER_OF_LIMBS, $bit_len_limb>, u32) = setup();
+
+                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns: Rc::new(rns) };
                 let public_inputs = vec![vec![]];
                 let prover = match MockProver::run(k, &circuit, public_inputs) {
                     Ok(prover) => prover,
@@ -1773,12 +1489,12 @@ mod tests {
                 use halo2::pasta::{Fp as Pasta_Fp, Fq as Pasta_Fq};
                 test_circuit_runner!(
                     $circuit,
-                    [Pasta_Fp, Pasta_Fq, 4, 68],
-                    [Pasta_Fq, Pasta_Fp, 4, 68],
-                    [Secp256k1_Fp, Pasta_Fq, 4, 68],
-                    [Secp256k1_Fp, Pasta_Fp, 4, 68],
-                    [Secp256k1_Fq, Pasta_Fq, 4, 68],
-                    [Secp256k1_Fq, Pasta_Fp, 4, 68]
+                    [Pasta_Fp, Pasta_Fq, 68],
+                    [Pasta_Fq, Pasta_Fp, 68],
+                    [Secp256k1_Fp, Pasta_Fq, 68],
+                    [Secp256k1_Fp, Pasta_Fp, 68],
+                    [Secp256k1_Fq, Pasta_Fq, 68],
+                    [Secp256k1_Fq, Pasta_Fp, 68]
                 );
             }
             #[cfg(feature = "kzg")]
@@ -1786,10 +1502,10 @@ mod tests {
                 use halo2::pairing::bn256::{Fq, Fr};
                 test_circuit_runner!(
                     $circuit,
-                    [Fq, Fr, 4, 68],
-                    [Fr, Fr, 4, 68],
-                    [Secp256k1_Fp, Fr, 4, 68],
-                    [Secp256k1_Fq, Fr, 4, 68]
+                    [Fq, Fr, 68],
+                    [Fr, Fr, 68],
+                    [Secp256k1_Fp, Fr, 68],
+                    [Secp256k1_Fq, Fr, 68]
                 );
             }
         };

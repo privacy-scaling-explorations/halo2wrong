@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::Integer, AssignedInteger, WrongExt};
 use halo2::arithmetic::FieldExt;
@@ -8,11 +6,12 @@ use maingate::{
     halo2, Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx,
     Term,
 };
+use std::rc::Rc;
 
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    pub(super) fn _invert(
+    pub(super) fn invert_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -24,13 +23,9 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Error,
     > {
         let main_gate = self.main_gate();
-
-        let one = N::one();
         let integer_one = Integer::from_big(1u32.into(), Rc::clone(&self.rns));
 
-        let a_int = a.integer();
-
-        let inv_or_one = match a_int.as_ref() {
+        let inv_or_one = match a.integer().as_ref() {
             Some(a) => match a.invert() {
                 Some(a) => Some(a),
                 None => Some(integer_one),
@@ -42,7 +37,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // 1. extend mul to support prenormalized value.
         // 2. call normalize here.
         // 3. add wrong field range check on inv.
-        let inv_or_one = self.range_assign_integer(ctx, inv_or_one.into(), Range::Remainder)?;
+        let inv_or_one = self.assign_integer(ctx, inv_or_one.into(), Range::Remainder)?;
         let a_mul_inv = &self.mul(ctx, a, &inv_or_one)?;
 
         // We believe the mul result is strictly less than wrong modulus, so we add
@@ -59,24 +54,28 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         main_gate.one_or_one(ctx, &a_mul_inv.limb(0), &inv_or_one.limb(0))?;
 
         // Align with main_gain.invert(), cond = 1 - a_mul_inv
-        let cond = a_mul_inv.limb(0).value().map(|a_mul_inv| one - a_mul_inv);
-        let cond = main_gate.combine(
+        let cond = a_mul_inv
+            .limb(0)
+            .value()
+            .map(|a_mul_inv| N::one() - a_mul_inv);
+
+        let cond = main_gate.apply(
             ctx,
             &[
-                Term::Assigned(a_mul_inv.limb(0), one),
-                Term::Unassigned(cond, one),
+                Term::Assigned(a_mul_inv.limb(0), N::one()),
+                Term::Unassigned(cond, N::one()),
                 Term::Zero,
                 Term::Zero,
                 Term::Zero,
             ],
-            -one,
+            -N::one(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?[1];
 
         Ok((inv_or_one, cond.into()))
     }
 
-    pub(crate) fn _invert_incomplete(
+    pub(crate) fn invert_incomplete_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -93,12 +92,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             },
             None => None,
         };
-
-        let inv = self.range_assign_integer(ctx, inv.into(), Range::Remainder)?;
-        // let must_be_one = &self.mul(ctx, &a, &inv, offset)?;
-        // self.assert_strict_one(ctx, must_be_one, offset)?;
-        self._mul_into_one(ctx, a, &inv)?;
-
+        let inv = self.assign_integer(ctx, inv.into(), Range::Remainder)?;
+        self.mul_into_one(ctx, a, &inv)?;
         Ok(inv)
     }
 }
