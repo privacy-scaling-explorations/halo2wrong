@@ -37,6 +37,13 @@ impl<F: FieldExt> Term<F> {
     pub(crate) fn empty<const WIDTH: usize>() -> [Self; WIDTH] {
         vec![Self::Zero; WIDTH].try_into().unwrap()
     }
+
+    pub(crate) fn is_zero(&self) -> bool {
+        match &self {
+            Term::Zero => true,
+            _ => false,
+        }
+    }
 }
 
 /// This macro converts an array of terms sized less than `WIDTH` to the `WIDTH`
@@ -47,6 +54,18 @@ macro_rules! terms {
         let mut terms = Term::empty();
         for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
             *term = e
+        }
+        &terms.clone()
+    }};
+}
+
+/// This macro converts an array of -unchecked sized- terms to the `WIDTH`
+/// sized array
+macro_rules! terms_unsafe {
+    ($arr:expr) => {{
+        let mut terms = Term::empty();
+        for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
+            *term = e.clone()
         }
         &terms.clone()
     }};
@@ -192,7 +211,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([Term::unassigned_to_sub(Some(constant))]),
             constant,
@@ -218,6 +237,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::accumulator())
     }
 
+    // Assigns new witness to the specified column
+    fn assign_to_column(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        value: &UnassignedValue<F>,
+        column: Self::MainGateColumn,
+    ) -> Result<AssignedValue<F>, Error>;
+
     /// Assigns given value and enforces that the value is `0` or `1`
     /// `val * val - val  = 0`
     fn assign_bit(
@@ -225,7 +252,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         bit: &UnassignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
-        let assigned = self.combine(
+        let assigned = self.apply(
             ctx,
             terms!([
                 Term::unassigned_to_mul(bit.value()),
@@ -249,7 +276,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedCondition<F>,
     ) -> Result<(), Error> {
-        let assigned = self.combine(
+        let assigned = self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(&a.into()),
@@ -275,7 +302,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
     ) -> Result<(), Error> {
         let one = F::one();
-        self.combine(
+        self.apply(
             ctx,
             terms!([Term::assigned_to_sub(a), Term::assigned_to_sub(b),]),
             one,
@@ -302,7 +329,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         let zero = F::zero();
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_sub(&c1.into()),
@@ -329,7 +356,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(&c1.into()),
@@ -351,7 +378,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // Find the new witness
         let not_c = c.value().map(|c| F::one() - c);
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_add(&c.into()),
@@ -385,7 +412,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(b),
@@ -428,7 +455,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([Term::assigned_to_mul(a), Term::unassigned_to_mul(inverse)]),
             -F::one(),
@@ -473,7 +500,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | - | -- | - |
         // | a | a' | r |
 
-        let a_inv = self.combine(
+        let a_inv = self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(a),
@@ -489,7 +516,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | - | -- | - |
         // | r | a' | r |
 
-        self.combine(
+        self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(&r.into()),
@@ -510,7 +537,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
         b: F,
     ) -> Result<(), Error> {
-        self.combine(
+        self.apply(
             ctx,
             terms!([Term::assigned_to_add(a)]),
             -b,
@@ -527,7 +554,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<(), Error> {
-        self.combine(
+        self.apply(
             ctx,
             terms!([Term::assigned_to_add(a), Term::assigned_to_sub(b)]),
             F::zero(),
@@ -593,7 +620,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        let u = self.combine(
+        let u = self.apply(
             ctx,
             terms!([
                 Term::assigned_to_sub(&r.into()),
@@ -609,7 +636,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | --- | - | - |
         // | dif | u | r |
 
-        self.combine(
+        self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(&dif),
@@ -623,7 +650,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(*r)
     }
 
-    /// Enforces that assigned value is zero
+    /// Enforces that assigned value is zero % w
     fn assert_zero(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -650,7 +677,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        self.combine(
+        self.apply(
             ctx,
             terms!([Term::assigned_to_mul(a), Term::unassigned_to_mul(w)]),
             -F::one(),
@@ -690,7 +717,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + constant);
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([Term::assigned_to_add(a), Term::unassigned_to_sub(c)]),
             constant,
@@ -723,7 +750,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_add(a),
@@ -745,7 +772,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| -a + constant);
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([Term::assigned_to_sub(a), Term::unassigned_to_sub(c)]),
             constant,
@@ -761,7 +788,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + a);
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_add(a),
@@ -781,7 +808,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| a + a + a);
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_add(a),
@@ -807,7 +834,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(a),
@@ -833,7 +860,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(a),
@@ -860,7 +887,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(a),
@@ -880,7 +907,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedCondition<F>,
         b: &AssignedCondition<F>,
     ) -> Result<(), Error> {
-        self.combine(
+        self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(&a.into()),
@@ -891,14 +918,6 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         )?;
         Ok(())
     }
-
-    // Assigns new witness to the specified column
-    fn assign_to_column(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        value: &UnassignedValue<F>,
-        column: Self::MainGateColumn,
-    ) -> Result<AssignedValue<F>, Error>;
 
     /// Assigns a new witness `r` as:
     /// `r = a * b`
@@ -925,7 +944,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_add(a),
@@ -986,7 +1005,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         let sign = self.assign_bit(ctx, &w.map(|w| w.0).into())?;
 
-        self.combine(
+        self.apply(
             ctx,
             terms!([
                 Term::Unassigned(w.map(|w| w.1), F::from(2)),
@@ -1032,7 +1051,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     }
 
     // Assigns a new witness composed of given array of terms
-    // `constant + term_0 + term_1 + ... `
+    // `result = constant + term_0 + term_1 + ... `
     // where `term_i = a_i * q_i`
     fn compose(
         &self,
@@ -1042,21 +1061,27 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     ) -> Result<AssignedValue<F>, Error> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
+        // Remove zero iterms
+        let terms: Vec<Term<F>> = terms
+            .to_vec()
+            .into_iter()
+            .filter(|e| !e.is_zero())
+            .collect();
+
         // Last cell will be allocated for result or intermediate sums.
         let chunk_width: usize = WIDTH - 1;
         let number_of_chunks = (terms.len() - 1) / chunk_width + 1;
 
         // `remaining` at first set to the sum of terms.
-        let mut remaining = Term::compose(terms, constant);
+        let mut remaining = Term::compose(&terms[..], constant);
         // `result` will be assigned in the first iteration.
         // First iteration is guaranteed to be present disallowing empty
         let mut result = None;
 
         for (i, chunk) in terms.chunks(chunk_width).enumerate() {
-            // Add constant at the very first composition row
+            let intermediate = Term::Unassigned(remaining, -F::one());
             let constant = if i == 0 { constant } else { F::zero() };
 
-            let intermediate = Term::Unassigned(remaining, -F::one());
             remaining = match (Term::compose(chunk, constant), remaining) {
                 (Some(composed), Some(remaining)) => Some(remaining - composed),
                 _ => None,
@@ -1075,7 +1100,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 CombinationOptionCommon::CombineToNextAdd(F::one())
             };
 
-            let combined = self.combine(
+            let combined = self.apply(
                 ctx,
                 terms_with_acc!(chunk, intermediate),
                 constant,
@@ -1088,10 +1113,77 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(result.unwrap())
     }
 
+    // Given array of terms asserts sum is equal to zero
+    // `constant + term_0 + term_1 + ... `
+    // where `term_i = a_i * q_i`
+    fn assert_zero_sum(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        terms: &[Term<F>],
+        constant: F,
+    ) -> Result<(), Error> {
+        assert!(!terms.is_empty(), "At least one term is expected");
+
+        // Remove zero iterms
+        let terms: Vec<Term<F>> = terms
+            .to_vec()
+            .into_iter()
+            .filter(|e| !e.is_zero())
+            .collect();
+
+        let one_liner = terms.len() <= WIDTH;
+
+        // Apply the first chunk
+        self.apply(
+            ctx,
+            terms_unsafe!(*terms),
+            constant,
+            if one_liner {
+                CombinationOptionCommon::OneLinerAdd
+            } else {
+                CombinationOptionCommon::CombineToNextAdd(-F::one())
+            }
+            .into(),
+        )?;
+
+        // And the rest if there are more terms
+        if !one_liner {
+            let chunk_width: usize = WIDTH - 1;
+            let mut intermediate_sum = Term::compose(&terms[..WIDTH], constant);
+            let terms = &terms[WIDTH..];
+            let number_of_chunks = (terms.len() - 1) / chunk_width + 1;
+
+            for (i, chunk) in terms.chunks(chunk_width).enumerate() {
+                self.apply(
+                    ctx,
+                    terms_with_acc!(chunk, Term::Unassigned(intermediate_sum, F::one())),
+                    F::zero(),
+                    if i == number_of_chunks - 1 {
+                        CombinationOptionCommon::OneLinerAdd
+                    } else {
+                        CombinationOptionCommon::CombineToNextAdd(-F::one())
+                    }
+                    .into(),
+                )?;
+
+                intermediate_sum =
+                    intermediate_sum.map(|cur| cur + Term::compose(&chunk, F::zero()).unwrap());
+
+                // // Sanity check for prover
+                // if i == number_of_chunks - 1 {
+                //     if let Some(value) = intermediate_sum {
+                //         assert_eq!(value, F::zero())
+                //     };
+                // }
+            }
+        }
+        Ok(())
+    }
+
     fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error>;
 
     // Given specific option combines `WIDTH` sized terms and assigns new value.
-    fn combine(
+    fn apply(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         terms: &[Term<F>; WIDTH],
@@ -1100,7 +1192,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     ) -> Result<[AssignedValue<F>; WIDTH], Error>;
 
     fn break_here(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
-        self.combine(
+        self.apply(
             ctx,
             &Term::empty(),
             F::one(),

@@ -145,6 +145,12 @@ impl<F: FieldExt> From<Option<F>> for UnassignedValue<F> {
     }
 }
 
+impl<F: FieldExt> From<&Option<F>> for UnassignedValue<F> {
+    fn from(value: &Option<F>) -> Self {
+        UnassignedValue(*value)
+    }
+}
+
 impl<F: FieldExt> From<UnassignedValue<F>> for Option<F> {
     fn from(value: UnassignedValue<F>) -> Self {
         value.0

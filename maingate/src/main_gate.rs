@@ -140,7 +140,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             _ => None,
         };
 
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_add(a),
@@ -162,7 +162,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     ) -> Result<AssignedValue<F>, Error> {
         // We should satisfy the equation below with bit asserted condition flag
         // c (a-b) + b - res = 0
-        // c a - c b + b - res = 0
+        // cond * a - cond * b + b - res = 0
 
         // Witness layout:
         // | A   | B   | C | D   | E  |
@@ -177,7 +177,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             _ => None,
         };
 
-        let assigned = self.combine(
+        let assigned = self.apply(
             ctx,
             &[
                 Term::assigned_to_mul(&cond.into()),
@@ -219,7 +219,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         };
 
         // a - b - dif = 0
-        let dif = self.combine(
+        let dif = self.apply(
             ctx,
             terms!([Term::assigned_to_add(a), Term::unassigned_to_sub(dif)]),
             -b,
@@ -227,7 +227,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         )?[1];
 
         // cond * dif + b + a_or_b  = 0
-        Ok(self.combine(
+        Ok(self.apply(
             ctx,
             terms!([
                 Term::assigned_to_mul(&dif),
@@ -239,7 +239,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         )?[2])
     }
 
-    fn combine(
+    fn apply(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         terms: &[Term<F>; WIDTH],
@@ -638,7 +638,7 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let assigned = main_gate.combine(
+                        let assigned = main_gate.apply(
                             ctx,
                             &terms,
                             constant,
@@ -651,7 +651,7 @@ mod tests {
                             .map(|(u, r)| Term::Assigned(*u, *r))
                             .collect();
 
-                        main_gate.combine(
+                        main_gate.apply(
                             ctx,
                             &terms.try_into().unwrap(),
                             constant,
@@ -679,7 +679,7 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let assigned = main_gate.combine(
+                        let assigned = main_gate.apply(
                             ctx,
                             &terms,
                             constant,
@@ -692,7 +692,7 @@ mod tests {
                             .map(|(u, r)| Term::Assigned(*u, *r))
                             .collect();
 
-                        main_gate.combine(
+                        main_gate.apply(
                             ctx,
                             &terms.try_into().unwrap(),
                             constant,
@@ -723,7 +723,7 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let assigned = main_gate.combine(
+                        let assigned = main_gate.apply(
                             ctx,
                             &terms,
                             constant,
@@ -738,7 +738,7 @@ mod tests {
                             .map(|(u, r)| Term::Assigned(*u, *r))
                             .collect();
 
-                        main_gate.combine(
+                        main_gate.apply(
                             ctx,
                             &terms.try_into().unwrap(),
                             constant,
@@ -771,7 +771,7 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let assigned = main_gate.combine(
+                        let assigned = main_gate.apply(
                             ctx,
                             &terms,
                             constant,
@@ -786,7 +786,7 @@ mod tests {
                             .map(|(u, r)| Term::Assigned(*u, *r))
                             .collect();
 
-                        main_gate.combine(
+                        main_gate.apply(
                             ctx,
                             &terms.try_into().unwrap(),
                             constant,
@@ -818,7 +818,7 @@ mod tests {
                             Term::Unassigned(Some(a_4), r_4),
                         ];
 
-                        let assigned = main_gate.combine(
+                        let assigned = main_gate.apply(
                             ctx,
                             &terms,
                             constant,
@@ -833,7 +833,7 @@ mod tests {
                             .map(|(u, r)| Term::Assigned(*u, *r))
                             .collect();
 
-                        main_gate.combine(
+                        main_gate.apply(
                             ctx,
                             &terms.try_into().unwrap(),
                             constant,
@@ -1486,7 +1486,6 @@ mod tests {
                         let terms = (0..number_of_terms)
                             .map(|_| (Term::Unassigned(Some(rand()), rand())))
                             .collect::<Vec<Term<F>>>();
-
                         let expected = Term::compose(&terms, constant);
                         let expected = main_gate.assign_value(ctx, &expected.into())?;
                         let result = main_gate.compose(ctx, &terms, constant)?;

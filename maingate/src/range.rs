@@ -202,7 +202,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             };
 
             if has_overflow {
-                let _ = main_gate.combine(
+                let _ = main_gate.apply(
                     ctx,
                     &[term_0, term_1, term_2, term_3, Term::Zero],
                     zero,
@@ -228,7 +228,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 // should meet with overflow bit len
                 ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
 
-                Ok(main_gate.combine(
+                Ok(main_gate.apply(
                     ctx,
                     &[
                         Term::Zero,
@@ -243,7 +243,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             } else {
                 let unassigned_input = Term::Unassigned(input.value(), -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
-                Ok(main_gate.combine(
+                Ok(main_gate.apply(
                     ctx,
                     &[term_0, term_1, term_2, term_3, unassigned_input],
                     zero,
