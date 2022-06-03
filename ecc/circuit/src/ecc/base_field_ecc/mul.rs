@@ -130,7 +130,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 
     /// Computes multi-product
     ///
-    /// Given a vector of point, scalar pairs 
+    /// Given a vector of point, scalar pairs
     /// `[(P_0, e_0), (P_1, e_1), ..., (P_k, e_k)]`
     /// Returns
     /// ` P_0 * e_0 + P_1 * e_1 + ...+ P_k * e_k`

@@ -1,13 +1,13 @@
 use super::{make_mul_aux, AssignedPoint, EccConfig, MulAux, Point};
+use crate::integer::chip::IntegerChip;
 use crate::integer::rns::{Integer, Rns};
-use crate::integer::{IntegerChip, IntegerInstructions, Range};
 use crate::{halo2, maingate};
 use halo2::arithmetic::CurveAffine;
 use halo2::circuit::Layouter;
 use halo2::plonk::Error;
 use halo2::plonk::{Column, Instance};
 use integer::maingate::RegionCtx;
-use integer::UnassignedInteger;
+use integer::{IntegerInstructions, Range, UnassignedInteger};
 use maingate::{Assigned, AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -162,8 +162,8 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
             None => (UnassignedInteger::from(None), UnassignedInteger::from(None)),
         };
 
-        let x = integer_chip.range_assign_integer(ctx, x, Range::Remainder)?;
-        let y = integer_chip.range_assign_integer(ctx, y, Range::Remainder)?;
+        let x = integer_chip.assign_integer(ctx, x, Range::Remainder)?;
+        let y = integer_chip.assign_integer(ctx, y, Range::Remainder)?;
 
         let point = AssignedPoint::new(x, y);
         self.assert_is_on_curve(ctx, &point)?;
@@ -356,13 +356,14 @@ mod tests {
     use crate::ecc::{AssignedPoint, EccConfig, Point};
     use crate::halo2;
     use crate::integer::rns::Rns;
-    use crate::integer::{IntegerConfig, NUMBER_OF_LOOKUP_LIMBS};
+    use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
     use crate::maingate;
     use group::{Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
+    use integer::chip::IntegerConfig;
     use integer::maingate::RegionCtx;
     use maingate::{
         AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,

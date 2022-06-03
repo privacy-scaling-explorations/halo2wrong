@@ -216,8 +216,8 @@ impl<
             None => (UnassignedInteger::from(None), UnassignedInteger::from(None)),
         };
 
-        let x = integer_chip.range_assign_integer(ctx, x, Range::Remainder)?;
-        let y = integer_chip.range_assign_integer(ctx, y, Range::Remainder)?;
+        let x = integer_chip.assign_integer(ctx, x, Range::Remainder)?;
+        let y = integer_chip.assign_integer(ctx, y, Range::Remainder)?;
 
         let point = AssignedPoint::new(x, y);
         self.assert_is_on_curve(ctx, &point)?;
@@ -409,6 +409,7 @@ mod tests {
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::rns::Integer;
+    use integer::Range;
     use maingate::{
         MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
     };
@@ -800,7 +801,7 @@ mod tests {
 
                     let s = Integer::from_fe(s, ecc_chip.rns_scalar());
                     let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
-                    let s = scalar_chip.assign_integer(ctx, Some(s).into())?;
+                    let s = scalar_chip.assign_integer(ctx, Some(s).into(), Range::Remainder)?;
                     let result_0 = ecc_chip.assign_point(ctx, Some(result.into()))?;
 
                     let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
@@ -929,7 +930,11 @@ mod tests {
                             acc = acc + (base * s);
                             let s = Integer::from_fe(s, ecc_chip.rns_scalar());
                             let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
-                            let s = scalar_chip.assign_integer(ctx, Some(s).into())?;
+                            let s = scalar_chip.assign_integer(
+                                ctx,
+                                Some(s).into(),
+                                Range::Remainder,
+                            )?;
                             Ok((base, s))
                         })
                         .collect::<Result<_, Error>>()?;

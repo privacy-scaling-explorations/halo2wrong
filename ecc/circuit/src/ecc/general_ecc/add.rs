@@ -1,10 +1,10 @@
 use super::AssignedPoint;
 use super::GeneralEccChip;
 use crate::halo2;
-use crate::integer::IntegerInstructions;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
+use integer::IntegerInstructions;
 
 impl<
         Emulated: CurveAffine,

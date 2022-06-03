@@ -4,6 +4,6 @@ members = [
   "integer",
   "ecc/circuit",
   "ecc/secp256k1",
-  "ecdsa",
+  # "ecdsa",
   "transcript"
 ]

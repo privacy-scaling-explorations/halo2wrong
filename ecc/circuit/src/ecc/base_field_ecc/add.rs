@@ -1,10 +1,10 @@
 use super::AssignedPoint;
 use super::BaseFieldEccChip;
 use crate::halo2;
-use crate::integer::IntegerInstructions;
 use halo2::arithmetic::CurveAffine;
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
+use integer::IntegerInstructions;
 
 impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>

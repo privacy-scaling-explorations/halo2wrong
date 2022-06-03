@@ -1,3 +1,4 @@
+use super::integer::{IntegerChip, IntegerConfig};
 use crate::halo2;
 use crate::integer;
 use crate::maingate;
@@ -6,11 +7,10 @@ use ecc::WrongExt;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
+use halo2::arithmetic::BaseExt;
 use integer::rns::Integer;
 use integer::{AssignedInteger, IntegerInstructions};
 use maingate::{MainGateConfig, RangeConfig};
-
-use super::integer::{IntegerChip, IntegerConfig};
 
 #[derive(Clone, Debug)]
 pub struct EcdsaConfig {
@@ -143,6 +143,7 @@ mod tests {
     use crate::halo2;
     use crate::integer;
     use crate::maingate;
+    use ecc::integer::Range;
     use ecc::maingate::RegionCtx;
     use ecc::{EccConfig, GeneralEccChip};
     use group::ff::Field;
@@ -278,8 +279,10 @@ mod tests {
                     let integer_s = ecc_chip.new_unassigned_scalar(Some(sig_s));
                     let msg_hash = ecc_chip.new_unassigned_scalar(Some(m_hash));
 
-                    let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
-                    let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                    let r_assigned =
+                        scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
+                    let s_assigned =
+                        scalar_chip.assign_integer(ctx, integer_s, Range::Remainder)?;
                     let sig = AssignedEcdsaSig {
                         r: r_assigned,
                         s: s_assigned,
@@ -289,7 +292,7 @@ mod tests {
                     let pk_assigned = AssignedPublicKey {
                         point: pk_in_circuit,
                     };
-                    let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
+                    let msg_hash = scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
                     ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
                 },
             )?;

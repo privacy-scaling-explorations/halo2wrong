@@ -1,11 +1,10 @@
-use crate::halo2::arithmetic::CurveAffine;
+use crate::halo2::arithmetic::{CurveAffine, FieldExt};
+use crate::integer::chip::IntegerConfig;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::AssignedInteger;
-use crate::maingate::{big_to_fe, halo2, Assigned, AssignedCondition, MainGateConfig, RangeConfig};
+use crate::maingate::{big_to_fe, Assigned, AssignedCondition, MainGateConfig, RangeConfig};
 use crate::WrongExt;
 use group::Curve;
-use halo2::arithmetic::FieldExt;
-use integer::IntegerConfig;
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 use std::fmt;

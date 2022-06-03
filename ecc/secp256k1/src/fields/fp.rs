@@ -224,18 +224,20 @@ impl Fp {
     }
 
     fn from_u512(limbs: [u64; 8]) -> Fp {
-        // We reduce an arbitrary 512-bit number by decomposing it into two 256-bit digits
-        // with the higher bits multiplied by 2^256. Thus, we perform two reductions
+        // We reduce an arbitrary 512-bit number by decomposing it into two 256-bit
+        // digits with the higher bits multiplied by 2^256. Thus, we perform two
+        // reductions
         //
         // 1. the lower bits are multiplied by R^2, as normal
         // 2. the upper bits are multiplied by R^2 * 2^256 = R^3
         //
-        // and computing their sum in the field. It remains to see that arbitrary 256-bit
-        // numbers can be placed into Montgomery form safely using the reduction. The
-        // reduction works so long as the product is less than R=2^256 multiplied by
-        // the modulus. This holds because for any `c` smaller than the modulus, we have
-        // that (2^256 - 1)*c is an acceptable product for the reduction. Therefore, the
-        // reduction always works so long as `c` is in the field; in this case it is either the
+        // and computing their sum in the field. It remains to see that arbitrary
+        // 256-bit numbers can be placed into Montgomery form safely using the
+        // reduction. The reduction works so long as the product is less than
+        // R=2^256 multiplied by the modulus. This holds because for any `c`
+        // smaller than the modulus, we have that (2^256 - 1)*c is an acceptable
+        // product for the reduction. Therefore, the reduction always works so
+        // long as `c` is in the field; in this case it is either the
         // constant `R2` or `R3`.
         let d0 = Fp([limbs[0], limbs[1], limbs[2], limbs[3]]);
         let d1 = Fp([limbs[4], limbs[5], limbs[6], limbs[7]]);
@@ -377,7 +379,8 @@ impl Fp {
         let (d3, borrow) = sbb(self.0[3], rhs.0[3], borrow);
 
         // If underflow occurred on the final limb, borrow = 0xfff...fff, otherwise
-        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the modulus.
+        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the
+        // modulus.
         let (d0, carry) = adc(d0, MODULUS.0[0] & borrow, 0);
         let (d1, carry) = adc(d1, MODULUS.0[1] & borrow, carry);
         let (d2, carry) = adc(d2, MODULUS.0[2] & borrow, carry);
@@ -649,7 +652,8 @@ impl SqrtRatio for Fp {
     }
 
     fn get_lower_32(&self) -> u32 {
-        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding perfect hash table.)
+        // TODO: don't reduce, just hash the Montgomery form. (Requires rebuilding
+        // perfect hash table.)
         let tmp = Fp::montgomery_reduce(self.0[0], self.0[1], self.0[2], self.0[3], 0, 0, 0, 0);
 
         tmp.0[0] as u32
