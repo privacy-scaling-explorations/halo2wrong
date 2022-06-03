@@ -23,7 +23,7 @@ optional = true
 [dependencies.halo2_kzg]
 package = "halo2_proofs"
 git = "https://github.com/privacy-scaling-explorations/halo2.git"
-tag = "v2022_05_09"
+tag = "v2022_06_03"
 optional = true
 
 [features]
