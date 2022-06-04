@@ -2,8 +2,5 @@
 members = [
   "maingate",
   "integer",
-  "ecc/circuit",
-  "ecc/secp256k1",
-  # "ecdsa",
-  "transcript"
+  "ecc",
 ]

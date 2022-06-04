@@ -13,7 +13,6 @@ rand = "0.8"
 group = "0.11"
 subtle = { version = "2.3", default-features = false }
 cfg-if = "0.1"
-secp256k1 = {path = "../ecc/secp256k1", default-features = false }
 
 [dev-dependencies]
 rand_core = { version = "0.6", default-features = false }
@@ -21,5 +20,5 @@ rand_core = { version = "0.6", default-features = false }
 
 [features]
 default = ["zcash"]
-kzg = ["maingate/kzg", "secp256k1/kzg"]
-zcash = ["maingate/zcash", "secp256k1/zcash"]
+kzg = ["maingate/kzg"]
+zcash = ["maingate/zcash"]

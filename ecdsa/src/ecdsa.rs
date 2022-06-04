@@ -327,10 +327,6 @@ mod tests {
         #[cfg(not(feature = "kzg"))]
         {}
         #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::Fr;
-            use secp256k1::Secp256k1Affine as Secp256;
-            run::<Secp256, Fr>();
-        }
+        {}
     }
 }

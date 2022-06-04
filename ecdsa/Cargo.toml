@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-secp256k1 = { path = "../ecc/secp256k1/", default-features = true, optional = true }
-ecc = { path = "../ecc/circuit/", default-features = false }
+ecc = { path = "../ecc", default-features = false }
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
@@ -19,5 +18,5 @@ rand_core = { version = "0.6", default-features = false }
 
 [features]
 default = ["zcash"]
-kzg = ["ecc/kzg", "secp256k1/kzg"]
-zcash = ["ecc/zcash", "secp256k1/zcash"]
+kzg = ["ecc/kzg"]
+zcash = ["ecc/zcash"]

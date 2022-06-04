@@ -531,8 +531,6 @@ mod tests {
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
     use rand::thread_rng;
-    use secp256k1::Fp as Secp256k1_Fp;
-    use secp256k1::Fq as Secp256k1_Fq;
     use std::rc::Rc;
 
     const NUMBER_OF_LIMBS: usize = 4;
@@ -1497,26 +1495,12 @@ mod tests {
             #[cfg(not(feature = "kzg"))]
             {
                 use halo2::pasta::{Fp as Pasta_Fp, Fq as Pasta_Fq};
-                test_circuit_runner!(
-                    $circuit,
-                    [Pasta_Fp, Pasta_Fq, 68],
-                    [Pasta_Fq, Pasta_Fp, 68],
-                    [Secp256k1_Fp, Pasta_Fq, 68],
-                    [Secp256k1_Fp, Pasta_Fp, 68],
-                    [Secp256k1_Fq, Pasta_Fq, 68],
-                    [Secp256k1_Fq, Pasta_Fp, 68]
-                );
+                test_circuit_runner!($circuit, [Pasta_Fp, Pasta_Fq, 68], [Pasta_Fq, Pasta_Fp, 68]);
             }
             #[cfg(feature = "kzg")]
             {
                 use halo2::pairing::bn256::{Fq, Fr};
-                test_circuit_runner!(
-                    $circuit,
-                    [Fq, Fr, 68],
-                    [Fr, Fr, 68],
-                    [Secp256k1_Fp, Fr, 68],
-                    [Secp256k1_Fq, Fr, 68]
-                );
+                test_circuit_runner!($circuit, [Fq, Fr, 68], [Fr, Fr, 68]);
             }
         };
     }

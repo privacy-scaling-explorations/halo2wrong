@@ -6,8 +6,7 @@ edition = "2021"
 
 [dependencies]
 ecc = { path = "../ecc/circuit", default-features = false }
-poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon.git", branch = "circuit" }
-
+poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon.git", branch = "padding" }
 rand = "0.8"
 group = "0.11"
 subtle = { version = "2.3", default-features = false }
