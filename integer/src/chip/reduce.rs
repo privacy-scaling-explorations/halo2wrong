@@ -8,6 +8,11 @@ use maingate::{halo2, AssignedValue, MainGateInstructions, RangeInstructions, Re
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Reduces an [`AssignedInteger`] if any of its limbs values is greater
+    /// than the [`Rns`] `max_unreduced_limb`.
+    ///
+    /// Panics if the value of the integer is greater than [`Rns`]
+    /// `max_reducible_value`.
     pub(super) fn reduce_if_limb_values_exceeds_unreduced(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -35,6 +40,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
     }
 
+    /// Reduces an [`AssignedInteger`] if any of its limbs values is greater
+    /// than the [`Rns`] `max_reduced_limb`
     pub(super) fn reduce_if_limb_values_exceeds_reduced(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -50,6 +57,8 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
     }
 
+    /// Reduces an [`AssignedInteger`] if any of its max value is greater
+    /// than the [`Rns`] `max_operand`.
     pub(super) fn reduce_if_max_operand_value_exceeds(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,

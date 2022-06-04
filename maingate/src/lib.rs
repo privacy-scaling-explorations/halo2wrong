@@ -19,18 +19,18 @@ pub use range::*;
 
 /// Helper trait for assigned values across halo2stack.
 pub trait Assigned<F: FieldExt> {
-    // Returns witness value
+    /// Returns witness value
     fn value(&self) -> Option<F>;
-    // Applies copy constraion to the given `Assigned` witness
+    /// Applies copy constraion to the given `Assigned` witness
     fn constrain_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, other: &Self) -> Result<(), Error> {
         ctx.region.constrain_equal(self.cell(), other.cell())
     }
-    // Returns cell of the assigned value
+    /// Returns cell of the assigned value
     fn cell(&self) -> Cell;
-    // Decomposes witness values as
-    // `W = a_0 + a_1 * R + a_1 * R^2 + ...`
-    // where
-    // `R = 2 ** bit_len`
+    /// Decomposes witness values as
+    /// `W = a_0 + a_1 * R + a_1 * R^2 + ...`
+    /// where
+    /// `R = 2 ** bit_len`
     fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
         self.value().map(|e| decompose(e, number_of_limbs, bit_len))
     }
@@ -52,6 +52,9 @@ impl<F: FieldExt> From<AssignedValue<F>> for AssignedCondition<F> {
 }
 
 impl<F: FieldExt> AssignedCondition<F> {
+    /// Creates a new [`AssignedCondition`] from a field element.
+    /// It will have false value if the provided element is zero
+    /// and true otherwise
     pub fn new(cell: Cell, value: Option<F>) -> Self {
         let bool_value = value.map(|value| value != F::zero());
         AssignedCondition {
@@ -82,7 +85,7 @@ impl<F: FieldExt> Assigned<F> for &AssignedCondition<F> {
     }
 }
 
-/// `AssignedValue` is a witness value we enforce their validity in gates and
+/// [`AssignedValue`] is a witness value we enforce their validity in gates and
 /// apply equality constraint between other assigned values.
 #[derive(Debug, Copy, Clone)]
 pub struct AssignedValue<F: FieldExt> {
@@ -130,12 +133,13 @@ impl<F: FieldExt> Assigned<F> for &AssignedValue<F> {
 }
 
 impl<F: FieldExt> AssignedValue<F> {
+    /// Creates a new [`AssignedValue`] from a field element
     pub fn new(cell: Cell, value: Option<F>) -> Self {
         AssignedValue { value, cell }
     }
 }
 
-/// `UnassignedValue` is value is about to be assigned.
+/// Value of a field element without an assigned cell in the circuit
 #[derive(Debug, Clone)]
 pub struct UnassignedValue<F: FieldExt>(Option<F>);
 
@@ -158,14 +162,18 @@ impl<F: FieldExt> From<UnassignedValue<F>> for Option<F> {
 }
 
 impl<F: FieldExt> UnassignedValue<F> {
+    /// Returns the value
     pub fn value(&self) -> Option<F> {
         self.0
     }
 
+    /// Returns the value in limb representation
     pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
         self.0.map(|e| decompose(e, number_of_limbs, bit_len))
     }
 
+    /// Assigns the value to a provided [`Cell`] of the circuit
+    /// returning an [`AssignedValue`] with the same value field.
     pub fn assign(&self, cell: Cell) -> AssignedValue<F> {
         AssignedValue::new(cell, self.0)
     }

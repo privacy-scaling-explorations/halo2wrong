@@ -64,12 +64,16 @@ pub fn decompose_big<F: Field>(e: big_uint, number_of_limbs: usize, bit_len: usi
     limbs
 }
 
+/// Compute the represented value by a vector of values and a bit length.
+///
+/// This function is used to compute the value of an integer
+/// passing as input its limb values and the bit length used.
+/// Returns the sum of all limbs scaled by 2^(bit_len * i)
 pub fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
-    let mut e = big_uint::zero();
-    for (i, limb) in input.iter().enumerate() {
-        e += limb << (bit_len * i)
-    }
-    e
+    input
+        .iter()
+        .rev()
+        .fold(big_uint::zero(), |acc, val| (acc << bit_len) + val)
 }
 
 #[test]

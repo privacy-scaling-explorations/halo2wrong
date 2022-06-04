@@ -29,12 +29,13 @@ use halo2wrong::RegionCtx;
 const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
 #[derive(Clone, Debug)]
-pub struct TableConfig {
+struct TableConfig {
     selector: Selector,
     column: TableColumn,
     bit_len: usize,
 }
 
+/// Range gate configuration
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
     main_gate_config: MainGateConfig,
@@ -43,6 +44,8 @@ pub struct RangeConfig {
     fine_tune_tables: Vec<TableConfig>,
 }
 
+/// ['RangeChip'] applies binary range constraints
+#[derive(Debug)]
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
     base_bit_len: usize,
@@ -80,7 +83,9 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
     }
 }
 
+/// Generic chip interface for bitwise ranging values
 pub trait RangeInstructions<F: FieldExt>: Chip<F> {
+    /// Ranges new witness with given bit lenght. Expects bit_le
     fn range_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -88,7 +93,9 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
         bit_len: usize,
     ) -> Result<AssignedValue<F>, Error>;
 
+    /// Appends base limb length table in sythnesis time
     fn load_limb_range_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
+    /// Appends shorter range tables in sythesis time
     fn load_overflow_range_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
@@ -167,7 +174,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             // | --- | --- | --- | --- | --- |
             // | a_0 | a_1 | -   | -   | in  |
 
-            // number_of_dense_limbs = 4 & fine_limb_len > 1
+            // number_of_dense_limbs = 4 & fine_limb_len > 0
             // | A   | B   | C   | D   | E   |
             // | --- | --- | --- | --- | --- |
             // | a_0 | a_3 | a_1 | a_2 | -   |
@@ -299,6 +306,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 }
 
 impl<F: FieldExt> RangeChip<F> {
+    /// Given config creates new chip that implements ranging
     pub fn new(config: RangeConfig, base_bit_len: usize) -> Self {
         let two = F::from(2);
         let left_shifter_r = two.pow(&[base_bit_len as u64, 0, 0, 0]);
@@ -318,7 +326,8 @@ impl<F: FieldExt> RangeChip<F> {
         }
     }
 
-    #[allow(unused_variables)]
+    /// Configures subset argument and returns the
+    /// resuiting config
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         main_gate_config: &MainGateConfig,

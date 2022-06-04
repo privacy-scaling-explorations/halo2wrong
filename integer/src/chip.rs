@@ -21,13 +21,18 @@ mod mul;
 mod reduce;
 mod square;
 
+/// Configuration for [`IntegerChip`]
 #[derive(Clone, Debug)]
 pub struct IntegerConfig {
+    /// Configuration for [`RangeChip`]
     range_config: RangeConfig,
+    /// Configuration for [`MainGate`]
     main_gate_config: MainGateConfig,
 }
 
 impl IntegerConfig {
+    // Creates a new [`IntegerConfig`] from a [`RangeConfig`] and a
+    /// [`MainGateConfig`]
     pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
         Self {
             range_config,
@@ -36,19 +41,24 @@ impl IntegerConfig {
     }
 }
 
+/// Chip for integer instructions
 pub struct IntegerChip<
     W: WrongExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
+    /// Chip configuration
     config: IntegerConfig,
+    /// Residue number system used to represent the integers
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
 impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Creates a new [`AssignedInteger`] from its limb representation and its
+    /// native value
     pub(crate) fn new_assigned_integer(
         &self,
         limbs: &[AssignedLimb<N>; NUMBER_OF_LIMBS],

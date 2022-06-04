@@ -19,12 +19,18 @@ use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
 
+/// Enumerates columns of the main gate
 #[derive(Debug)]
 pub enum MainGateColumn {
+    /// A
     A = 0,
+    /// B
     B = 1,
+    /// C
     C = 2,
+    /// D
     D = 3,
+    /// E
     E = 4,
 }
 
@@ -38,29 +44,32 @@ impl ColumnTags<MainGateColumn> for MainGateColumn {
     }
 }
 
+/// Config defines fixed and witness columns of the main gate
 #[derive(Clone, Debug)]
 pub struct MainGateConfig {
-    pub a: Column<Advice>,
-    pub b: Column<Advice>,
-    pub c: Column<Advice>,
-    pub d: Column<Advice>,
-    pub e: Column<Advice>,
+    pub(crate) a: Column<Advice>,
+    pub(crate) b: Column<Advice>,
+    pub(crate) c: Column<Advice>,
+    pub(crate) d: Column<Advice>,
+    pub(crate) e: Column<Advice>,
 
-    pub sa: Column<Fixed>,
-    pub sb: Column<Fixed>,
-    pub sc: Column<Fixed>,
-    pub sd: Column<Fixed>,
-    pub se: Column<Fixed>,
+    pub(crate) sa: Column<Fixed>,
+    pub(crate) sb: Column<Fixed>,
+    pub(crate) sc: Column<Fixed>,
+    pub(crate) sd: Column<Fixed>,
+    pub(crate) se: Column<Fixed>,
 
-    pub se_next: Column<Fixed>,
+    pub(crate) se_next: Column<Fixed>,
 
-    pub s_mul_ab: Column<Fixed>,
-    pub s_mul_cd: Column<Fixed>,
+    pub(crate) s_mul_ab: Column<Fixed>,
+    pub(crate) s_mul_cd: Column<Fixed>,
 
-    pub s_constant: Column<Fixed>,
-    pub instance: Column<Instance>,
+    pub(crate) s_constant: Column<Fixed>,
+    pub(crate) instance: Column<Instance>,
 }
 
+/// MainGate implements instructions with [`MainGateConfig`]
+#[derive(Debug)]
 pub struct MainGate<F: FieldExt> {
     config: MainGateConfig,
     _marker: PhantomData<F>,
@@ -79,12 +88,15 @@ impl<F: FieldExt> Chip<F> for MainGate<F> {
     }
 }
 
+/// Additional combination customisations for this gate with two multiplication
 #[derive(Clone, Debug)]
 pub enum CombinationOption<F: FieldExt> {
+    /// Wrapper for common combination options
     Common(CombinationOptionCommon<F>),
-    // Activates both multiplication gate
+    /// Activates both of the multiplication gate
     OneLinerDoubleMul(F),
-    // Activates both multiplication gate and combines the result to the next row
+    /// Activates both multiplication gate and combines the result to the next
+    /// row
     CombineToNextDoubleMul(F),
 }
 
@@ -398,6 +410,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 }
 
 impl<F: FieldExt> MainGate<F> {
+    /// Create new main gate with given config
     pub fn new(config: MainGateConfig) -> Self {
         MainGate {
             config,
@@ -405,6 +418,7 @@ impl<F: FieldExt> MainGate<F> {
         }
     }
 
+    /// Configures polynomial relationships and returns the resuiting config
     pub fn configure(meta: &mut ConstraintSystem<F>) -> MainGateConfig {
         let a = meta.advice_column();
         let b = meta.advice_column();

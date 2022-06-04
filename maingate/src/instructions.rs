@@ -27,8 +27,11 @@ use crate::{Assigned, AssignedCondition, AssignedValue, UnassignedValue};
 /// assigned_or_unassigned_witness_1 * fixed_1 + ... `
 #[derive(Clone)]
 pub enum Term<F: FieldExt> {
+    /// Assigned value and fixed scalar
     Assigned(AssignedValue<F>, F),
+    /// Unassigned witness and fixed scalar
     Unassigned(Option<F>, F),
+    /// Empty term
     Zero,
 }
 
@@ -185,15 +188,29 @@ pub trait ColumnTags<Column> {
 /// rotation gate.
 #[derive(Clone, Debug)]
 pub enum CombinationOptionCommon<F: FieldExt> {
+    /// Opens only single multiplication gate
     OneLinerMul,
+    /// All multiplications gates are closed
     OneLinerAdd,
+    /// Opens only single multiplication gate and combines terms to the next
+    /// row
     CombineToNextMul(F),
+    /// Opens only single multiplication gate and combines terms to the next
+    /// row and scales the multiplied factors with constant as `constant *
+    /// witness_0 * witness_1`
     CombineToNextScaleMul(F, F),
+    /// All multipcation gates are closed and combines terms to the next
+    /// row
     CombineToNextAdd(F),
 }
 
+/// Instructions covers many basic constaints such as assignments, logical and
+/// arithmetic operations. Also includes general purpose `combine` and  `apply`
+/// functions to let user to build custom constaints using this main gate
 pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
+    /// Options for implementors to implement some more custom functionalities
     type CombinationOption: From<CombinationOptionCommon<F>>;
+    /// Position related customisations should be defined as ['MainGateColumn']
     type MainGateColumn: ColumnTags<Self::MainGateColumn>;
 
     /// Expect an assigned value to be equal to a public input
@@ -237,7 +254,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::accumulator())
     }
 
-    // Assigns new witness to the specified column
+    /// Assigns new witness to the specified column
     fn assign_to_column(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -369,7 +386,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .into())
     }
 
-    // Assigns new value that is logic inverse of the given assigned value.
+    /// Assigns new value that is logic inverse of the given assigned value.
     fn not(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -564,7 +581,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
-    // Enforces two witness is not equal
+    /// Enforces two witness is not equal
     fn assert_not_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -576,7 +593,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.assert_not_zero(ctx, &c)
     }
 
-    // Assigns new value that flags if two value is equal
+    /// Assigns new value that flags if two value is equal
     fn is_equal(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1050,9 +1067,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(bits)
     }
 
-    // Assigns a new witness composed of given array of terms
-    // `result = constant + term_0 + term_1 + ... `
-    // where `term_i = a_i * q_i`
+    /// Assigns a new witness composed of given array of terms
+    /// `result = constant + term_0 + term_1 + ... `
+    /// where `term_i = a_i * q_i`
     fn compose(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1113,9 +1130,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(result.unwrap())
     }
 
-    // Given array of terms asserts sum is equal to zero
-    // `constant + term_0 + term_1 + ... `
-    // where `term_i = a_i * q_i`
+    /// Given array of terms asserts sum is equal to zero
+    /// `constant + term_0 + term_1 + ... `
+    /// where `term_i = a_i * q_i`
     fn assert_zero_sum(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1180,9 +1197,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    /// Increments the offset with all zero selectors
     fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error>;
 
-    // Given specific option combines `WIDTH` sized terms and assigns new value.
+    /// Given specific option combines `WIDTH` sized terms and assigns new
+    /// value.
     fn apply(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
@@ -1191,6 +1210,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         options: Self::CombinationOption,
     ) -> Result<[AssignedValue<F>; WIDTH], Error>;
 
+    /// Intentionally introduce not to be satisfied witnesses. Use only for
+    /// debug purposes.
     fn break_here(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
         self.apply(
             ctx,

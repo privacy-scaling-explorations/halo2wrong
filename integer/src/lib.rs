@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![feature(trait_alias)]
 
 use crate::rns::{Common, Integer, Limb};
@@ -27,7 +26,6 @@ cfg_if::cfg_if! {
     pub trait WrongExt = halo2::arithmetic::BaseExt;
   } else {
     pub trait WrongExt = halo2::arithmetic::FieldExt;
-
   }
 }
 
