@@ -2,6 +2,9 @@
 //! implments a 5 width gate with two multiplication and one rotation
 //! customisation
 
+#![deny(missing_debug_implementations)]
+#![deny(missing_docs)]
+
 use halo2::plonk::Error;
 use halo2::{arithmetic::FieldExt, circuit::Cell};
 use halo2wrong::utils::decompose;

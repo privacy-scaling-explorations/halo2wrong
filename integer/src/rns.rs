@@ -157,10 +157,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 /// There are two possible representations:
 /// Short: as an element of the native field.
 /// Long : as an [`Integer`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Quotient<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
+    /// Single limb quotient
     Short(N),
+    /// Integer quotient
     Long(Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>),
 }
 
@@ -185,13 +187,14 @@ pub(crate) struct ComparisionWitness<
 /// multiplication and reduction in this representation.
 #[derive(Debug, Clone)]
 pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+    /// Bit lenght of sublimbs that is subject to to lookup check
     pub bit_len_lookup: usize,
 
     /// Order of the wrong field W. (In the article `p`).
     pub wrong_modulus: big_uint,
     /// Order of the native field N. (In the article `n`).
     pub native_modulus: big_uint,
-    // Order of the binary field (In the article: 2^t).
+    /// Order of the binary field (In the article: 2^t).
     pub binary_modulus: big_uint,
     /// Order of the ring result of the direct product of the native field and
     /// binary field (In the article notation: M = n * p).
@@ -217,7 +220,7 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
 
     /// Maximum value for a reduced limb.
     pub max_reduced_limb: big_uint,
-    // Maximum value for an unreduced limb.
+    /// Maximum value for an unreduced limb.
     pub max_unreduced_limb: big_uint,
     /// Maximum value of the remainder.
     pub max_remainder: big_uint,
@@ -615,10 +618,12 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         rns
     }
 
+    /// Right shifters by limb size
     pub fn right_shifter(&self, i: usize) -> N {
         self.right_shifters[i]
     }
 
+    /// Left shifters by limb size
     pub fn left_shifter(&self, i: usize) -> N {
         self.left_shifters[i]
     }
@@ -672,10 +677,6 @@ impl<F: FieldExt> From<&str> for Limb<F> {
 impl<F: FieldExt> Limb<F> {
     pub(crate) fn new(value: F) -> Self {
         Limb(value)
-    }
-
-    pub(crate) fn from_big(e: big_uint) -> Self {
-        Self::new(big_to_fe(e))
     }
 
     pub(crate) fn fe(&self) -> F {
@@ -930,9 +931,9 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ComparisionWitness { result, borrow }
     }
 
-    // Construct a new integer that equals to the modulus and its max limb values
-    // are higher than the given max values
-    pub fn subtracion_aux(
+    /// Construct a new integer that equals to the modulus and its max limb
+    /// values are higher than the given max values
+    pub(crate) fn subtracion_aux(
         max_vals: &[big_uint; NUMBER_OF_LIMBS],
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     ) -> Self {

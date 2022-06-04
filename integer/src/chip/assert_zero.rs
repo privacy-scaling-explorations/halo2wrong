@@ -31,16 +31,16 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values
-        let t: Vec<AssignedValue<N>> = witness
-            .intermediates()
+        let t: Vec<AssignedValue<N>> = a
+            .limbs()
             .into_iter()
-            .enumerate()
-            .map(|(i, t)| {
+            .zip(self.rns.negative_wrong_modulus_decomposed.into_iter())
+            .map(|(a_i, w_i)| {
                 main_gate.compose(
                     ctx,
                     &[
-                        Term::Assigned(a.limb(i), one),
-                        Term::Assigned(quotient, self.rns.negative_wrong_modulus_decomposed[i]),
+                        Term::Assigned(a_i.into(), one),
+                        Term::Assigned(quotient, w_i),
                     ],
                     zero,
                 )

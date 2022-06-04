@@ -42,6 +42,7 @@ impl IntegerConfig {
 }
 
 /// Chip for integer instructions
+#[derive(Debug)]
 pub struct IntegerChip<
     W: WrongExt,
     N: FieldExt,
@@ -499,15 +500,18 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    /// Create new ['IntegerChip'] with the configuration and a shared [`Rns`]
     pub fn new(config: IntegerConfig, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         IntegerChip { config, rns }
     }
 
+    /// Getter for [`RangeChip`]
     pub fn range_chip(&self) -> RangeChip<N> {
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
         RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
     }
 
+    /// Getter for [`MainGate`]
     pub fn main_gate(&self) -> MainGate<N> {
         let main_gate_config = self.config.main_gate_config.clone();
         MainGate::<N>::new(main_gate_config)

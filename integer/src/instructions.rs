@@ -7,13 +7,19 @@ use halo2::plonk::Error;
 
 /// Signals the range mode that should be applied while assigning a new
 /// [`Integer`]
+#[derive(Debug)]
 pub enum Range {
+    /// Allowed range for multiplication result
     Remainder,
+    /// Maximum allowed range for a multiplication operation
     Operand,
+    /// Maximum allowed range for an integer for multiplicaiton quotient
     MulQuotient,
+    /// Signal for unreduced value
     Unreduced,
 }
 
+/// Common functionality for non native integer constraints
 pub trait IntegerInstructions<
     W: WrongExt,
     N: FieldExt,
