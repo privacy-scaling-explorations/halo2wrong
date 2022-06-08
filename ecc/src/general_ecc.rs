@@ -6,17 +6,17 @@ use crate::maingate;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::Layouter;
 use halo2::plonk::Error;
-use halo2::plonk::{Column, Instance};
 use integer::maingate::RegionCtx;
-use maingate::{Assigned, AssignedCondition, MainGate};
+use maingate::{AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
 mod add;
 mod mul;
 
-/// Chip of Elliptic Curve Operations
-#[derive(Clone)]
+/// Constaints elliptic curve operations such as assigment, addition and
+/// multiplication
+#[derive(Clone, Debug)]
 pub struct GeneralEccChip<
     Emulated: CurveAffine,
     N: FieldExt,
@@ -57,34 +57,6 @@ impl<
         (Rns::construct(), Rns::construct())
     }
 
-    /// Residue numeral system for the base field of the curve
-    /// Return new refence for chips' rns base field
-    pub fn rns_base(&self) -> Rc<Rns<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
-        Rc::clone(&self.rns_base_field)
-    }
-
-    /// Residue numeral system for the scalar field of the curve
-    /// Return new refence for chips' rns scalar field
-    pub fn rns_scalar(&self) -> Rc<Rns<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
-        Rc::clone(&self.rns_scalar_field)
-    }
-
-    /// Assign Rns base for chip
-    pub fn new_unassigned_base(
-        &self,
-        e: Option<Emulated::Base>,
-    ) -> UnassignedInteger<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        e.map(|e| Integer::from_fe(e, self.rns_base())).into()
-    }
-
-    /// Assign Rns Scalar for chip
-    pub fn new_unassigned_scalar(
-        &self,
-        e: Option<Emulated::Scalar>,
-    ) -> UnassignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        e.map(|e| Integer::from_fe(e, self.rns_scalar())).into()
-    }
-
     /// Return `GeneralEccChip` from `EccConfig`
     pub fn new(config: EccConfig) -> Self {
         let (rns_base_field, rns_scalar_field) = Self::rns();
@@ -97,9 +69,16 @@ impl<
         }
     }
 
-    /// Return `Instance` columns of the chip config
-    fn instance_column(&self) -> Column<Instance> {
-        self.config.main_gate_config.instance
+    /// Residue numeral system for the base field of the curve
+    /// Return new refence for chips' rns base field
+    pub fn rns_base(&self) -> Rc<Rns<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+        Rc::clone(&self.rns_base_field)
+    }
+
+    /// Residue numeral system for the scalar field of the curve
+    /// Return new refence for chips' rns scalar field
+    pub fn rns_scalar(&self) -> Rc<Rns<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+        Rc::clone(&self.rns_scalar_field)
     }
 
     /// Return `IntegerChip` for the base field of the EC
@@ -122,7 +101,7 @@ impl<
 
     /// Return `Maingate` of the `GeneralEccChip`
     pub fn main_gate(&self) -> MainGate<N> {
-        MainGate::<N>::new(self.config.main_gate_config.clone())
+        MainGate::<N>::new(self.config.main_gate_config())
     }
 
     /// Returns a `Point` (Rns representation) from a point in the emulated EC
@@ -164,7 +143,15 @@ impl<
         // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
         Ok(MulAux::new(to_add, to_sub))
     }
+}
 
+impl<
+        Emulated: CurveAffine,
+        N: FieldExt,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
     /// Expose `AssignedPoint` as Public Input
     pub fn expose_public(
         &self,
@@ -172,14 +159,16 @@ impl<
         point: AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         offset: usize,
     ) -> Result<(), Error> {
-        let instance_column = self.instance_column();
+        use integer::maingate::MainGateInstructions;
+        let main_gate = self.main_gate();
+
         let mut offset = offset;
-        for limb in point.x.limbs().iter() {
-            layouter.constrain_instance(limb.cell(), instance_column, offset)?;
+        for limb in point.get_x().limbs().iter() {
+            main_gate.expose_public(layouter.namespace(|| "x coords"), limb.into(), offset)?;
             offset += 1;
         }
-        for limb in point.y.limbs().iter() {
-            layouter.constrain_instance(limb.cell(), instance_column, offset)?;
+        for limb in point.get_y().limbs().iter() {
+            main_gate.expose_public(layouter.namespace(|| "y coords"), limb.into(), offset)?;
             offset += 1;
         }
         Ok(())
@@ -212,7 +201,7 @@ impl<
 
         let point = point.map(|point| self.to_rns_point(point));
         let (x, y) = match point {
-            Some(point) => (Some(point.x).into(), Some(point.y).into()),
+            Some(point) => (Some(point.get_x()).into(), Some(point.get_y()).into()),
             None => (UnassignedInteger::from(None), UnassignedInteger::from(None)),
         };
 
@@ -267,9 +256,9 @@ impl<
     ) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
 
-        let y_square = &integer_chip.square(ctx, &point.y)?;
-        let x_square = &integer_chip.square(ctx, &point.x)?;
-        let x_cube = &integer_chip.mul(ctx, &point.x, x_square)?;
+        let y_square = &integer_chip.square(ctx, &point.get_y())?;
+        let x_square = &integer_chip.square(ctx, &point.get_x())?;
+        let x_cube = &integer_chip.mul(ctx, &point.get_x(), x_square)?;
         let x_cube_b = &integer_chip.add_constant(ctx, x_cube, &self.parameter_b())?;
         integer_chip.assert_equal(ctx, x_cube_b, y_square)?;
         Ok(())
@@ -283,8 +272,8 @@ impl<
         p1: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
-        integer_chip.assert_equal(ctx, &p0.x, &p1.x)?;
-        integer_chip.assert_equal(ctx, &p0.y, &p1.y)
+        integer_chip.assert_equal(ctx, &p0.get_x(), &p1.get_x())?;
+        integer_chip.assert_equal(ctx, &p0.get_y(), &p1.get_y())
     }
 
     /// Selects between 2 `AssignedPoint` determined by an `AssignedCondition`
@@ -296,8 +285,8 @@ impl<
         p2: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
-        let x = integer_chip.select(ctx, &p1.x, &p2.x, c)?;
-        let y = integer_chip.select(ctx, &p1.y, &p2.y, c)?;
+        let x = integer_chip.select(ctx, &p1.get_x(), &p2.get_x(), c)?;
+        let y = integer_chip.select(ctx, &p1.get_y(), &p2.get_y(), c)?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -312,8 +301,8 @@ impl<
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
         let p2 = self.to_rns_point(p2);
-        let x = integer_chip.select_or_assign(ctx, &p1.x, &p2.x, c)?;
-        let y = integer_chip.select_or_assign(ctx, &p1.y, &p2.y, c)?;
+        let x = integer_chip.select_or_assign(ctx, &p1.get_x(), &p2.get_x(), c)?;
+        let y = integer_chip.select_or_assign(ctx, &p1.get_y(), &p2.get_y(), c)?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -324,8 +313,8 @@ impl<
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
-        let x = integer_chip.reduce(ctx, &point.x)?;
-        let y = integer_chip.reduce(ctx, &point.y)?;
+        let x = integer_chip.reduce(ctx, &point.get_x())?;
+        let y = integer_chip.reduce(ctx, &point.get_y())?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -340,7 +329,8 @@ impl<
         // so that we can use unsafe addition formula which assumes operands are not
         // equal addition to that we strictly disallow addition result to be
         // point of infinity
-        self.base_field_chip().assert_not_equal(ctx, &p0.x, &p1.x)?;
+        self.base_field_chip()
+            .assert_not_equal(ctx, &p0.get_x(), &p1.get_x())?;
 
         self._add_incomplete_unsafe(ctx, p0, p1)
     }
@@ -387,8 +377,8 @@ impl<
         p: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
-        let y_neg = integer_chip.neg(ctx, &p.y)?;
-        Ok(AssignedPoint::new(p.x.clone(), y_neg))
+        let y_neg = integer_chip.neg(ctx, &p.get_y())?;
+        Ok(AssignedPoint::new(p.get_x(), y_neg))
     }
 }
 
@@ -401,7 +391,7 @@ mod tests {
     use crate::halo2;
     use crate::integer::rns::Rns;
     use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
-    use crate::integer::{AssignedInteger, IntegerConfig, IntegerInstructions};
+    use crate::integer::{AssignedInteger, IntegerInstructions};
     use crate::maingate;
     use group::{Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
@@ -478,10 +468,6 @@ mod tests {
             }
         }
 
-        fn integer_chip_config(&self) -> IntegerConfig {
-            IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-        }
-
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
             let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
             let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
@@ -499,8 +485,7 @@ mod tests {
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > {
-        rns_base: Rns<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        rns_scalar: Rns<C::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        _marker: PhantomData<(C, N)>,
     }
 
     impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
@@ -587,10 +572,9 @@ mod tests {
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
-            let (rns_base, rns_scalar, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(0);
+            let (_, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(0);
             let circuit = TestEccAddition::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-                rns_base,
-                rns_scalar,
+                _marker: PhantomData,
             };
             let public_inputs = vec![vec![]];
             let prover = match MockProver::run(k, &circuit, public_inputs) {
@@ -611,9 +595,7 @@ mod tests {
         #[cfg(feature = "kzg")]
         {
             use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            use secp256k1::Secp256k1Affine as Secp256;
 
-            run::<Secp256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
             run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         }
     }
@@ -705,10 +687,10 @@ mod tests {
             let b = C::Curve::random(&mut rng).to_affine();
 
             let c0: C = (a + b).into();
-            let c0 = Point::from(Rc::clone(&rns_base), c0);
+            let c0 = Point::new(Rc::clone(&rns_base), c0);
             let mut public_data = c0.public();
             let c1: C = (a + a).into();
-            let c1 = Point::from(Rc::clone(&rns_base), c1);
+            let c1 = Point::new(Rc::clone(&rns_base), c1);
             public_data.extend(c1.public());
             let circuit = TestEccPublicInput::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                 a: Some(a),
@@ -733,8 +715,6 @@ mod tests {
         #[cfg(feature = "kzg")]
         {
             use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            use secp256k1::Secp256k1Affine as Secp256;
-            run::<Secp256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
             run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         }
     }
@@ -856,8 +836,6 @@ mod tests {
         #[cfg(feature = "kzg")]
         {
             use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            use secp256k1::Secp256k1Affine as Secp256;
-            run::<Secp256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
             run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         }
     }
@@ -996,9 +974,7 @@ mod tests {
         #[cfg(feature = "kzg")]
         {
             use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            use secp256k1::Secp256k1Affine as Secp256;
             run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<Secp256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         }
     }
 }

@@ -1,17 +1,40 @@
+//! `ecc` implements constraints for ellictic curve operations
+
+#![feature(trait_alias)]
+#![deny(missing_debug_implementations)]
+#![deny(missing_docs)]
+
+pub use base_field_ecc::*;
+pub use general_ecc::*;
+
+/// Constraints for the SW curve that are used in the same proof system
+pub mod base_field_ecc;
+/// Constaints for any SW curve
+pub mod general_ecc;
+
+pub use integer;
+pub use integer::halo2;
+pub use integer::maingate;
+
+cfg_if::cfg_if! {
+  if #[cfg(feature = "kzg")] {
+    pub trait WrongExt = halo2::arithmetic::BaseExt;
+  } else {
+    pub trait WrongExt = halo2::arithmetic::FieldExt;
+
+  }
+}
+
 use crate::halo2::arithmetic::{CurveAffine, FieldExt};
 use crate::integer::chip::IntegerConfig;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::AssignedInteger;
 use crate::maingate::{big_to_fe, Assigned, AssignedCondition, MainGateConfig, RangeConfig};
-use crate::WrongExt;
 use group::Curve;
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 use std::fmt;
 use std::rc::Rc;
-
-pub use base_field_ecc::*;
-pub use general_ecc::*;
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
@@ -26,7 +49,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     /// Returns `Point` form a point in a EC with W as its base field
     /// Infinity point is not allowed
-    fn from(
+    pub fn new(
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
         point: impl CurveAffine<Base = W>,
     ) -> Self {
@@ -40,11 +63,21 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Returns $x$ and $y$ coordinates limbs as native field elements
-    fn public(&self) -> Vec<N> {
+    pub fn public(&self) -> Vec<N> {
         let mut public_data = Vec::new();
         public_data.extend(self.x.limbs());
         public_data.extend(self.y.limbs());
         public_data
+    }
+
+    /// Returns $x$ coordinate
+    pub fn get_x(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        self.x.clone()
+    }
+
+    /// Returns $y$ coordinate
+    pub fn get_y(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        self.y.clone()
     }
 }
 
@@ -56,8 +89,8 @@ pub struct AssignedPoint<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    x: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub(crate) x: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub(crate) y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
@@ -95,9 +128,6 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-mod base_field_ecc;
-pub mod general_ecc;
-
 /// Config for Ecc Chip
 #[derive(Clone, Debug)]
 pub struct EccConfig {
@@ -116,12 +146,12 @@ impl EccConfig {
 
     /// Returns new `IntegerConfig` with matching `RangeConfig` and
     /// `MainGateConfig`
-    fn integer_chip_config(&self) -> IntegerConfig {
+    pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 
     /// Returns new `MainGateConfig`
-    fn main_gate_config(&self) -> MainGateConfig {
+    pub(crate) fn main_gate_config(&self) -> MainGateConfig {
         self.main_gate_config.clone()
     }
 }
@@ -158,7 +188,7 @@ fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pai
 /// Allows to select values of precomputed table in efficient multiplication
 /// algorithm
 #[derive(Default)]
-struct Selector<F: FieldExt>(Vec<AssignedCondition<F>>);
+pub(crate) struct Selector<F: FieldExt>(Vec<AssignedCondition<F>>);
 
 impl<F: FieldExt> fmt::Debug for Selector<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -173,7 +203,7 @@ impl<F: FieldExt> fmt::Debug for Selector<F> {
 
 /// Vector of `Selectors` which represent the binary representation of a scalar
 /// split in window sized selectors.
-struct Windowed<F: FieldExt>(Vec<Selector<F>>);
+pub(crate) struct Windowed<F: FieldExt>(Vec<Selector<F>>);
 
 impl<F: FieldExt> fmt::Debug for Windowed<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -189,9 +219,12 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
 }
 
 /// Table of precomputed values for efficient multiplication algorithm.
-struct Table<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
-    Vec<AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
-);
+pub(crate) struct Table<
+    W: WrongExt,
+    N: FieldExt,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+>(pub(crate) Vec<AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
     for Table<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -211,12 +244,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
 /// Auxiliary points for efficient multiplication algorithm
 /// See: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg
-pub(super) struct MulAux<
-    W: WrongExt,
-    N: FieldExt,
-    const NUMBER_OF_LIMBS: usize,
-    const BIT_LEN_LIMB: usize,
-> {
+struct MulAux<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     to_add: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     to_sub: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
@@ -225,7 +253,7 @@ pub(super) struct MulAux<
 impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     MulAux<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    pub(super) fn new(
+    fn new(
         to_add: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         to_sub: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Self {

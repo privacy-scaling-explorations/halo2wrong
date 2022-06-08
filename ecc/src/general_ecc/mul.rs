@@ -1,8 +1,7 @@
 use super::{AssignedPoint, GeneralEccChip};
-use crate::ecc::{Selector, Table, Windowed};
-use crate::halo2;
 use crate::integer::{AssignedInteger, IntegerInstructions};
 use crate::maingate::{AssignedCondition, MainGateInstructions};
+use crate::{halo2, Selector, Table, Windowed};
 use group::ff::PrimeField;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;

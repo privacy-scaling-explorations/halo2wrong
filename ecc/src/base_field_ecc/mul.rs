@@ -1,7 +1,6 @@
 use super::{AssignedPoint, BaseFieldEccChip};
-use crate::ecc::{Selector, Table, Windowed};
-use crate::halo2;
 use crate::maingate::{AssignedCondition, AssignedValue, MainGateInstructions};
+use crate::{halo2, Selector, Table, Windowed};
 use group::ff::PrimeField;
 use halo2::arithmetic::CurveAffine;
 use halo2::plonk::Error;
@@ -96,7 +95,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 
     /// Scalar multiplication of a point in the EC
     /// Performed with the sliding-window algorithm
-    pub(super) fn mul(
+    pub fn mul(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -134,7 +133,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// `[(P_0, e_0), (P_1, e_1), ..., (P_k, e_k)]`
     /// Returns
     /// ` P_0 * e_0 + P_1 * e_1 + ...+ P_k * e_k`
-    pub(super) fn mul_batch_1d_horizontal(
+    pub fn mul_batch_1d_horizontal(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
         pairs: Vec<(

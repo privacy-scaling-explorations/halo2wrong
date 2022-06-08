@@ -5,7 +5,7 @@ authors = ["kilic <kiliconu@itu.edu.tr>"]
 edition = "2021"
 
 [dependencies]
-integer = { path = "../../integer", default-features = false }
+integer = { path = "../integer", default-features = false }
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
@@ -15,7 +15,6 @@ subtle = { version = "2.3", default-features = false }
 cfg-if = "0.1"
 
 [dev-dependencies]
-secp256k1 = { path = "../secp256k1/", default-features = true}
 rand_core = { version = "0.6", default-features = false }
 
 [features]
