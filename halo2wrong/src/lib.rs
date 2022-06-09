@@ -5,15 +5,8 @@ use halo2::{
 };
 
 pub mod utils;
-
-cfg_if::cfg_if! {
-  if #[cfg(feature = "kzg")] {
-      pub use halo2_kzg as halo2;
-  } else {
-      // default feature
-      pub use halo2_zcash as halo2;
-  }
-}
+pub use halo2;
+pub use halo2::halo2curves as curves;
 
 pub struct RegionCtx<'a, 'b, F: FieldExt> {
     pub region: &'a mut Region<'b, F>,

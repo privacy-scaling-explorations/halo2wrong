@@ -1,7 +1,6 @@
 use super::{AssignedInteger, UnassignedInteger};
 use crate::maingate::{halo2, AssignedCondition, RegionCtx};
 use crate::rns::Integer;
-use crate::WrongExt;
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 
@@ -21,7 +20,7 @@ pub enum Range {
 
 /// Common functionality for non native integer constraints
 pub trait IntegerInstructions<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -281,7 +280,7 @@ pub trait IntegerInstructions<
 
     /// Tries to apply reduction to an [`AssignedInteger`] that is not in this
     /// wrong field
-    fn reduce_external<T: WrongExt>(
+    fn reduce_external<T: FieldExt>(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,

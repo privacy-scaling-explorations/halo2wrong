@@ -1,15 +1,12 @@
-use crate::{WrongExt, NUMBER_OF_LOOKUP_LIMBS};
+use crate::NUMBER_OF_LOOKUP_LIMBS;
 use halo2::arithmetic::FieldExt;
-use maingate::{big_to_fe, compose, decompose_big, fe_to_big, halo2};
+use maingate::{big_to_fe, compose, decompose_big, fe_to_big, halo2, modulus};
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
 use num_traits::{Num, One, Zero};
 use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
-
-#[cfg(feature = "kzg")]
-use crate::halo2::arithmetic::BaseExt;
 
 /// Common interface for [`Limb`] and [`Integer`]
 pub trait Common<F: FieldExt> {
@@ -28,21 +25,7 @@ pub trait Common<F: FieldExt> {
     }
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "kzg")] {
-        fn modulus<F: BaseExt>() -> big_uint {
-            big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
-        }
-
-    } else {
-        // default feature
-        fn modulus<F: FieldExt>() -> big_uint {
-            big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
-        }
-    }
-}
-
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     From<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> for big_uint
 {
     fn from(el: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
@@ -68,7 +51,7 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
 // multiplication gate.
 #[derive(Clone)]
 pub(crate) struct ReductionWitness<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -81,13 +64,13 @@ pub(crate) struct ReductionWitness<
 
 // Wrapper for reduction witnesses
 pub(crate) struct MaybeReduced<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 >(Option<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     From<Option<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
     for MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
@@ -96,7 +79,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Returns the quotient value as [`Integer`].
@@ -158,7 +141,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 /// Short: as an element of the native field.
 /// Long : as an [`Integer`].
 #[derive(Clone, Debug)]
-pub enum Quotient<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+pub enum Quotient<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
     /// Single limb quotient
     Short(N),
@@ -170,7 +153,7 @@ pub enum Quotient<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const 
 // comparision gate.
 #[derive(Clone)]
 pub(crate) struct ComparisionWitness<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -186,7 +169,7 @@ pub(crate) struct ComparisionWitness<
 /// Contains all the necessary values to carry out operations such as
 /// multiplication and reduction in this representation.
 #[derive(Debug, Clone)]
-pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+pub struct Rns<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     /// Bit lenght of sublimbs that is subject to to lookup check
     pub bit_len_lookup: usize,
 
@@ -246,7 +229,7 @@ pub struct Rns<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
     _marker_wrong: PhantomData<W>,
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Calculates [`Rns`] `base_aux`.
@@ -690,7 +673,7 @@ impl<F: FieldExt> Limb<F> {
 /// native field plus a reference to the [`Rns`] used.
 #[derive(Clone)]
 pub struct Integer<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -699,7 +682,7 @@ pub struct Integer<
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
     for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -715,7 +698,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Common<N>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Common<N>
     for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn value(&self) -> big_uint {
@@ -724,7 +707,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Creates a new integer from a vector of limbs and reference to the used
@@ -792,17 +775,6 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         inv_w
             .map(|inv| Self::from_big(fe_to_big(inv), Rc::clone(&self.rns)))
             .into()
-    }
-
-    // Returns division witnesses
-    pub(crate) fn div(
-        &self,
-        denom: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
-        denom.invert().map(|b_inv| {
-            let a_mul_b = (self.value() * b_inv.value()) % self.rns.wrong_modulus.clone();
-            Self::from_big(a_mul_b, Rc::clone(&self.rns))
-        })
     }
 
     /// Computes the witness values for squaring operation

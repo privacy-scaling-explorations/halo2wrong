@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_permutation() {
-        use crate::halo2::pairing::bn256::{Fr, G1Affine};
+        use crate::curves::bn256::{Fr, G1Affine};
         use rand::thread_rng;
         let mut rng = thread_rng();
         const K: u32 = 20;

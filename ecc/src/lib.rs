@@ -16,14 +16,8 @@ pub use integer;
 pub use integer::halo2;
 pub use integer::maingate;
 
-cfg_if::cfg_if! {
-  if #[cfg(feature = "kzg")] {
-    pub trait WrongExt = halo2::arithmetic::BaseExt;
-  } else {
-    pub trait WrongExt = halo2::arithmetic::FieldExt;
-
-  }
-}
+#[cfg(test)]
+use halo2::halo2curves as curves;
 
 use crate::halo2::arithmetic::{CurveAffine, FieldExt};
 use crate::integer::chip::IntegerConfig;
@@ -38,13 +32,13 @@ use std::rc::Rc;
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
-pub struct Point<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+pub struct Point<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
     x: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     y: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Returns `Point` form a point in a EC with W as its base field
@@ -84,7 +78,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 #[derive(Clone)]
 /// point that is assumed to be on curve and not infinity
 pub struct AssignedPoint<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -93,7 +87,7 @@ pub struct AssignedPoint<
     pub(crate) y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
     for AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -105,7 +99,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Returns a new `AssignedPoint` given its coordinates as `AssignedInteger`
@@ -220,7 +214,7 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
 
 /// Table of precomputed values for efficient multiplication algorithm.
 pub(crate) struct Table<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -244,13 +238,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
 /// Auxiliary points for efficient multiplication algorithm
 /// See: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg
-struct MulAux<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+struct MulAux<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
     to_add: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     to_sub: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
 /// Constructs `MulAux`
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     MulAux<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn new(

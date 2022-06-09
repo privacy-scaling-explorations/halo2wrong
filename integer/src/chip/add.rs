@@ -1,13 +1,12 @@
 use crate::chip::IntegerChip;
 use crate::rns::Integer;
-use crate::{AssignedInteger, AssignedLimb, Common, WrongExt};
-use halo2::arithmetic::FieldExt;
+use crate::{AssignedInteger, AssignedLimb, Common, FieldExt};
 use halo2::plonk::Error;
 use maingate::{fe_to_big, halo2, MainGateInstructions, RegionCtx};
 use num_bigint::BigUint as big_uint;
 use std::rc::Rc;
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn add_generic(

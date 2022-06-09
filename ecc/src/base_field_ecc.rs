@@ -356,6 +356,8 @@ mod tests {
 
     use super::BaseFieldEccChip;
     use super::{AssignedPoint, EccConfig, Point};
+    use crate::curves::bn256::G1Affine as Bn256;
+    use crate::curves::pasta::{EpAffine as Pallas, EqAffine as Vesta};
     use crate::halo2;
     use crate::integer::rns::Rns;
     use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
@@ -370,17 +372,7 @@ mod tests {
         AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
         RangeInstructions,
     };
-    use rand::thread_rng;
-
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "kzg")] {
-            use halo2::pairing::bn256::G1Affine as Curve;
-            use halo2::pairing::bn256::G1 as CurveProjective;
-        } else {
-            use halo2::pasta::EqAffine as Curve;
-            use halo2::pasta::Eq as CurveProjective;
-        }
-    }
+    use rand_core::OsRng;
 
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
@@ -472,10 +464,8 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let mut rng = thread_rng();
-
-                    let a = C::CurveExt::random(&mut rng);
-                    let b = C::CurveExt::random(&mut rng);
+                    let a = C::CurveExt::random(OsRng);
+                    let b = C::CurveExt::random(OsRng);
 
                     let c = a + b;
                     let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
@@ -489,7 +479,7 @@ mod tests {
 
                     // test doubling
 
-                    let a = C::CurveExt::random(&mut rng);
+                    let a = C::CurveExt::random(OsRng);
                     let c = a + a;
 
                     let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
@@ -499,8 +489,8 @@ mod tests {
 
                     // test ladder
 
-                    let a = C::CurveExt::random(&mut rng);
-                    let b = C::CurveExt::random(&mut rng);
+                    let a = C::CurveExt::random(OsRng);
+                    let b = C::CurveExt::random(OsRng);
                     let c = a + b + a;
 
                     let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
@@ -521,19 +511,24 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_addition_circuit() {
-        let (_, k) = setup::<Curve>(0);
+        fn run<C: CurveAffine>() {
+            let (_, k) = setup::<C>(0);
 
-        let circuit = TestEccAddition::<Curve> {
-            _marker: PhantomData,
-        };
+            let circuit = TestEccAddition::<C> {
+                _marker: PhantomData,
+            };
 
-        let public_inputs = vec![vec![]];
-        let prover = match MockProver::run(k, &circuit, public_inputs) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
+            let public_inputs = vec![vec![]];
+            let prover = match MockProver::run(k, &circuit, public_inputs) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
 
-        assert_eq!(prover.verify(), Ok(()));
+            assert_eq!(prover.verify(), Ok(()));
+        }
+        run::<Bn256>();
+        run::<Pallas>();
+        run::<Vesta>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -601,33 +596,36 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_public_input() {
-        use rand::thread_rng;
-        let mut rng = thread_rng();
+        fn run<C: CurveAffine>() {
+            let (rns, k) = setup::<C>(20);
+            let rns = Rc::new(rns);
 
-        let (rns, k) = setup::<Curve>(0);
-        let rns = Rc::new(rns);
+            let a = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
+            let b = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-        let a = CurveProjective::random(&mut rng).to_affine();
-        let b = CurveProjective::random(&mut rng).to_affine();
+            let c0: C = (a + b).to_affine();
+            let c0 = Point::new(Rc::clone(&rns), c0);
+            let mut public_data = c0.public();
+            let c1: C = (a + a).to_affine();
+            let c1 = Point::new(Rc::clone(&rns), c1);
+            public_data.extend(c1.public());
 
-        let c0: Curve = (a + b).into();
-        let c0 = Point::new(Rc::clone(&rns), c0);
-        let mut public_data = c0.public();
-        let c1: Curve = (a + a).into();
-        let c1 = Point::new(Rc::clone(&rns), c1);
-        public_data.extend(c1.public());
+            let circuit = TestEccPublicInput {
+                a: Some(a),
+                b: Some(b),
+            };
 
-        let circuit = TestEccPublicInput::<Curve> {
-            a: Some(a),
-            b: Some(b),
-        };
+            let prover = match MockProver::run(k, &circuit, vec![public_data]) {
+                Ok(prover) => prover,
+                Err(e) => panic!("{:#?}", e),
+            };
 
-        let prover = match MockProver::run(k, &circuit, vec![public_data]) {
-            Ok(prover) => prover,
-            Err(e) => panic!("{:#?}", e),
-        };
+            assert_eq!(prover.verify(), Ok(()));
+        }
 
-        assert_eq!(prover.verify(), Ok(()));
+        run::<Bn256>();
+        run::<Pallas>();
+        run::<Vesta>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -676,10 +674,9 @@ mod tests {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let mut rng = thread_rng();
 
-                    let base = C::CurveExt::random(&mut rng);
-                    let s = C::Scalar::random(&mut rng);
+                    let base = C::CurveExt::random(OsRng);
+                    let s = C::Scalar::random(OsRng);
                     let result = base * s;
 
                     let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
@@ -701,23 +698,27 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_mul_circuit() {
-        let (_, k) = setup::<Curve>(20);
-        for window_size in 1..5 {
-            let mut rng = thread_rng();
-            let aux_generator = CurveProjective::random(&mut rng).to_affine();
+        fn run<C: CurveAffine>() {
+            let (_, k) = setup::<C>(20);
+            for window_size in 1..5 {
+                let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-            let circuit = TestEccMul::<Curve> {
-                aux_generator,
-                window_size,
-            };
+                let circuit = TestEccMul {
+                    aux_generator,
+                    window_size,
+                };
 
-            let public_inputs = vec![vec![]];
-            let prover = match MockProver::run(k, &circuit, public_inputs) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-            assert_eq!(prover.verify(), Ok(()));
+                let public_inputs = vec![vec![]];
+                let prover = match MockProver::run(k, &circuit, public_inputs) {
+                    Ok(prover) => prover,
+                    Err(e) => panic!("{:#?}", e),
+                };
+                assert_eq!(prover.verify(), Ok(()));
+            }
         }
+        run::<Bn256>();
+        run::<Pallas>();
+        run::<Vesta>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -767,7 +768,6 @@ mod tests {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let mut rng = thread_rng();
 
                     let mut acc = C::CurveExt::identity();
                     let pairs: Vec<(
@@ -775,8 +775,8 @@ mod tests {
                         AssignedValue<C::Scalar>,
                     )> = (0..self.number_of_pairs)
                         .map(|_| {
-                            let base = C::CurveExt::random(&mut rng);
-                            let s = C::Scalar::random(&mut rng);
+                            let base = C::CurveExt::random(OsRng);
+                            let s = C::Scalar::random(OsRng);
                             acc = acc + (base * s);
                             let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
                             let s = main_gate.assign_value(ctx, &Some(s).into())?;
@@ -801,26 +801,31 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_mul_batch_circuit() {
-        let (_, k) = setup::<Curve>(20);
+        fn run<C: CurveAffine>() {
+            let (_, k) = setup::<C>(20);
 
-        for number_of_pairs in 4..5 {
-            for window_size in 1..3 {
-                let mut rng = thread_rng();
-                let aux_generator = CurveProjective::random(&mut rng).to_affine();
+            for number_of_pairs in 4..5 {
+                for window_size in 1..3 {
+                    let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-                let circuit = TestEccBatchMul::<Curve> {
-                    aux_generator,
-                    window_size,
-                    number_of_pairs,
-                };
+                    let circuit = TestEccBatchMul {
+                        aux_generator,
+                        window_size,
+                        number_of_pairs,
+                    };
 
-                let public_inputs = vec![vec![]];
-                let prover = match MockProver::run(k, &circuit, public_inputs) {
-                    Ok(prover) => prover,
-                    Err(e) => panic!("{:#?}", e),
-                };
-                assert_eq!(prover.verify(), Ok(()));
+                    let public_inputs = vec![vec![]];
+                    let prover = match MockProver::run(k, &circuit, public_inputs) {
+                        Ok(prover) => prover,
+                        Err(e) => panic!("{:#?}", e),
+                    };
+                    assert_eq!(prover.verify(), Ok(()));
+                }
             }
         }
+
+        run::<Bn256>();
+        run::<Pallas>();
+        run::<Vesta>();
     }
 }

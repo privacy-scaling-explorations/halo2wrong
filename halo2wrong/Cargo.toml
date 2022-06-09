@@ -5,30 +5,13 @@ authors = ["kilic <kiliconu@itu.edu.tr>"]
 edition = "2021"
 
 [dependencies]
-cfg-if = "0.1"
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
+halo2 = { package = "halo2_proofs", git = "https://github.com/privacy-scaling-explorations/halo2", branch = "abstraction" }
+group = "0.12"
 
 [dev-dependencies]
 rand = "0.8"
-group = "0.11"
-
-[dependencies.halo2_zcash]
-package = "halo2_proofs"
-git = "https://github.com/zcash/halo2.git"
-version = "0.1.0-beta.2"
-optional = true
-
-[dependencies.halo2_kzg]
-package = "halo2_proofs"
-git = "https://github.com/privacy-scaling-explorations/halo2.git"
-tag = "v2022_06_03"
-optional = true
-
-[features]
-default = ["zcash"]
-zcash = ["halo2_zcash"]
-kzg = ["halo2_kzg"]
 
 

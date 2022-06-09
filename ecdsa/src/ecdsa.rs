@@ -3,11 +3,9 @@ use crate::halo2;
 use crate::integer;
 use crate::maingate;
 use ecc::maingate::RegionCtx;
-use ecc::WrongExt;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::plonk::Error;
-use halo2::arithmetic::BaseExt;
 use integer::rns::Integer;
 use integer::{AssignedInteger, IntegerInstructions};
 use maingate::{MainGateConfig, RangeConfig};
@@ -47,7 +45,7 @@ pub struct EcdsaSig<
 }
 
 pub struct AssignedEcdsaSig<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -57,7 +55,7 @@ pub struct AssignedEcdsaSig<
 }
 
 pub struct AssignedPublicKey<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -104,7 +102,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         // 1. check 0 < r, s < n
 
-        // // since `assert_not_zero` already includes a in-field check, we can just
+        // since `assert_not_zero` already includes a in-field check, we can just
         // call `assert_not_zero`
         scalar_chip.assert_not_zero(ctx, &sig.r)?;
         scalar_chip.assert_not_zero(ctx, &sig.s)?;
@@ -144,10 +142,12 @@ mod tests {
     use crate::integer;
     use crate::maingate;
     use ecc::integer::Range;
+    use ecc::maingate::big_to_fe;
+    use ecc::maingate::fe_to_big;
     use ecc::maingate::RegionCtx;
     use ecc::{EccConfig, GeneralEccChip};
     use group::ff::Field;
-    use group::{prime::PrimeCurveAffine, Curve};
+    use group::{Curve, Group};
     use halo2::arithmetic::CurveAffine;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
@@ -155,11 +155,8 @@ mod tests {
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
     use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
-
-    use rand::thread_rng;
+    use rand_core::OsRng;
     use std::marker::PhantomData;
-
-    use crate::halo2::arithmetic::BaseExt;
 
     const BIT_LEN_LIMB: usize = 68;
     const NUMBER_OF_LIMBS: usize = 4;
@@ -205,6 +202,10 @@ mod tests {
 
     #[derive(Default, Clone)]
     struct TestCircuitEcdsaVerify<E: CurveAffine, N: FieldExt> {
+        public_key: Option<E>,
+        signature: Option<(E::Scalar, E::Scalar)>,
+        msg_hash: Option<E::Scalar>,
+
         aux_generator: E,
         window_size: usize,
         _marker: PhantomData<N>,
@@ -232,29 +233,6 @@ mod tests {
             );
             let scalar_chip = ecc_chip.scalar_field_chip();
 
-            let mut rng = thread_rng();
-
-            // generate a valid signature
-            let generator = <E as PrimeCurveAffine>::generator();
-            let sk = <E as CurveAffine>::ScalarExt::random(&mut rng);
-            let pk = generator * sk;
-            let pk = pk.to_affine();
-
-            let m_hash = <E as CurveAffine>::ScalarExt::random(&mut rng);
-            let randomness = <E as CurveAffine>::ScalarExt::random(&mut rng);
-            let randomness_inv = randomness.invert().unwrap();
-            let sig_point = generator * randomness;
-            let x = sig_point.to_affine().coordinates().unwrap().x().clone();
-
-            let x_repr = &mut Vec::with_capacity(32);
-            x.write(x_repr)?;
-
-            let mut x_bytes = [0u8; 64];
-            x_bytes[..32].copy_from_slice(&x_repr[..]);
-
-            let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
-            let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
-
             layouter.assign_region(
                 || "assign aux values",
                 |mut region| {
@@ -275,9 +253,11 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let integer_r = ecc_chip.new_unassigned_scalar(Some(x_bytes_on_n));
-                    let integer_s = ecc_chip.new_unassigned_scalar(Some(sig_s));
-                    let msg_hash = ecc_chip.new_unassigned_scalar(Some(m_hash));
+                    let r = self.signature.map(|signature| signature.0);
+                    let s = self.signature.map(|signature| signature.1);
+                    let integer_r = ecc_chip.new_unassigned_scalar(r);
+                    let integer_s = ecc_chip.new_unassigned_scalar(s);
+                    let msg_hash = ecc_chip.new_unassigned_scalar(self.msg_hash);
 
                     let r_assigned =
                         scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
@@ -288,7 +268,7 @@ mod tests {
                         s: s_assigned,
                     };
 
-                    let pk_in_circuit = ecc_chip.assign_point(ctx, Some(pk.into()))?;
+                    let pk_in_circuit = ecc_chip.assign_point(ctx, self.public_key)?;
                     let pk_assigned = AssignedPublicKey {
                         point: pk_in_circuit,
                     };
@@ -305,12 +285,55 @@ mod tests {
 
     #[test]
     fn test_ecdsa_verifier() {
+        fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
+            let x_big = fe_to_big(x);
+            big_to_fe(x_big)
+        }
+
         fn run<C: CurveAffine, N: FieldExt>() {
-            use group::Group;
+            let g = C::generator();
+
+            // Generate a key pair
+            let sk = <C as CurveAffine>::ScalarExt::random(OsRng);
+            let public_key = (g * sk).to_affine();
+
+            // Generate a valid signature
+            // Suppose `m_hash` is the message hash
+            let msg_hash = <C as CurveAffine>::ScalarExt::random(OsRng);
+
+            // Draw arandomness
+            let k = <C as CurveAffine>::ScalarExt::random(OsRng);
+            let k_inv = k.invert().unwrap();
+
+            // Calculate `r`
+            let r_point = (g * k).to_affine().coordinates().unwrap();
+            let x = r_point.x();
+            let r = mod_n::<C>(*x);
+
+            // Calculate `s`
+            let s = k_inv * (msg_hash + (r * sk));
+
+            // Sanity check. Ensure we construct a valid signature. So lets verify it
+            {
+                let s_inv = s.invert().unwrap();
+                let u_1 = msg_hash * s_inv;
+                let u_2 = r * s_inv;
+                let r_point = ((g * u_1) + (public_key * u_2))
+                    .to_affine()
+                    .coordinates()
+                    .unwrap();
+                let x_candidate = r_point.x();
+                let r_candidate = mod_n::<C>(*x_candidate);
+                assert_eq!(r, r_candidate);
+            }
+
             let k = 20;
-            let mut rng = thread_rng();
-            let aux_generator = C::CurveExt::random(&mut rng).to_affine();
+            let aux_generator = C::CurveExt::random(OsRng).to_affine();
             let circuit = TestCircuitEcdsaVerify::<C, N> {
+                public_key: Some(public_key),
+                signature: Some((r, s)),
+                msg_hash: Some(msg_hash),
+
                 aux_generator,
                 window_size: 2,
                 _marker: PhantomData,
@@ -324,9 +347,11 @@ mod tests {
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        #[cfg(not(feature = "kzg"))]
-        {}
-        #[cfg(feature = "kzg")]
-        {}
+        use crate::curves::bn256::Fr as BnScalar;
+        use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+        run::<Secp256k1, BnScalar>();
+        run::<Secp256k1, PastaFp>();
+        run::<Secp256k1, PastaFq>();
     }
 }

@@ -353,14 +353,8 @@ impl<F: FieldExt> RangeChip<F> {
 
         macro_rules! meta_lookup {
             ($column:expr, $selector:expr,$table:expr) => {
-                #[cfg(not(feature = "kzg"))]
+                // meta.lookup(stringify!($column), |meta| {
                 meta.lookup(|meta| {
-                    let exp = meta.query_advice($column, Rotation::cur());
-                    let s = meta.query_selector($selector);
-                    vec![(exp * s, $table)]
-                });
-                #[cfg(feature = "kzg")]
-                meta.lookup(stringify!($column), |meta| {
                     let exp = meta.query_advice($column, Rotation::cur());
                     let s = meta.query_selector($selector);
                     vec![(exp * s, $table)]
@@ -404,6 +398,7 @@ mod tests {
     use halo2wrong::RegionCtx;
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
+    use crate::curves::pasta::Fp;
     use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
     use crate::halo2::dev::MockProver;
@@ -411,14 +406,6 @@ mod tests {
     use crate::main_gate::MainGate;
     use crate::range::NUMBER_OF_LOOKUP_LIMBS;
     use crate::{MainGateInstructions, UnassignedValue};
-
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "kzg")] {
-            use crate::halo2::pairing::bn256::Fr as Fp;
-        } else {
-            use crate::halo2::pasta::Fp;
-        }
-    }
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {

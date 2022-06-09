@@ -1,10 +1,9 @@
 use super::{AssignedCondition, IntegerChip};
-use crate::{AssignedInteger, WrongExt};
-use halo2::arithmetic::FieldExt;
+use crate::{AssignedInteger, FieldExt};
 use halo2::plonk::Error;
 use maingate::{halo2, RegionCtx};
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn div_generic(

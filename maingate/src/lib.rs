@@ -20,6 +20,9 @@ pub use instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 pub use main_gate::*;
 pub use range::*;
 
+#[cfg(test)]
+use halo2wrong::curves;
+
 /// Helper trait for assigned values across halo2stack.
 pub trait Assigned<F: FieldExt> {
     /// Returns witness value

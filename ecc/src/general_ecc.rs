@@ -81,6 +81,22 @@ impl<
         Rc::clone(&self.rns_scalar_field)
     }
 
+    /// Assign Rns base for chip
+    pub fn new_unassigned_base(
+        &self,
+        e: Option<Emulated::Base>,
+    ) -> UnassignedInteger<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        e.map(|e| Integer::from_fe(e, self.rns_base())).into()
+    }
+
+    /// Assign Rns Scalar for chip
+    pub fn new_unassigned_scalar(
+        &self,
+        e: Option<Emulated::Scalar>,
+    ) -> UnassignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        e.map(|e| Integer::from_fe(e, self.rns_scalar())).into()
+    }
+
     /// Return `IntegerChip` for the base field of the EC
     pub fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         IntegerChip::new(
@@ -584,20 +600,27 @@ mod tests {
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        #[cfg(not(feature = "kzg"))]
-        {
-            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
-            run::<EpAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EpAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
-        #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
+        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
+        use crate::curves::pasta::{
+            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
+        };
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
-            run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
+        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -703,20 +726,28 @@ mod tests {
             };
             assert_eq!(prover.verify(), Ok(()));
         }
+        // TODO: add secp256k1
+        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
+        use crate::curves::pasta::{
+            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
+        };
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
-        #[cfg(not(feature = "kzg"))]
-        {
-            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
-            run::<EpAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EpAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
-        #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
+        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -825,19 +856,28 @@ mod tests {
             }
         }
 
-        #[cfg(not(feature = "kzg"))]
-        {
-            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
-            run::<EpAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EpAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
-        #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
+        // TODO: add secp256k1
+        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
+        use crate::curves::pasta::{
+            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
+        };
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+
+        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -963,18 +1003,27 @@ mod tests {
             }
         }
 
-        #[cfg(not(feature = "kzg"))]
-        {
-            use halo2::pasta::{EpAffine, EqAffine, Fp, Fq};
-            run::<EpAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EpAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-            run::<EqAffine, Fp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
-        #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::{Fr, G1Affine as Bn256};
-            run::<Bn256, Fr, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        }
+        // TODO: add secp256k1
+        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
+        use crate::curves::pasta::{
+            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
+        };
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+
+        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+
+        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
     }
 }

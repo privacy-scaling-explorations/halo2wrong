@@ -1,12 +1,11 @@
 use super::IntegerChip;
 use crate::rns::MaybeReduced;
-use crate::{AssignedInteger, WrongExt};
-use halo2::arithmetic::FieldExt;
+use crate::{AssignedInteger, FieldExt};
 use halo2::plonk::Error;
 
 use maingate::{halo2, AssignedValue, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn assert_zero_generic(

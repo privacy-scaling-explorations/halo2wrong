@@ -1,6 +1,5 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::{rns::Integer, AssignedInteger, WrongExt};
-use halo2::arithmetic::FieldExt;
+use crate::{rns::Integer, AssignedInteger, FieldExt};
 use halo2::plonk::Error;
 use maingate::{
     halo2, Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx,
@@ -8,7 +7,7 @@ use maingate::{
 };
 use std::rc::Rc;
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn invert_generic(

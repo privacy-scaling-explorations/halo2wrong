@@ -17,6 +17,9 @@ pub use instructions::{IntegerInstructions, Range};
 pub use maingate;
 pub use maingate::halo2;
 
+#[cfg(test)]
+use halo2::halo2curves as curves;
+
 /// Chip for integer constaints
 pub mod chip;
 /// Commoon instructions for integer operations and assignments
@@ -28,14 +31,6 @@ pub mod rns;
 /// `AssignedLimb` is mostly subjected to the range check. Say we have 68-bit
 /// limb and it is decomposed to four 17-bit limbs.
 pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
-
-cfg_if::cfg_if! {
-  if #[cfg(feature = "kzg")] {
-    pub trait WrongExt = halo2::arithmetic::BaseExt;
-  } else {
-    pub trait WrongExt = halo2::arithmetic::FieldExt;
-  }
-}
 
 /// AssignedLimb is a limb of an non native integer
 #[derive(Debug, Clone)]
@@ -81,16 +76,6 @@ impl<F: FieldExt> Assigned<F> for &AssignedLimb<F> {
 }
 
 impl<F: FieldExt> AssignedLimb<F> {
-    /// Constructs new `AssignedLimb`
-    fn new(cell: Cell, value: Option<F>, max_val: big_uint) -> Self {
-        let value = value.map(|value| Limb::<F>::new(value));
-        AssignedLimb {
-            value,
-            cell,
-            max_val,
-        }
-    }
-
     /// Given an assigned value and expected maximum value constructs new
     /// `AssignedLimb`
     fn from(assigned: AssignedValue<F>, max_val: big_uint) -> Self {
@@ -137,13 +122,13 @@ impl<F: FieldExt> AssignedLimb<F> {
 /// Witness integer that is about to be assigned.
 #[derive(Debug, Clone)]
 pub struct UnassignedInteger<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 >(Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
-impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     From<Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
     for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
@@ -152,29 +137,19 @@ impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    /// Returns value in BigUint form to calculate further witnesses
-    fn value(&self) -> Option<big_uint> {
-        self.0.as_ref().map(|e| e.value())
-    }
-
     /// Returns indexed limb as ÏUnassignedValue`
     fn limb(&self, idx: usize) -> UnassignedValue<N> {
         self.0.as_ref().map(|e| e.limb(idx).fe()).into()
-    }
-
-    /// Returns unassigned value under scalar field modulus
-    fn native(&self) -> UnassignedValue<N> {
-        self.0.as_ref().map(|integer| integer.native()).into()
     }
 }
 
 ///
 #[derive(Debug, Clone)]
 pub struct AssignedInteger<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -187,7 +162,7 @@ pub struct AssignedInteger<
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Creates a new [`AssignedInteger`].

@@ -80,31 +80,31 @@ impl<
     */
 
     pub(super) fn r_f_half(&self) -> usize {
-        self.spec.r_f / 2
+        self.spec.r_f() / 2
     }
 
     pub(super) fn constants_start(&self) -> Vec<[F; T]> {
-        self.spec.constants.start.clone()
+        self.spec.constants().start().clone()
     }
 
     pub(super) fn constants_partial(&self) -> Vec<F> {
-        self.spec.constants.partial.clone()
+        self.spec.constants().partial().clone()
     }
-
+    
     pub(super) fn constants_end(&self) -> Vec<[F; T]> {
-        self.spec.constants.end.clone()
+        self.spec.constants().end().clone()
     }
 
     pub(super) fn mds(&self) -> [[F; T]; T] {
-        self.spec.mds_matrices.mds.rows()
+        self.spec.mds_matrices().mds().rows()
     }
 
     pub(super) fn pre_sparse_mds(&self) -> [[F; T]; T] {
-        self.spec.mds_matrices.pre_sparse_mds.rows()
+        self.spec.mds_matrices().pre_sparse_mds().rows()
     }
 
     pub(super) fn sparse_matrices(&self) -> Vec<SparseMDSMatrix<F, T, RATE>> {
-        self.spec.mds_matrices.sparse_matrices.clone()
+        self.spec.mds_matrices().sparse_matrices().clone()
     }
 }
 
@@ -241,13 +241,13 @@ impl<
             .state
             .0
             .iter()
-            .zip(mds.row.iter())
+            .zip(mds.row().iter())
             .map(|(e, word)| Term::Assigned(*e, *word))
             .collect::<Vec<Term<F>>>();
         let mut new_state = vec![self.main_gate().compose(ctx, &terms[..], F::zero())?];
 
         // Rest of the trainsition ie the sparse part
-        for (e, word) in mds.col_hat.iter().zip(self.state.0.into_iter().skip(1)) {
+        for (e, word) in mds.col_hat().iter().zip(self.state.0.into_iter().skip(1)) {
             new_state.push(self.main_gate().compose(
                 ctx,
                 &[

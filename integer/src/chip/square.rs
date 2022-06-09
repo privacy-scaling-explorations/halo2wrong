@@ -1,6 +1,5 @@
 use super::{IntegerChip, IntegerInstructions, Range};
-use crate::{rns::MaybeReduced, AssignedInteger, WrongExt};
-use halo2::arithmetic::FieldExt;
+use crate::{rns::MaybeReduced, AssignedInteger, FieldExt};
 use halo2::plonk::Error;
 use maingate::Assigned;
 use maingate::{
@@ -8,7 +7,7 @@ use maingate::{
     RegionCtx, Term,
 };
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn square_generic(

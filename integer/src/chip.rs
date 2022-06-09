@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use crate::instructions::{IntegerInstructions, Range};
 use crate::rns::{Common, Integer, Rns};
-use crate::{WrongExt, NUMBER_OF_LOOKUP_LIMBS};
+use crate::NUMBER_OF_LOOKUP_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{halo2, AssignedCondition, AssignedValue, MainGateInstructions, RegionCtx};
@@ -44,7 +44,7 @@ impl IntegerConfig {
 /// Chip for integer instructions
 #[derive(Debug)]
 pub struct IntegerChip<
-    W: WrongExt,
+    W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
@@ -55,7 +55,7 @@ pub struct IntegerChip<
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Creates a new [`AssignedInteger`] from its limb representation and its
@@ -69,11 +69,11 @@ impl<'a, W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerInstructions<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     for IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    fn reduce_external<T: WrongExt>(
+    fn reduce_external<T: FieldExt>(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         // TODO: external integer might have different parameter settings
@@ -497,7 +497,7 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Create new ['IntegerChip'] with the configuration and a shared [`Rns`]
@@ -522,15 +522,14 @@ impl<W: WrongExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::rns::{Common, Integer, Rns};
-    use crate::{UnassignedInteger, WrongExt, NUMBER_OF_LOOKUP_LIMBS};
+    use crate::{FieldExt, UnassignedInteger, NUMBER_OF_LOOKUP_LIMBS};
     use core::panic;
-    use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use maingate::{
-        big_to_fe, decompose_big, fe_to_big, halo2, Assigned, AssignedCondition, MainGate,
-        MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+        big_to_fe, decompose_big, fe_to_big, halo2, AssignedCondition, MainGate, MainGateConfig,
+        MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
     };
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
@@ -539,19 +538,19 @@ mod tests {
 
     const NUMBER_OF_LIMBS: usize = 4;
 
-    fn rns<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+    fn rns<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
     ) -> Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         Rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct()
     }
 
-    fn setup<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+    fn setup<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
     ) -> (Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, u32) {
         let rns = rns();
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
         (rns, k)
     }
 
-    impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>
+    impl<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>
         From<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>
         for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
@@ -560,11 +559,11 @@ mod tests {
         }
     }
 
-    pub(crate) struct TestRNS<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+    pub(crate) struct TestRNS<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     }
 
-    impl<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> TestRNS<W, N, BIT_LEN_LIMB> {
+    impl<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> TestRNS<W, N, BIT_LEN_LIMB> {
         pub(crate) fn rand_in_field(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             let mut rng = thread_rng();
             Integer::from_fe(W::random(&mut rng), Rc::clone(&self.rns))
@@ -614,10 +613,6 @@ mod tests {
             Integer::from_big(e, Rc::clone(&self.rns))
         }
 
-        pub(crate) fn new_from_fe(&self, e: W) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            Integer::from_fe(e, Rc::clone(&self.rns))
-        }
-
         pub(crate) fn new_from_limbs(
             &self,
             e: &[N; NUMBER_OF_LIMBS],
@@ -635,12 +630,12 @@ mod tests {
             self.new_from_big(self.rns.max_operand.clone())
         }
 
-        pub(crate) fn max_in_unreduced_range(
-            &self,
-        ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let limbs = [big_to_fe(self.rns.max_unreduced_limb.clone()); NUMBER_OF_LIMBS];
-            Integer::from_limbs(&limbs, Rc::clone(&self.rns))
-        }
+        // pub(crate) fn max_in_unreduced_range(
+        //     &self,
+        // ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        //     let limbs = [big_to_fe(self.rns.max_unreduced_limb.clone());
+        // NUMBER_OF_LIMBS];     Integer::from_limbs(&limbs,
+        // Rc::clone(&self.rns)) }
 
         pub fn zero(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             Integer::from_big(big_uint::zero(), Rc::clone(&self.rns))
@@ -654,7 +649,7 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+        fn new<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
             meta: &mut ConstraintSystem<N>,
         ) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
@@ -695,11 +690,11 @@ mod tests {
 
 
             #[derive(Clone, Debug)]
-            struct $circuit_name<W: WrongExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+            struct $circuit_name<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
                 rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
             }
 
-            impl<W: WrongExt, N: FieldExt,  const BIT_LEN_LIMB: usize> $circuit_name<W, N, BIT_LEN_LIMB> {
+            impl<W: FieldExt, N: FieldExt,  const BIT_LEN_LIMB: usize> $circuit_name<W, N, BIT_LEN_LIMB> {
                 fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS,BIT_LEN_LIMB>{
                     IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(config.integer_chip_config(), Rc::clone(&self.rns))
                 }
@@ -710,7 +705,7 @@ mod tests {
 
             }
 
-            impl<W: WrongExt, N: FieldExt,  const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
+            impl<W: FieldExt, N: FieldExt,  const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
                 type Config = TestCircuitConfig;
                 type FloorPlanner = SimpleFloorPlanner;
 
@@ -836,8 +831,6 @@ mod tests {
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
             let integer_chip = self.integer_chip(config.clone());
-            let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
-
             let t = self.tester();
 
             layouter.assign_region(
@@ -1035,7 +1028,8 @@ mod tests {
                     // a / b
                     let a = t.rand_in_remainder_range();
                     let b = t.rand_in_remainder_range();
-                    let c = a.div(&b).unwrap();
+
+                    let c = a.mul(&b.invert().unwrap()).result;
                     let a = &integer_chip.assign_integer(ctx, Some(a).into(), Range::Remainder)?;
                     let b = &integer_chip.assign_integer(ctx, Some(b).into(), Range::Remainder)?;
                     let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
@@ -1496,16 +1490,22 @@ mod tests {
         (
             $circuit:ident
         ) => {
-            #[cfg(not(feature = "kzg"))]
-            {
-                use halo2::pasta::{Fp as Pasta_Fp, Fq as Pasta_Fq};
-                test_circuit_runner!($circuit, [Pasta_Fp, Pasta_Fq, 68], [Pasta_Fq, Pasta_Fp, 68]);
-            }
-            #[cfg(feature = "kzg")]
-            {
-                use halo2::pairing::bn256::{Fq, Fr};
-                test_circuit_runner!($circuit, [Fq, Fr, 68], [Fr, Fr, 68]);
-            }
+            use crate::curves::bn256::{Fq as BnBase, Fr as BnScalar};
+            use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+            use crate::curves::secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar};
+            test_circuit_runner!(
+                $circuit,
+                [PastaFp, PastaFq, 68],
+                [PastaFq, PastaFp, 68],
+                [BnBase, BnScalar, 68],
+                [BnScalar, BnScalar, 68],
+                [Secp256k1Base, BnScalar, 68],
+                [Secp256k1Base, PastaFp, 68],
+                [Secp256k1Base, PastaFq, 68],
+                [Secp256k1Scalar, BnScalar, 68],
+                [Secp256k1Scalar, PastaFp, 68],
+                [Secp256k1Scalar, PastaFq, 68]
+            );
         };
     }
 

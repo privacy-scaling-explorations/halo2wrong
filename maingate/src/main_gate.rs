@@ -504,9 +504,8 @@ impl<F: FieldExt> MainGate<F> {
 #[cfg(test)]
 mod tests {
 
-    use std::marker::PhantomData;
-
     use super::{MainGate, MainGateConfig, Term};
+    use crate::curves::pasta::Fp;
     use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
     use crate::halo2::dev::MockProver;
@@ -516,16 +515,8 @@ mod tests {
     use group::ff::PrimeField;
     use halo2wrong::utils::{big_to_fe, decompose};
     use halo2wrong::RegionCtx;
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
-
-    cfg_if::cfg_if! {
-        if #[cfg(feature = "kzg")] {
-            use crate::halo2::pairing::bn256::Fr as Fp;
-        } else {
-            use crate::halo2::pasta::Fp;
-        }
-    }
+    use rand_core::OsRng;
+    use std::marker::PhantomData;
 
     #[derive(Clone)]
     struct TestCircuitConfig {
@@ -624,12 +615,7 @@ mod tests {
         ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
-            let mut rng = XorShiftRng::from_seed([
-                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-                0xbc, 0xe5,
-            ]);
-
-            let mut rand = || -> F { F::random(&mut rng) };
+            let rand = || -> F { F::random(OsRng) };
 
             layouter.assign_region(
                 || "region 0",
@@ -991,12 +977,7 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let mut rng = XorShiftRng::from_seed([
-                        0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32,
-                        0x54, 0x06, 0xbc, 0xe5,
-                    ]);
-
-                    let mut rand = || -> F { F::random(&mut rng) };
+                    let rand = || -> F { F::random(OsRng) };
 
                     if self.neg_path {
                     } else {
@@ -1108,12 +1089,7 @@ mod tests {
         ) -> Result<(), Error> {
             let main_gate = config.main_gate();
 
-            let mut rng = XorShiftRng::from_seed([
-                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-                0xbc, 0xe5,
-            ]);
-
-            let mut rand = || -> F { F::random(&mut rng) };
+            let rand = || -> F { F::random(OsRng) };
 
             layouter.assign_region(
                 || "region 0",
@@ -1264,12 +1240,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let mut rng = XorShiftRng::from_seed([
-                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-                0xbc, 0xe5,
-            ]);
-
-            let mut rand = || -> F { F::random(&mut rng) };
+            let rand = || -> F { F::random(OsRng) };
 
             layouter.assign_region(
                 || "region 0",
@@ -1388,12 +1359,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let mut rng = XorShiftRng::from_seed([
-                0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-                0xbc, 0xe5,
-            ]);
-
-            let mut rand = || -> F { F::random(&mut rng) };
+            let rand = || -> F { F::random(OsRng) };
 
             layouter.assign_region(
                 || "region 0",
@@ -1486,8 +1452,7 @@ mod tests {
                 _marker: PhantomData,
             };
 
-            let mut rng = rand::thread_rng();
-            let mut rand = || -> F { F::random(&mut rng) };
+            let rand = || -> F { F::random(OsRng) };
 
             layouter.assign_region(
                 || "region 0",
