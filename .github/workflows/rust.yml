@@ -21,13 +21,3 @@ jobs:
     - name: Run tests
       run: cargo test --verbose --release
 
-  build-test-KZG:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Build
-      run: cargo build --no-default-features --features kzg --verbose --release
-    - name: Run tests
-      run: cargo test --no-default-features --features kzg --verbose --release
