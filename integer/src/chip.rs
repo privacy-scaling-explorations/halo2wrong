@@ -138,6 +138,21 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         self.add_generic(ctx, a, b)
     }
 
+    fn add_add(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_0: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let (a, b_0, b_1) = (
+            &self.reduce_if_limb_values_exceeds_unreduced(ctx, a)?,
+            &self.reduce_if_limb_values_exceeds_unreduced(ctx, b_0)?,
+            &self.reduce_if_limb_values_exceeds_unreduced(ctx, b_1)?,
+        );
+        self.add_add_generic(ctx, a, b_0, b_1)
+    }
+
     fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -1022,7 +1037,7 @@ mod tests {
                     let inv_1 = integer_chip.invert_incomplete(ctx, a)?;
                     integer_chip.assert_equal(ctx, inv_0, &inv_1)?;
 
-                    // must be failing
+                    // must fail
                     // integer_chip.invert_incomplete(ctx, &zero)?;
 
                     // a / b
@@ -1061,7 +1076,7 @@ mod tests {
                     let c_1 = integer_chip.div_incomplete(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, c_0, &c_1)?;
 
-                    // must be failing
+                    // must fail
                     // integer_chip.div_incomplete(ctx, a, &zero)?;
 
                     Ok(())

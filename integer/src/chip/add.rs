@@ -2,7 +2,7 @@ use crate::chip::IntegerChip;
 use crate::rns::Integer;
 use crate::{AssignedInteger, AssignedLimb, Common, FieldExt};
 use halo2::plonk::Error;
-use maingate::{fe_to_big, halo2, MainGateInstructions, RegionCtx};
+use maingate::{fe_to_big, halo2, MainGateInstructions, RegionCtx, Term};
 use num_bigint::BigUint as big_uint;
 use std::rc::Rc;
 
@@ -30,6 +30,48 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .try_into()
             .unwrap();
         let c_native = main_gate.add(ctx, &a.native(), &b.native())?;
+        Ok(self.new_assigned_integer(&c_limbs, c_native))
+    }
+
+    pub(super) fn add_add_generic(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, N>,
+        a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_0: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b_1: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let main_gate = self.main_gate();
+
+        let c_limbs = a
+            .limbs()
+            .iter()
+            .zip(b_0.limbs().iter())
+            .zip(b_1.limbs().iter())
+            .map(|((a_limb, b_limb_0), b_limb_1)| {
+                let c_max = a_limb.add_add(b_limb_0, b_limb_1);
+                let c_limb = main_gate.compose(
+                    ctx,
+                    &[
+                        Term::assigned_to_add(&a_limb.into()),
+                        Term::assigned_to_add(&b_limb_0.into()),
+                        Term::assigned_to_add(&b_limb_1.into()),
+                    ],
+                    N::zero(),
+                )?;
+                Ok(AssignedLimb::from(c_limb, c_max))
+            })
+            .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
+            .try_into()
+            .unwrap();
+        let c_native = main_gate.compose(
+            ctx,
+            &[
+                Term::assigned_to_add(&a.native()),
+                Term::assigned_to_add(&b_0.native()),
+                Term::assigned_to_add(&b_1.native()),
+            ],
+            N::zero(),
+        )?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
