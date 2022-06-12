@@ -815,6 +815,48 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
     }
 
+    // Returns division witnesses
+    pub(crate) fn div(
+        &self,
+        other: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        // self / other = result
+        // self = other * result
+        // self + w * quotient = other * result
+
+        let modulus = &self.rns.wrong_modulus.clone();
+        let result = &(other.invert().unwrap().value() * self.value() % &self.rns.wrong_modulus);
+
+        let tmp = &(other.value() * result);
+        let negative_modulus = self.rns.negative_wrong_modulus_decomposed;
+        let (quotient, reduced_self) = tmp.div_rem(&modulus);
+        let (k, must_be_zero) = (self.value() - &reduced_self).div_rem(modulus);
+        assert_eq!(must_be_zero, big_uint::zero());
+        let quotient = Self::from_big(quotient - &k, Rc::clone(&self.rns));
+        let result = Self::from_big(result.clone(), Rc::clone(&self.rns));
+
+        let l = NUMBER_OF_LIMBS;
+        let mut intermediate: Vec<N> = vec![N::zero(); l];
+        for k in 0..l {
+            for i in 0..=k {
+                let j = k - i;
+                intermediate[i + j] = intermediate[i + j]
+                    + result.limb(i).0 * other.limb(j).0
+                    + negative_modulus[i] * quotient.limb(j).0;
+            }
+        }
+
+        let intermediate = intermediate.try_into().unwrap();
+        let residues = self.residues(&intermediate);
+
+        ReductionWitness {
+            result,
+            intermediate,
+            quotient: Quotient::Long(quotient),
+            residues,
+        }
+    }
+
     /// Computes the witness values for reduction operation
     pub(crate) fn reduce(&self) -> ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let modulus = self.rns.wrong_modulus.clone();
