@@ -419,7 +419,7 @@ mod tests {
     use maingate::{
         MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
     };
-    use rand::thread_rng;
+    use rand_core::OsRng;
 
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
@@ -524,7 +524,6 @@ mod tests {
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
             let ecc_chip_config = config.ecc_chip_config();
-
             let ecc_chip =
                 GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
             layouter.assign_region(
@@ -533,10 +532,8 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    let mut rng = thread_rng();
-
-                    let a = C::Curve::random(&mut rng);
-                    let b = C::Curve::random(&mut rng);
+                    let a = C::Curve::random(OsRng);
+                    let b = C::Curve::random(OsRng);
 
                     let c = a + b;
                     let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
@@ -550,7 +547,7 @@ mod tests {
 
                     // test doubling
 
-                    let a = C::Curve::random(&mut rng);
+                    let a = C::Curve::random(OsRng);
                     let c = a + a;
 
                     let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
@@ -560,8 +557,8 @@ mod tests {
 
                     // test ladder
 
-                    let a = C::Curve::random(&mut rng);
-                    let b = C::Curve::random(&mut rng);
+                    let a = C::Curve::random(OsRng);
+                    let b = C::Curve::random(OsRng);
                     let c = a + b + a;
 
                     let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
@@ -702,12 +699,11 @@ mod tests {
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
-            let mut rng = thread_rng();
             let (rns_base, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(0);
             let rns_base = Rc::new(rns_base);
 
-            let a = C::Curve::random(&mut rng).to_affine();
-            let b = C::Curve::random(&mut rng).to_affine();
+            let a = C::Curve::random(OsRng).to_affine();
+            let b = C::Curve::random(OsRng).to_affine();
 
             let c0: C = (a + b).into();
             let c0 = Point::new(Rc::clone(&rns_base), c0);
@@ -804,10 +800,9 @@ mod tests {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let mut rng = thread_rng();
 
-                    let base = C::Curve::random(&mut rng);
-                    let s = C::Scalar::random(&mut rng);
+                    let base = C::Curve::random(OsRng);
+                    let s = C::Scalar::random(OsRng);
                     let result = base * s;
 
                     let s = Integer::from_fe(s, ecc_chip.rns_scalar());
@@ -838,8 +833,7 @@ mod tests {
         >() {
             let (_, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(20);
             for window_size in 1..5 {
-                let mut rng = thread_rng();
-                let aux_generator = C::Curve::random(&mut rng).to_affine();
+                let aux_generator = C::Curve::random(OsRng).to_affine();
 
                 let circuit = TestEccMul::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     aux_generator,
@@ -935,7 +929,6 @@ mod tests {
                     use group::ff::Field;
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let mut rng = thread_rng();
 
                     let mut acc = C::Curve::identity();
                     let pairs: Vec<(
@@ -943,8 +936,8 @@ mod tests {
                         AssignedInteger<C::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
                     )> = (0..self.number_of_pairs)
                         .map(|_| {
-                            let base = C::Curve::random(&mut rng);
-                            let s = C::Scalar::random(&mut rng);
+                            let base = C::Curve::random(OsRng);
+                            let s = C::Scalar::random(OsRng);
                             acc = acc + (base * s);
                             let s = Integer::from_fe(s, ecc_chip.rns_scalar());
                             let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
@@ -983,8 +976,7 @@ mod tests {
             let (_, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(20);
             for number_of_pairs in 5..7 {
                 for window_size in 1..3 {
-                    let mut rng = thread_rng();
-                    let aux_generator = C::Curve::random(&mut rng).to_affine();
+                    let aux_generator = C::Curve::random(OsRng).to_affine();
 
                     let circuit = TestEccBatchMul::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                         aux_generator,

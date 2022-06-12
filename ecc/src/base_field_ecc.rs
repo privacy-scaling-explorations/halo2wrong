@@ -804,7 +804,7 @@ mod tests {
         fn run<C: CurveAffine>() {
             let (_, k) = setup::<C>(20);
 
-            for number_of_pairs in 4..5 {
+            for number_of_pairs in 5..7 {
                 for window_size in 1..3 {
                     let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 

@@ -548,7 +548,7 @@ mod tests {
     };
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
-    use rand::thread_rng;
+    use rand_core::OsRng;
     use std::rc::Rc;
 
     const NUMBER_OF_LIMBS: usize = 4;
@@ -580,21 +580,18 @@ mod tests {
 
     impl<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> TestRNS<W, N, BIT_LEN_LIMB> {
         pub(crate) fn rand_in_field(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let mut rng = thread_rng();
-            Integer::from_fe(W::random(&mut rng), Rc::clone(&self.rns))
+            Integer::from_fe(W::random(OsRng), Rc::clone(&self.rns))
         }
 
         pub(crate) fn rand_in_remainder_range(
             &self,
         ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let mut rng = thread_rng();
-            let el = rng.gen_biguint(self.rns.max_remainder.bits() as u64);
+            let el = OsRng.gen_biguint(self.rns.max_remainder.bits() as u64);
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
         pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let mut rng = thread_rng();
-            let el = rng.gen_biguint(self.rns.max_operand.bits() as u64);
+            let el = OsRng.gen_biguint(self.rns.max_operand.bits() as u64);
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
@@ -610,8 +607,7 @@ mod tests {
         ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             let limbs = (0..NUMBER_OF_LIMBS)
                 .map(|_| {
-                    let mut rng = thread_rng();
-                    let el = rng.gen_biguint(bit_len as u64);
+                    let el = OsRng.gen_biguint(bit_len as u64);
                     big_to_fe(el)
                 })
                 .collect::<Vec<N>>()
@@ -895,9 +891,7 @@ mod tests {
                     integer_chip.assert_equal(ctx, c_0, c_1)?;
                     integer_chip.assert_strict_equal(ctx, c_0, c_1)?;
 
-                    use rand::thread_rng;
-                    let mut rng = thread_rng();
-                    let a = W::random(&mut rng);
+                    let a = W::random(OsRng);
                     let inv = a.invert().unwrap();
 
                     let a = t.new_from_big(fe_to_big(a));

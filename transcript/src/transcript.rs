@@ -179,6 +179,7 @@ mod tests {
     use group::ff::Field;
     use poseidon::Poseidon;
     use poseidon::Spec;
+    use rand_core::OsRng;
 
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
@@ -284,8 +285,6 @@ mod tests {
     #[test]
     fn test_permutation() {
         use crate::curves::bn256::{Fr, G1Affine};
-        use rand::thread_rng;
-        let mut rng = thread_rng();
         const K: u32 = 20;
 
         macro_rules! run_test {
@@ -301,7 +300,7 @@ mod tests {
                             let spec = Spec::<Fr, $T, $RATE>::new($RF, $RP);
 
                             let inputs: Vec<Fr> = (0..number_of_inputs)
-                                .map(|_| Fr::random(&mut rng))
+                                .map(|_| Fr::random(OsRng))
                                 .collect::<Vec<Fr>>();
 
                             ref_hasher.update(&inputs[..]);

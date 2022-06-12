@@ -57,10 +57,10 @@ fn test_round_trip() {
     use group::ff::Field as _;
     use num_bigint::RandomBits;
     use rand::Rng;
+    use rand_core::OsRng;
 
     for _ in 0..1000 {
-        let mut rng = rand::thread_rng();
-        let a: big_uint = rng.sample(RandomBits::new(256));
+        let a: big_uint = OsRng.sample(RandomBits::new(256));
         let modulus = modulus::<Fp>();
         let a_0 = a % modulus;
         let t: Fp = big_to_fe(a_0.clone());
@@ -69,8 +69,7 @@ fn test_round_trip() {
     }
 
     for _ in 0..1000 {
-        let mut rng = rand::thread_rng();
-        let a_0 = Fp::random(&mut rng);
+        let a_0 = Fp::random(OsRng);
         let t = fe_to_big(a_0);
         let a_1 = big_to_fe(t);
         assert_eq!(a_0, a_1);
@@ -82,10 +81,10 @@ fn test_bit_decomposition() {
     use crate::curves::pasta::Fp;
     use num_bigint::RandomBits;
     use rand::Rng;
+    use rand_core::OsRng;
 
-    let mut rng = rand::thread_rng();
     let bit_size = 256usize;
-    let e_0: big_uint = rng.sample(RandomBits::new(bit_size as u64));
+    let e_0: big_uint = OsRng.sample(RandomBits::new(bit_size as u64));
 
     let decomposed = decompose_big::<Fp>(e_0.clone(), bit_size, 1);
     let e_1 = compose(decomposed.into_iter().map(fe_to_big).collect(), 1);

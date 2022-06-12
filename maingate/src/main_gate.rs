@@ -1386,8 +1386,7 @@ mod tests {
                     use num_bigint::BigUint as big_uint;
                     use num_bigint::RandomBits;
                     use rand::Rng;
-                    let mut rng = rand::thread_rng();
-                    let a: big_uint = rng.sample(RandomBits::new(number_of_bits as u64));
+                    let a: big_uint = OsRng.sample(RandomBits::new(number_of_bits as u64));
                     let a: F = big_to_fe(a);
                     let decomposed = decompose(a, number_of_bits, 1);
                     let a = main_gate.assign_value(ctx, &Some(a).into())?;
