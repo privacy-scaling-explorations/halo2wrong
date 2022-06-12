@@ -112,25 +112,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     pub(crate) fn residues(&self) -> Vec<Option<N>> {
         let u_len = (NUMBER_OF_LIMBS + 1) / 2;
         (0..u_len)
-            .map(|i| {
-                match &self.0 {
-                    Some(witness) => Some(witness.residues[i]),
-                    None => None,
-                }
-                .into()
-            })
+            .map(|i| self.0.as_ref().map(|witness| witness.residues[i]))
             .collect()
     }
 
     pub(crate) fn intermediates(&self) -> Vec<Option<N>> {
         (0..NUMBER_OF_LIMBS)
-            .map(|i| {
-                match &self.0 {
-                    Some(witness) => Some(witness.intermediate[i]),
-                    None => None,
-                }
-                .into()
-            })
+            .map(|i| self.0.as_ref().map(|witness| witness.intermediate[i]))
             .collect()
     }
 }
@@ -429,7 +417,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
             }
 
-            let is_odd = NUMBER_OF_LIMBS % 1 == 1;
+            let is_odd = NUMBER_OF_LIMBS & 1 == 1;
             let u_len = (NUMBER_OF_LIMBS + 1) / 2;
 
             let mut carry = big_uint::zero();
@@ -829,7 +817,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let tmp = &(other.value() * result);
         let negative_modulus = self.rns.negative_wrong_modulus_decomposed;
-        let (quotient, reduced_self) = tmp.div_rem(&modulus);
+        let (quotient, reduced_self) = tmp.div_rem(modulus);
         let (k, must_be_zero) = (self.value() - &reduced_self).div_rem(modulus);
         assert_eq!(must_be_zero, big_uint::zero());
         let quotient = Self::from_big(quotient - &k, Rc::clone(&self.rns));

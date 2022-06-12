@@ -17,6 +17,7 @@ mod mul;
 /// Constaints elliptic curve operations such as assigment, addition and
 /// multiplication
 #[derive(Clone, Debug)]
+#[allow(clippy::type_complexity)]
 pub struct GeneralEccChip<
     Emulated: CurveAffine,
     N: FieldExt,
@@ -250,10 +251,7 @@ impl<
     ) -> Result<(), Error> {
         match self.aux_generator {
             Some((_, point)) => {
-                let aux = match point {
-                    Some(point) => Some(make_mul_aux(point, window_size, number_of_pairs)),
-                    None => None,
-                };
+                let aux = point.map(|point| make_mul_aux(point, window_size, number_of_pairs));
                 let aux = self.assign_point(ctx, aux)?;
                 self.aux_registry
                     .insert((window_size, number_of_pairs), aux);
@@ -424,6 +422,7 @@ mod tests {
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
 
+    #[allow(clippy::type_complexity)]
     fn setup<
         C: CurveAffine,
         N: FieldExt,
@@ -901,6 +900,7 @@ mod tests {
             TestCircuitConfig::new::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
         }
 
+        #[allow(clippy::type_complexity)]
         fn synthesize(
             &self,
             config: Self::Config,
@@ -938,7 +938,7 @@ mod tests {
                         .map(|_| {
                             let base = C::Curve::random(OsRng);
                             let s = C::Scalar::random(OsRng);
-                            acc = acc + (base * s);
+                            acc += base * s;
                             let s = Integer::from_fe(s, ecc_chip.rns_scalar());
                             let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
                             let s = scalar_chip.assign_integer(

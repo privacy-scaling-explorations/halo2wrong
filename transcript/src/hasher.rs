@@ -90,7 +90,7 @@ impl<
     pub(super) fn constants_partial(&self) -> Vec<F> {
         self.spec.constants().partial().clone()
     }
-    
+
     pub(super) fn constants_end(&self) -> Vec<[F; T]> {
         self.spec.constants().end().clone()
     }

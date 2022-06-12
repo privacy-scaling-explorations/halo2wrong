@@ -42,10 +42,7 @@ impl<F: FieldExt> Term<F> {
     }
 
     pub(crate) fn is_zero(&self) -> bool {
-        match &self {
-            Term::Zero => true,
-            _ => false,
-        }
+        matches!(self, Term::Zero)
     }
 }
 
@@ -171,7 +168,6 @@ impl<'a, F: FieldExt> Term<F> {
                 (Some(acc), Some(coeff)) => Some(acc + coeff * term.base()),
                 _ => None,
             })
-            .into()
     }
 }
 
@@ -1184,7 +1180,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 )?;
 
                 intermediate_sum =
-                    intermediate_sum.map(|cur| cur + Term::compose(&chunk, F::zero()).unwrap());
+                    intermediate_sum.map(|cur| cur + Term::compose(chunk, F::zero()).unwrap());
 
                 // // Sanity check for prover
                 // if i == number_of_chunks - 1 {

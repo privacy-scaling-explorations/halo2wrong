@@ -111,7 +111,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         let (s_inv, _) = scalar_chip.invert(ctx, &sig.s)?;
 
         // 3. u1 = m' * w (mod n)
-        let u1 = scalar_chip.mul(ctx, &msg_hash, &s_inv)?;
+        let u1 = scalar_chip.mul(ctx, msg_hash, &s_inv)?;
 
         // 4. u2 = r * w (mod n)
         let u2 = scalar_chip.mul(ctx, &sig.r, &s_inv)?;

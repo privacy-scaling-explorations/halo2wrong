@@ -18,6 +18,7 @@ mod mul;
 /// multiplication. Elliptic curves constrained here is the same curve in the
 /// proof system where base field is the non native field.
 #[derive(Debug, Clone)]
+#[allow(clippy::type_complexity)]
 pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
     /// Chip configuration
@@ -192,10 +193,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ) -> Result<(), Error> {
         match self.aux_generator {
             Some((_, point)) => {
-                let aux = match point {
-                    Some(point) => Some(make_mul_aux(point, window_size, number_of_pairs)),
-                    None => None,
-                };
+                let aux = point.map(|point| make_mul_aux(point, window_size, number_of_pairs));
                 let aux = self.assign_point(ctx, aux)?;
                 self.aux_registry
                     .insert((window_size, number_of_pairs), aux);
@@ -740,6 +738,7 @@ mod tests {
             TestCircuitConfig::new::<C>(meta)
         }
 
+        #[allow(clippy::type_complexity)]
         fn synthesize(
             &self,
             config: Self::Config,
@@ -777,7 +776,7 @@ mod tests {
                         .map(|_| {
                             let base = C::CurveExt::random(OsRng);
                             let s = C::Scalar::random(OsRng);
-                            acc = acc + (base * s);
+                            acc += base * s;
                             let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
                             let s = main_gate.assign_value(ctx, &Some(s).into())?;
                             Ok((base, s))

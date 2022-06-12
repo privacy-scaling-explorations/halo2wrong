@@ -67,6 +67,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(())
     }
 
+    #[allow(clippy::needless_range_loop)]
     pub(super) fn mul_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -161,9 +162,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        intermediate_value.map(|must_be_zero| {
-                            assert_eq!(must_be_zero, zero);
-                        });
+                        if let Some(value) = intermediate_value {
+                            assert_eq!(value, zero)
+                        };
                     }
                 }
             }
@@ -256,6 +257,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(result.clone())
     }
 
+    #[allow(clippy::needless_range_loop)]
     pub(crate) fn mul_into_one_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -331,9 +333,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        intermediate_value.map(|must_be_zero| {
-                            assert_eq!(must_be_zero, zero);
-                        });
+                        if let Some(value) = intermediate_value {
+                            assert_eq!(value, zero)
+                        };
                     }
                 }
             }

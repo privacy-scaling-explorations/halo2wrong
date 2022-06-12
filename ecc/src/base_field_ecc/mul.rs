@@ -44,7 +44,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
             (0..number_of_windows)
                 .map(|i| {
                     let mut selector: Vec<AssignedCondition<C::Scalar>> = (0..window_size)
-                        .map(|j| bits[i * window_size + j].clone())
+                        .map(|j| bits[i * window_size + j])
                         .collect();
                     selector.reverse();
                     Selector(selector)
@@ -133,6 +133,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// `[(P_0, e_0), (P_1, e_1), ..., (P_k, e_k)]`
     /// Returns
     /// ` P_0 * e_0 + P_1 * e_1 + ...+ P_k * e_k`
+    #[allow(clippy::type_complexity)]
     pub fn mul_batch_1d_horizontal(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
@@ -143,7 +144,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         window_size: usize,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         assert!(window_size > 0);
-        assert!(pairs.len() > 0);
+        assert!(!pairs.is_empty());
         let aux = self.get_mul_aux(window_size, pairs.len())?;
 
         let main_gate = self.main_gate();

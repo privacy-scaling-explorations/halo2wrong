@@ -43,7 +43,7 @@ impl<
             (0..number_of_windows)
                 .map(|i| {
                     let mut selector: Vec<AssignedCondition<N>> = (0..window_size)
-                        .map(|j| bits[i * window_size + j].clone())
+                        .map(|j| bits[i * window_size + j])
                         .collect();
                     selector.reverse();
                     Selector(selector)
@@ -131,6 +131,7 @@ impl<
     /// `[(P_0, e_0), (P_1, e_1), ..., (P_k, e_k)] `
     /// Returns:
     /// `P_0 * e_0 + P_1 * e_1 + ...+ P_k * e_k`
+    #[allow(clippy::type_complexity)]
     pub fn mul_batch_1d_horizontal(
         &self,
         region: &mut RegionCtx<'_, '_, N>,
@@ -141,7 +142,7 @@ impl<
         window_size: usize,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         assert!(window_size > 0);
-        assert!(pairs.len() > 0);
+        assert!(!pairs.is_empty());
         let aux = self.get_mul_aux(window_size, pairs.len())?;
 
         let scalar_chip = self.scalar_field_chip();

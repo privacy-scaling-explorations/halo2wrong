@@ -10,6 +10,7 @@ use maingate::{
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    #[allow(clippy::needless_range_loop)]
     pub(super) fn square_generic(
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
@@ -100,9 +101,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        intermediate_value.map(|must_be_zero| {
-                            assert_eq!(must_be_zero, zero);
-                        });
+                        if let Some(value) = intermediate_value {
+                            assert_eq!(value, zero)
+                        };
                     }
                 }
             }

@@ -56,7 +56,7 @@ impl LimbRepresentation {
         spec: &Spec<C::Scalar, T, RATE>,
         ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<TranscriptChip<Self, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>, Error> {
-        TranscriptChip::new(ctx, spec, ecc_chip.clone())
+        TranscriptChip::new(ctx, spec, ecc_chip)
     }
 }
 
@@ -88,7 +88,7 @@ impl NativeRepresentation {
         spec: &Spec<C::Scalar, T, RATE>,
         ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<TranscriptChip<Self, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>, Error> {
-        TranscriptChip::new(ctx, spec, ecc_chip.clone())
+        TranscriptChip::new(ctx, spec, ecc_chip)
     }
 }
 
