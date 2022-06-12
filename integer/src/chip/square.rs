@@ -96,6 +96,15 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     let p = negative_wrong_modulus[j];
                     t - (a_j * a_k + q * p)
                 });
+
+                // Sanity check for the last running subtraction value
+                {
+                    if j == i {
+                        intermediate_value.map(|must_be_zero| {
+                            assert_eq!(must_be_zero, zero);
+                        });
+                    }
+                }
             }
         }
 
