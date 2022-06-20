@@ -18,6 +18,7 @@
 use super::main_gate::{MainGate, MainGateColumn, MainGateConfig};
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
+use crate::halo2::circuit::Value;
 use crate::halo2::circuit::Layouter;
 use crate::halo2::plonk::{ConstraintSystem, Error};
 use crate::halo2::plonk::{Selector, TableColumn};
@@ -271,7 +272,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                         || "limb range table",
                         self.config.dense_limb_range_table,
                         index,
-                        || Ok(value),
+                        || Value::known(value),
                     )?;
                 }
                 Ok(())
@@ -293,7 +294,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                             || "overflow table",
                             overflow_table.column,
                             index,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                     }
                     Ok(())
