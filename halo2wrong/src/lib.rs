@@ -1,6 +1,6 @@
 use halo2::{
     arithmetic::FieldExt,
-    circuit::{AssignedCell, Cell, Region},
+    circuit::{AssignedCell, Cell, Region, Value},
     plonk::{Advice, Column, Error, Fixed, Selector},
 };
 
@@ -25,7 +25,7 @@ impl<'a, 'b, F: FieldExt> RegionCtx<'a, 'b, F> {
         value: F,
     ) -> Result<AssignedCell<F, F>, Error> {
         self.region
-            .assign_fixed(|| annotation, column, *self.offset, || Ok(value))
+            .assign_fixed(|| annotation, column, *self.offset, || Value::known(value))
     }
 
     pub fn assign_advice(
@@ -38,7 +38,7 @@ impl<'a, 'b, F: FieldExt> RegionCtx<'a, 'b, F> {
             || annotation,
             column,
             *self.offset,
-            || value.ok_or(Error::Synthesis),
+            || Value::known(value.unwrap_or_default()),
         )
     }
 

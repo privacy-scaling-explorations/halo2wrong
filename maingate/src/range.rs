@@ -25,6 +25,7 @@ use crate::halo2::poly::Rotation;
 use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedValue, UnassignedValue};
 use halo2wrong::RegionCtx;
+use halo2wrong::halo2::circuit::Value;
 
 const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 
@@ -271,7 +272,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                         || "limb range table",
                         self.config.dense_limb_range_table,
                         index,
-                        || Ok(value),
+                        || Value::known(value),
                     )?;
                 }
                 Ok(())
@@ -293,7 +294,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                             || "overflow table",
                             overflow_table.column,
                             index,
-                            || Ok(value),
+                            || Value::known(value),
                         )?;
                     }
                     Ok(())
