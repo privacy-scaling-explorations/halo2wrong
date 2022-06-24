@@ -211,14 +211,14 @@ impl<
     pub fn mul_batch_ecdsa(
         &self,
         region: &mut RegionCtx<'_, '_, N>,
-        gen_point: &AssignedPoint<Emulated::Base, N>,
+        gen_point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         triplets: Vec<(
-            AssignedPoint<Emulated::Base, N>,
-            AssignedInteger<Emulated::Scalar, N>,
-            AssignedInteger<Emulated::Scalar, N>,
+            AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         )>,
         window_size: usize,
-    ) -> Result<Vec<AssignedPoint<Emulated::Base, N>>, Error> {
+    ) -> Result<Vec<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>, Error> {
         assert!(window_size > 0);
         assert!(triplets.len() > 0);
         let aux = self.get_mul_aux(window_size, 2).unwrap();
@@ -260,7 +260,7 @@ impl<
         // Tables for the public key points
         let mut binary_aux = aux.to_add.clone();
         binary_aux = self.double(region, &binary_aux)?;
-        let pk_tables: Vec<Table<Emulated::Base, N>> = triplets
+        let pk_tables: Vec<Table<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = triplets
             .iter()
             .map(|(point, _, _)| {
                 self.make_incremental_table(region, &binary_aux, point, window_size)

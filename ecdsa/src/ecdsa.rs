@@ -65,15 +65,15 @@ pub struct AssignedPublicKey<
 }
 
 pub struct AssignedEcdsaStarSig<
-    WB: WrongExt,
-    WS: WrongExt,
+    WB: FieldExt,
+    WS: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    pub point: AssignedPoint<WB, N, NUMBERO_OF_LIMBS, BIT_LEN_LIMB>,
-    pub r: AssignedInteger<WS, N, NUMBERO_OF_LIMBS, BIT_LEN_LIMB>,
-    pub s: AssignedInteger<WS, N, NUMBERO_OF_LIMBS, BIT_LEN_LIMB>,
+    pub point: AssignedPoint<WB, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub r: AssignedInteger<WS, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub s: AssignedInteger<WS, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
 pub struct EcdsaChip<
@@ -152,9 +152,9 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         triplets: Vec<(
-            AssignedPublicKey<E::Base, N>,  // signer pk
-            AssignedEcdsaSig<E::Scalar, N>, // signature
-            AssignedInteger<E::Scalar, N>,  // msg_hash
+            AssignedPublicKey<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // signer pk
+            AssignedEcdsaSig<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // signature
+            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // msg_hash
         )>,
     ) -> Result<(), Error> {
         let ecc_chip = self.ecc_chip();
@@ -164,9 +164,9 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         let e_gen = ecc_chip.assign_point(ctx, Some(E::generator()))?;
         let batch_mul_input: Vec<(
-            AssignedPoint<E::Base, N>,     // pk
-            AssignedInteger<E::Scalar, N>, // u1
-            AssignedInteger<E::Scalar, N>, // u2
+            AssignedPoint<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // pk
+            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // u1
+            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // u2
         )> = triplets
             .iter()
             .map(|(pk, sig, msg_hash)| {
@@ -200,7 +200,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
             scalar_chip.assert_strict_equal(ctx, &q_x_reduced_in_r, &sig.r)?;
         }
 
-        main_gate.break_here(ctx)?;
+        // main_gate.break_here(ctx)?;
         Ok(())
     }
 
@@ -211,10 +211,10 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         &self,
         ctx: &mut RegionCtx<'_, '_, N>,
         pk_sig_msg_c: Vec<(
-            AssignedPublicKey<E::Base, N>,               // signer pk
-            AssignedEcdsaStarSig<E::Base, E::Scalar, N>, // signature
-            AssignedInteger<E::Scalar, N>,               // msg_hash
-            AssignedInteger<E::Scalar, N>,               // challenge power
+            AssignedPublicKey<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // signer pk
+            AssignedEcdsaStarSig<E::Base, E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // signature
+            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // msg_hash
+            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // challenge power
         )>,
     ) -> Result<(), Error> {
         let window_size = 4;
@@ -296,12 +296,13 @@ mod tests {
     use crate::halo2;
     use crate::integer;
     use crate::maingate;
-    use ecc::integer::Range;
+    use ecc::integer::{AssignedInteger, Range};
     use ecc::maingate::big_to_fe;
     use ecc::maingate::fe_to_big;
     use ecc::maingate::RegionCtx;
     use ecc::{EccConfig, GeneralEccChip};
     use group::ff::Field;
+    use group::prime::PrimeCurveAffine;
     use group::{Curve, Group};
     use halo2::arithmetic::CurveAffine;
     use halo2::arithmetic::FieldExt;
@@ -310,12 +311,17 @@ mod tests {
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
     use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
+    use rand::thread_rng;
     use rand_core::OsRng;
     use std::marker::PhantomData;
 
     const BIT_LEN_LIMB: usize = 68;
     const NUMBER_OF_LIMBS: usize = 4;
 
+    fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
+        let x_big = fe_to_big(x);
+        big_to_fe(x_big)
+    }
     // Single verification test
     #[derive(Clone, Debug)]
     struct TestCircuitEcdsaVerifyConfig {
@@ -443,9 +449,9 @@ mod tests {
     #[derive(Default, Clone)]
     struct BatchEcdsaVerifyInput<E: CurveAffine> {
         pk: Vec<E>,
-        m_hash: Vec<E::ScalarExt>,
-        sig_s: Vec<E::ScalarExt>,
-        x_bytes_n: Vec<E::ScalarExt>,
+        m_hash: Vec<E::Scalar>,
+        s: Vec<E::Scalar>,
+        r: Vec<E::Scalar>,
     }
 
     impl<E: CurveAffine> BatchEcdsaVerifyInput<E> {
@@ -453,8 +459,8 @@ mod tests {
             Self {
                 pk: vec![],
                 m_hash: vec![],
-                sig_s: vec![],
-                x_bytes_n: vec![],
+                r: vec![],
+                s: vec![],
             }
         }
     }
@@ -484,7 +490,9 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let mut ecc_chip = GeneralEccChip::<E, N>::new(config.ecc_chip_config());
+            let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
+                config.ecc_chip_config(),
+            );
             let scalar_chip = ecc_chip.scalar_field_chip();
 
             let mut rng = thread_rng();
@@ -493,35 +501,27 @@ mod tests {
             // generate a batch of valid signatures
             let generator = <E as PrimeCurveAffine>::generator();
             for _ in 0..self.batch_size {
+                // Generate a key pair
                 let sk = <E as CurveAffine>::ScalarExt::random(&mut rng);
-                let pk = generator * sk;
-                let pk = pk.to_affine();
+                let pk = (generator * sk).to_affine();
 
+                // Generate a valid_hash
                 let m_hash = <E as CurveAffine>::ScalarExt::random(&mut rng);
+
                 let randomness = <E as CurveAffine>::ScalarExt::random(&mut rng);
                 let randomness_inv = randomness.invert().unwrap();
-                let sig_point = generator * randomness;
-                let x = sig_point.to_affine().coordinates().unwrap().x().clone();
 
-                cfg_if::cfg_if! {
-                    if #[cfg(feature = "kzg")] {
-                        let x_repr = &mut Vec::with_capacity(32);
-                        x.write(x_repr)?;
-                    } else {
-                        let mut x_repr = [0u8; 32];
-                        x_repr.copy_from_slice(x.to_repr().as_ref());
-                    }
-                }
+                // Compute `r`
+                let r_point = (generator * randomness).to_affine().coordinates().unwrap();
+                let x = r_point.x();
+                let r = mod_n::<E>(*x);
 
-                let mut x_bytes = [0u8; 64];
-                x_bytes[..32].copy_from_slice(&x_repr[..]);
-
-                let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
-                let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
+                // Compute `s`
+                let s = randomness_inv * (m_hash + r * sk);
                 bevi.pk.push(pk);
                 bevi.m_hash.push(m_hash);
-                bevi.x_bytes_n.push(x_bytes_on_n);
-                bevi.sig_s.push(sig_s);
+                bevi.r.push(r);
+                bevi.s.push(s);
             }
 
             layouter.assign_region(
@@ -542,20 +542,22 @@ mod tests {
                     || "region 0",
                     |mut region| {
                         let mut assigned_bevi: Vec<(
-                            AssignedPublicKey<E::Base, N>,
-                            AssignedEcdsaSig<E::Scalar, N>,
-                            AssignedInteger<E::Scalar, N>,
+                            AssignedPublicKey<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+                            AssignedEcdsaSig<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+                            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
                         )> = Vec::with_capacity(self.batch_size);
                         let offset = &mut 0;
                         let ctx = &mut RegionCtx::new(&mut region, offset);
 
                         for i in 0..self.batch_size {
-                            let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.x_bytes_n[i]));
-                            let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.sig_s[i]));
+                            let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.r[i]));
+                            let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.s[i]));
                             let msg_hash = ecc_chip.new_unassigned_scalar(Some(bevi.m_hash[i]));
 
-                            let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
-                            let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                            let r_assigned =
+                                scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
+                            let s_assigned =
+                                scalar_chip.assign_integer(ctx, integer_s, Range::Remainder)?;
                             let sig = AssignedEcdsaSig {
                                 r: r_assigned,
                                 s: s_assigned,
@@ -566,7 +568,8 @@ mod tests {
                             let pk_assigned = AssignedPublicKey {
                                 point: pk_in_circuit,
                             };
-                            let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
+                            let msg_hash =
+                                scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
                             assigned_bevi.push((pk_assigned, sig, msg_hash));
                         }
 
@@ -585,11 +588,11 @@ mod tests {
     #[derive(Default, Clone)]
     struct BatchEcdsaStarVerifyInput<E: CurveAffine> {
         pk: Vec<E>,
-        m_hash: Vec<E::ScalarExt>,
-        sig_s: Vec<E::ScalarExt>,
+        m_hash: Vec<E::Scalar>,
+        r: Vec<E::Scalar>,
+        s: Vec<E::Scalar>,
         sig_point: Vec<E>,
-        x_bytes_n: Vec<E::ScalarExt>,
-        challenge: Vec<E::ScalarExt>,
+        challenge: Vec<E::Scalar>,
     }
 
     impl<E: CurveAffine> BatchEcdsaStarVerifyInput<E> {
@@ -597,9 +600,9 @@ mod tests {
             Self {
                 pk: vec![],
                 m_hash: vec![],
-                sig_s: vec![],
+                r: vec![],
+                s: vec![],
                 sig_point: vec![],
-                x_bytes_n: vec![],
                 challenge: vec![],
             }
         }
@@ -629,7 +632,9 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let mut ecc_chip = GeneralEccChip::<E, N>::new(config.ecc_chip_config(), BIT_LEN_LIMB);
+            let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
+                config.ecc_chip_config(),
+            );
             let scalar_chip = ecc_chip.scalar_field_chip();
 
             let mut rng = thread_rng();
@@ -638,36 +643,26 @@ mod tests {
             // generate a batch of valid signatures and challenge powers
             let generator = <E as PrimeCurveAffine>::generator();
             for _ in 0..self.batch_size {
+                // Generate a key pair
                 let sk = <E as CurveAffine>::ScalarExt::random(&mut rng);
-                let pk = generator * sk;
-                let pk = pk.to_affine();
+                let pk = (generator * sk).to_affine();
 
+                // Generate a valid_hash
                 let m_hash = <E as CurveAffine>::ScalarExt::random(&mut rng);
+
                 let randomness = <E as CurveAffine>::ScalarExt::random(&mut rng);
                 let randomness_inv = randomness.invert().unwrap();
-                let sig_point = generator * randomness;
-                let sig_point = sig_point.to_affine();
-                let x = sig_point.coordinates().unwrap().x().clone();
 
-                cfg_if::cfg_if! {
-                    if #[cfg(feature = "kzg")] {
-                        let x_repr = &mut Vec::with_capacity(32);
-                        x.write(x_repr)?;
-                    } else {
-                        let mut x_repr = [0u8; 32];
-                        x_repr.copy_from_slice(x.to_repr().as_ref());
-                    }
-                }
+                let sig_point = (generator * randomness).to_affine();
+                let sig_point_coords = sig_point.coordinates().unwrap();
+                let x = sig_point_coords.x();
+                let r = mod_n::<E>(*x);
 
-                let mut x_bytes = [0u8; 64];
-                x_bytes[..32].copy_from_slice(&x_repr[..]);
-
-                let x_bytes_on_n = <E as CurveAffine>::ScalarExt::from_bytes_wide(&x_bytes); // get x cordinate (E::Base) on E::Scalar
-                let sig_s = randomness_inv * (m_hash + x_bytes_on_n * sk);
+                let s = randomness_inv * (m_hash + r * sk);
                 bevi.pk.push(pk);
                 bevi.m_hash.push(m_hash);
-                bevi.x_bytes_n.push(x_bytes_on_n);
-                bevi.sig_s.push(sig_s);
+                bevi.r.push(r);
+                bevi.s.push(s);
                 bevi.sig_point.push(sig_point);
             }
 
@@ -700,25 +695,25 @@ mod tests {
                     |mut region| {
                         // bevi: batch ecdsa verifier input
                         let mut assigned_bevi: Vec<(
-                            AssignedPublicKey<E::Base, N>,               // Public Key
-                            AssignedEcdsaStarSig<E::Base, E::Scalar, N>, // ECDSA* signature
-                            AssignedInteger<E::Scalar, N>,               // Message hash
-                            AssignedInteger<E::Scalar, N>,               // Challenge power
+                            AssignedPublicKey<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,               // Public Key
+                            AssignedEcdsaStarSig<E::Base, E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, // ECDSA* signature
+                            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,               // Message hash
+                            AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,               // Challenge power
                         )> = Vec::with_capacity(self.batch_size);
                         let offset = &mut 0;
                         let ctx = &mut RegionCtx::new(&mut region, offset);
 
                         for i in 0..self.batch_size {
-                            let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.x_bytes_n[i]));
-                            let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.sig_s[i]));
+                            let integer_r = ecc_chip.new_unassigned_scalar(Some(bevi.r[i]));
+                            let integer_s = ecc_chip.new_unassigned_scalar(Some(bevi.s[i]));
                             let msg_hash = ecc_chip.new_unassigned_scalar(Some(bevi.m_hash[i]));
                             let challenge_p =
                                 ecc_chip.new_unassigned_scalar(Some(bevi.challenge[i]));
                             let sig_point_assigned =
                                 ecc_chip.assign_point(ctx, Some(bevi.sig_point[i].into()))?;
 
-                            let r_assigned = scalar_chip.assign_integer(ctx, integer_r)?;
-                            let s_assigned = scalar_chip.assign_integer(ctx, integer_s)?;
+                            let r_assigned = scalar_chip.assign_integer(ctx, integer_r, Range::Remainder)?;
+                            let s_assigned = scalar_chip.assign_integer(ctx, integer_s, Range::Remainder)?;
                             let sig = AssignedEcdsaStarSig {
                                 point: sig_point_assigned,
                                 r: r_assigned,
@@ -730,8 +725,8 @@ mod tests {
                             let pk_assigned = AssignedPublicKey {
                                 point: pk_in_circuit,
                             };
-                            let msg_hash = scalar_chip.assign_integer(ctx, msg_hash)?;
-                            let challenge_p = scalar_chip.assign_integer(ctx, challenge_p)?;
+                            let msg_hash = scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
+                            let challenge_p = scalar_chip.assign_integer(ctx, challenge_p, Range::Remainder)?;
                             assigned_bevi.push((pk_assigned, sig, msg_hash, challenge_p));
                         }
 
@@ -749,11 +744,6 @@ mod tests {
     // Run tests
     #[test]
     fn test_ecdsa_verifier() {
-        fn mod_n<C: CurveAffine>(x: C::Base) -> C::Scalar {
-            let x_big = fe_to_big(x);
-            big_to_fe(x_big)
-        }
-
         fn run<C: CurveAffine, N: FieldExt>() {
             let g = C::generator();
 
@@ -841,14 +831,12 @@ mod tests {
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        #[cfg(not(feature = "kzg"))]
-        {}
-        #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::Fr;
-            use secp256k1::Secp256k1Affine as Secp256;
-            run::<Secp256, Fr>();
-        }
+        use crate::curves::bn256::Fr as BnScalar;
+        use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+        run::<Secp256k1, BnScalar>();
+        // run::<Secp256k1, PastaFp>();
+        // run::<Secp256k1, PastaFq>();
     }
 
     #[test]
@@ -873,13 +861,11 @@ mod tests {
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        #[cfg(not(feature = "kzg"))]
-        {}
-        #[cfg(feature = "kzg")]
-        {
-            use halo2::pairing::bn256::Fr;
-            use secp256k1::Secp256k1Affine as Secp256;
-            run::<Secp256, Fr>();
-        }
+        use crate::curves::bn256::Fr as BnScalar;
+        use crate::curves::pasta::{Fp as PastaFp, Fq as PastaFq};
+        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+        run::<Secp256k1, BnScalar>();
+        // run::<Secp256k1, PastaFp>();
+        // run::<Secp256k1, PastaFq>();
     }
 }
