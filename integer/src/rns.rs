@@ -600,6 +600,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Computes the overflow that each component of the [`Rns`] must support.
+    // TODO: consider soundness of only single overflow length
     pub fn overflow_lengths(&self) -> Vec<usize> {
         let max_most_significant_mul_quotient_limb_size =
             self.max_most_significant_mul_quotient_limb.bits() as usize % self.bit_len_lookup;
