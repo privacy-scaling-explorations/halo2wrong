@@ -18,8 +18,8 @@
 use super::main_gate::{MainGate, MainGateColumn, MainGateConfig};
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
-use crate::halo2::circuit::Value;
 use crate::halo2::circuit::Layouter;
+use crate::halo2::circuit::Value;
 use crate::halo2::plonk::{ConstraintSystem, Error};
 use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
