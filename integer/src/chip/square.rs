@@ -1,6 +1,6 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::MaybeReduced, AssignedInteger, FieldExt};
-use halo2::plonk::Error;
+use halo2::{arithmetic::Field, plonk::Error};
 use maingate::Assigned;
 use maingate::{
     halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions,
@@ -90,20 +90,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
 
                 // update running temp value
-                intermediate_value = intermediate_value.map(|t| {
-                    let a_j = a.limb(j).value().unwrap();
-                    let a_k = a.limb(k).value().unwrap();
-                    let q = quotient.limb(k).value().unwrap();
-                    let p = negative_wrong_modulus[j];
-                    t - (a_j * a_k + q * p)
-                });
+                intermediate_value = intermediate_value
+                    .zip(a.limb(j).value())
+                    .zip(a.limb(k).value())
+                    .zip(quotient.limb(k).value())
+                    .map(|(((t, a_j), a_k), q)| {
+                        let p = negative_wrong_modulus[j];
+                        t - (a_j * a_k + q * p)
+                    });
 
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        if let Some(value) = intermediate_value {
-                            assert_eq!(value, zero)
-                        };
+                        intermediate_value.assert_if_known(Field::is_zero_vartime);
                     }
                 }
             }

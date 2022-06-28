@@ -147,10 +147,11 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         b_1: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = match (a.value(), b_0.value(), b_1.value()) {
-            (Some(a), Some(b_0), Some(b_1)) => Some(a - b_0 - b_1 + constant),
-            _ => None,
-        };
+        let c = a
+            .value()
+            .zip(b_0.value())
+            .zip(b_1.value())
+            .map(|((a, b_0), b_1)| a - b_0 - b_1 + constant);
 
         Ok(self.apply(
             ctx,
@@ -181,13 +182,11 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | --- | --- | - | --- | ---|
         // | c   | a   | c | b   | res|
 
-        let res = match (a.value(), b.value(), cond.bool_value) {
-            (Some(a), Some(b), Some(cond)) => {
-                let res = if cond { a } else { b };
-                Some(res)
-            }
-            _ => None,
-        };
+        let res = a
+            .value()
+            .zip(b.value())
+            .zip(cond.bool_value)
+            .map(|((a, b), cond)| if cond { a } else { b });
 
         let assigned = self.apply(
             ctx,
@@ -221,14 +220,11 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // | dif | a   | - | -   |
         // | c   | dif | - | res |
 
-        let (dif, res) = match (a.value(), cond.bool_value) {
-            (Some(a), Some(cond)) => {
-                let dif = a - b;
-                let res = if cond { a } else { b };
-                (Some(dif), Some(res))
-            }
-            _ => (None, None),
-        };
+        let (dif, res) = a
+            .value()
+            .zip(cond.bool_value)
+            .map(|(a, cond)| (a - b, if cond { a } else { b }))
+            .unzip();
 
         // a - b - dif = 0
         let dif = self.apply(
@@ -507,7 +503,7 @@ mod tests {
     use super::{MainGate, MainGateConfig, Term};
     use crate::curves::pasta::Fp;
     use crate::halo2::arithmetic::FieldExt;
-    use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use crate::halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
     use crate::main_gate::{CombinationOptionCommon, MainGateInstructions};
@@ -563,7 +559,8 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    let value = main_gate.assign_value(ctx, &Some(self.public_input).into())?;
+                    let value =
+                        main_gate.assign_value(ctx, &Value::known(self.public_input).into())?;
                     Ok(value)
                 },
             )?;
@@ -631,11 +628,11 @@ mod tests {
                         let constant = -(a_0 * r_0 + a_1 * r_1 + a_2 * r_2 + a_3 * r_3 + a_4 * r_4);
 
                         let terms = [
-                            Term::Unassigned(Some(a_0), r_0),
-                            Term::Unassigned(Some(a_1), r_1),
-                            Term::Unassigned(Some(a_2), r_2),
-                            Term::Unassigned(Some(a_3), r_3),
-                            Term::Unassigned(Some(a_4), r_4),
+                            Term::Unassigned(Value::known(a_0), r_0),
+                            Term::Unassigned(Value::known(a_1), r_1),
+                            Term::Unassigned(Value::known(a_2), r_2),
+                            Term::Unassigned(Value::known(a_3), r_3),
+                            Term::Unassigned(Value::known(a_4), r_4),
                         ];
 
                         let assigned = main_gate.apply(
@@ -672,11 +669,11 @@ mod tests {
                             + a_4 * r_4);
 
                         let terms = [
-                            Term::Unassigned(Some(a_0), r_0),
-                            Term::Unassigned(Some(a_1), r_1),
-                            Term::Unassigned(Some(a_2), r_2),
-                            Term::Unassigned(Some(a_3), r_3),
-                            Term::Unassigned(Some(a_4), r_4),
+                            Term::Unassigned(Value::known(a_0), r_0),
+                            Term::Unassigned(Value::known(a_1), r_1),
+                            Term::Unassigned(Value::known(a_2), r_2),
+                            Term::Unassigned(Value::known(a_3), r_3),
+                            Term::Unassigned(Value::known(a_4), r_4),
                         ];
 
                         let assigned = main_gate.apply(
@@ -716,11 +713,11 @@ mod tests {
                             + a_next * r_next);
 
                         let terms = [
-                            Term::Unassigned(Some(a_0), r_0),
-                            Term::Unassigned(Some(a_1), r_1),
-                            Term::Unassigned(Some(a_2), r_2),
-                            Term::Unassigned(Some(a_3), r_3),
-                            Term::Unassigned(Some(a_4), r_4),
+                            Term::Unassigned(Value::known(a_0), r_0),
+                            Term::Unassigned(Value::known(a_1), r_1),
+                            Term::Unassigned(Value::known(a_2), r_2),
+                            Term::Unassigned(Value::known(a_3), r_3),
+                            Term::Unassigned(Value::known(a_4), r_4),
                         ];
 
                         let assigned = main_gate.apply(
@@ -730,7 +727,7 @@ mod tests {
                             CombinationOptionCommon::CombineToNextMul(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
+                        main_gate.assign_to_acc(ctx, &Value::known(a_next).into())?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
@@ -745,7 +742,7 @@ mod tests {
                             CombinationOptionCommon::CombineToNextMul(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
+                        main_gate.assign_to_acc(ctx, &Value::known(a_next).into())?;
                     }
 
                     // CombineToNextScaleMul(F, F)
@@ -764,11 +761,11 @@ mod tests {
                             + a_next * r_next);
 
                         let terms = [
-                            Term::Unassigned(Some(a_0), r_0),
-                            Term::Unassigned(Some(a_1), r_1),
-                            Term::Unassigned(Some(a_2), r_2),
-                            Term::Unassigned(Some(a_3), r_3),
-                            Term::Unassigned(Some(a_4), r_4),
+                            Term::Unassigned(Value::known(a_0), r_0),
+                            Term::Unassigned(Value::known(a_1), r_1),
+                            Term::Unassigned(Value::known(a_2), r_2),
+                            Term::Unassigned(Value::known(a_3), r_3),
+                            Term::Unassigned(Value::known(a_4), r_4),
                         ];
 
                         let assigned = main_gate.apply(
@@ -778,7 +775,7 @@ mod tests {
                             CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
+                        main_gate.assign_to_acc(ctx, &Value::known(a_next).into())?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
@@ -793,7 +790,7 @@ mod tests {
                             CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
+                        main_gate.assign_to_acc(ctx, &Value::known(a_next).into())?;
                     }
 
                     // CombineToNextAdd(F)
@@ -811,11 +808,11 @@ mod tests {
                             + a_next * r_next);
 
                         let terms = [
-                            Term::Unassigned(Some(a_0), r_0),
-                            Term::Unassigned(Some(a_1), r_1),
-                            Term::Unassigned(Some(a_2), r_2),
-                            Term::Unassigned(Some(a_3), r_3),
-                            Term::Unassigned(Some(a_4), r_4),
+                            Term::Unassigned(Value::known(a_0), r_0),
+                            Term::Unassigned(Value::known(a_1), r_1),
+                            Term::Unassigned(Value::known(a_2), r_2),
+                            Term::Unassigned(Value::known(a_3), r_3),
+                            Term::Unassigned(Value::known(a_4), r_4),
                         ];
 
                         let assigned = main_gate.apply(
@@ -825,7 +822,7 @@ mod tests {
                             CombinationOptionCommon::CombineToNextAdd(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
+                        main_gate.assign_to_acc(ctx, &Value::known(a_next).into())?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
@@ -840,7 +837,7 @@ mod tests {
                             CombinationOptionCommon::CombineToNextAdd(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, &Some(a_next).into())?;
+                        main_gate.assign_to_acc(ctx, &Value::known(a_next).into())?;
                     }
 
                     Ok(())
@@ -899,15 +896,15 @@ mod tests {
 
                     if self.neg_path {
                         let minus_one = -F::one();
-                        main_gate.assign_bit(ctx, &UnassignedValue(Some(minus_one)))?;
+                        main_gate.assign_bit(ctx, &UnassignedValue(Value::known(minus_one)))?;
                     } else {
                         let one = F::one();
                         let zero = F::zero();
 
-                        let u = main_gate.assign_bit(ctx, &UnassignedValue(Some(one)))?;
+                        let u = main_gate.assign_bit(ctx, &UnassignedValue(Value::known(one)))?;
                         main_gate.assert_bit(ctx, &u)?;
 
-                        let u = main_gate.assign_bit(ctx, &UnassignedValue(Some(zero)))?;
+                        let u = main_gate.assign_bit(ctx, &UnassignedValue(Value::known(zero)))?;
                         main_gate.assert_bit(ctx, &u)?;
                     }
 
@@ -984,36 +981,39 @@ mod tests {
                         let one = F::one();
                         let zero = F::zero();
 
-                        let assigned_one = &main_gate.assign_bit(ctx, &Some(one).into())?;
-                        let assigned_zero = &main_gate.assign_bit(ctx, &Some(zero).into())?;
+                        let assigned_one = &main_gate.assign_bit(ctx, &Value::known(one).into())?;
+                        let assigned_zero =
+                            &main_gate.assign_bit(ctx, &Value::known(zero).into())?;
 
                         // assert_equal_to_constant
 
                         let val = rand();
-                        let assigned = &main_gate.assign_value(ctx, &Some(val).into())?;
+                        let assigned = &main_gate.assign_value(ctx, &Value::known(val).into())?;
                         main_gate.assert_equal_to_constant(ctx, assigned, val)?;
                         main_gate.assert_not_zero(ctx, assigned)?;
 
                         // assert_equal
 
                         let val = rand();
-                        let assigned_0 = main_gate.assign_value(ctx, &Some(val).into())?;
-                        let assigned_1 = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let assigned_0 = main_gate.assign_value(ctx, &Value::known(val).into())?;
+                        let assigned_1 = main_gate.assign_value(ctx, &Value::known(val).into())?;
                         main_gate.assert_equal(ctx, &assigned_0, &assigned_1)?;
 
                         // assert_not_equal
 
                         let val_0 = rand();
                         let val_1 = rand();
-                        let assigned_0 = main_gate.assign_value(ctx, &Some(val_0).into())?;
-                        let assigned_1 = main_gate.assign_value(ctx, &Some(val_1).into())?;
+                        let assigned_0 =
+                            main_gate.assign_value(ctx, &Value::known(val_0).into())?;
+                        let assigned_1 =
+                            main_gate.assign_value(ctx, &Value::known(val_1).into())?;
                         main_gate.assert_not_equal(ctx, &assigned_0, &assigned_1)?;
 
                         // is_equal
 
                         let val = rand();
-                        let assigned_0 = main_gate.assign_value(ctx, &Some(val).into())?;
-                        let assigned_1 = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let assigned_0 = main_gate.assign_value(ctx, &Value::known(val).into())?;
+                        let assigned_1 = main_gate.assign_value(ctx, &Value::known(val).into())?;
                         let is_equal = main_gate.is_equal(ctx, &assigned_0, &assigned_1)?;
 
                         main_gate.assert_one(ctx, &is_equal.into())?;
@@ -1021,8 +1021,10 @@ mod tests {
 
                         let val_0 = rand();
                         let val_1 = rand();
-                        let assigned_0 = main_gate.assign_value(ctx, &Some(val_0).into())?;
-                        let assigned_1 = main_gate.assign_value(ctx, &Some(val_1).into())?;
+                        let assigned_0 =
+                            main_gate.assign_value(ctx, &Value::known(val_0).into())?;
+                        let assigned_1 =
+                            main_gate.assign_value(ctx, &Value::known(val_1).into())?;
                         let is_equal = &main_gate.is_equal(ctx, &assigned_0, &assigned_1)?;
 
                         main_gate.assert_zero(ctx, &is_equal.into())?;
@@ -1031,7 +1033,7 @@ mod tests {
                         // is_zero
 
                         let val = rand();
-                        let assigned = main_gate.assign_value(ctx, &Some(val).into())?;
+                        let assigned = main_gate.assign_value(ctx, &Value::known(val).into())?;
                         let is_zero = &main_gate.is_zero(ctx, &assigned)?;
                         main_gate.assert_zero(ctx, &is_zero.into())?;
                         main_gate.assert_equal(ctx, &is_zero.into(), &assigned_zero.into())?;
@@ -1100,9 +1102,9 @@ mod tests {
                     let a = rand();
                     let b = rand();
                     let c = a + b;
-                    let a = Some(a);
-                    let b = Some(b);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let b = main_gate.assign_value(ctx, &b.into())?;
@@ -1113,8 +1115,8 @@ mod tests {
                     let a = rand();
                     let b = rand();
                     let c = a + b;
-                    let a = Some(a);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let c_0 = main_gate.assign_value(ctx, &c.into())?;
@@ -1125,9 +1127,9 @@ mod tests {
                     let b = rand();
                     let constant = rand();
                     let c = a + b + constant;
-                    let a = Some(a);
-                    let b = Some(b);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let b = main_gate.assign_value(ctx, &b.into())?;
@@ -1138,9 +1140,9 @@ mod tests {
                     let a = rand();
                     let b = rand();
                     let c = a - b;
-                    let a = Some(a);
-                    let b = Some(b);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let b = main_gate.assign_value(ctx, &b.into())?;
@@ -1152,9 +1154,9 @@ mod tests {
                     let b = rand();
                     let constant = rand();
                     let c = a - b + constant;
-                    let a = Some(a);
-                    let b = Some(b);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let b = main_gate.assign_value(ctx, &b.into())?;
@@ -1165,9 +1167,9 @@ mod tests {
                     let a = rand();
                     let b = rand();
                     let c = a * b;
-                    let a = Some(a);
-                    let b = Some(b);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let b = main_gate.assign_value(ctx, &b.into())?;
@@ -1178,9 +1180,9 @@ mod tests {
                     let a = rand();
                     let b = rand();
                     let c = a * b.invert().unwrap();
-                    let a = Some(a);
-                    let b = Some(b);
-                    let c = Some(c);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let c = Value::known(c);
 
                     let a = main_gate.assign_value(ctx, &a.into())?;
                     let b = main_gate.assign_value(ctx, &b.into())?;
@@ -1252,9 +1254,9 @@ mod tests {
                     let b = rand();
                     let cond = F::zero();
 
-                    let a = Some(a);
-                    let b = Some(b);
-                    let cond = Some(cond);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let cond = Value::known(cond);
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let b = &main_gate.assign_value(ctx, &b.into())?;
@@ -1267,9 +1269,9 @@ mod tests {
                     let b = rand();
                     let cond = F::one();
 
-                    let a = Some(a);
-                    let b = Some(b);
-                    let cond = Some(cond);
+                    let a = Value::known(a);
+                    let b = Value::known(b);
+                    let cond = Value::known(cond);
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let b = &main_gate.assign_value(ctx, &b.into())?;
@@ -1282,9 +1284,9 @@ mod tests {
                     let b_constant = rand();
                     let cond = F::zero();
 
-                    let a = Some(a);
-                    let b_unassigned = Some(b_constant);
-                    let cond = Some(cond);
+                    let a = Value::known(a);
+                    let b_unassigned = Value::known(b_constant);
+                    let cond = Value::known(cond);
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let b_assigned = &main_gate.assign_value(ctx, &b_unassigned.into())?;
@@ -1297,8 +1299,8 @@ mod tests {
                     let b_constant = rand();
                     let cond = F::one();
 
-                    let a = Some(a);
-                    let cond = Some(cond);
+                    let a = Value::known(a);
+                    let cond = Value::known(cond);
 
                     let a = &main_gate.assign_value(ctx, &a.into())?;
                     let cond: AssignedCondition<F> =
@@ -1370,7 +1372,7 @@ mod tests {
                     let a = rand();
                     let number_of_bits = F::NUM_BITS as usize;
                     let decomposed = decompose(a, number_of_bits, 1);
-                    let a = main_gate.assign_value(ctx, &Some(a).into())?;
+                    let a = main_gate.assign_value(ctx, &Value::known(a).into())?;
                     let a_decomposed = main_gate.to_bits(ctx, &a, number_of_bits)?;
                     assert_eq!(decomposed.len(), a_decomposed.len());
 
@@ -1389,7 +1391,7 @@ mod tests {
                     let a: big_uint = OsRng.sample(RandomBits::new(number_of_bits as u64));
                     let a: F = big_to_fe(a);
                     let decomposed = decompose(a, number_of_bits, 1);
-                    let a = main_gate.assign_value(ctx, &Some(a).into())?;
+                    let a = main_gate.assign_value(ctx, &Value::known(a).into())?;
                     let a_decomposed = main_gate.to_bits(ctx, &a, number_of_bits)?;
                     assert_eq!(decomposed.len(), a_decomposed.len());
 
@@ -1462,7 +1464,7 @@ mod tests {
                     for number_of_terms in 1..50 {
                         let constant = rand();
                         let terms = (0..number_of_terms)
-                            .map(|_| (Term::Unassigned(Some(rand()), rand())))
+                            .map(|_| (Term::Unassigned(Value::known(rand()), rand())))
                             .collect::<Vec<Term<F>>>();
                         let expected = Term::compose(&terms, constant);
                         let expected = main_gate.assign_value(ctx, &expected.into())?;
@@ -1527,12 +1529,12 @@ mod tests {
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
                     let a = F::from(20u64);
-                    let assigned = main_gate.assign_value(ctx, &Some(a).into())?;
+                    let assigned = main_gate.assign_value(ctx, &Value::known(a).into())?;
                     let assigned_sign = main_gate.sign(ctx, &assigned)?;
                     main_gate.assert_zero(ctx, &assigned_sign.into())?;
 
                     let a = F::from(21u64);
-                    let assigned = main_gate.assign_value(ctx, &Some(a).into())?;
+                    let assigned = main_gate.assign_value(ctx, &Value::known(a).into())?;
                     let assigned_sign = main_gate.sign(ctx, &assigned)?;
                     main_gate.assert_one(ctx, &assigned_sign.into())?;
 

@@ -6,7 +6,10 @@
 #![deny(missing_docs)]
 
 use halo2::plonk::Error;
-use halo2::{arithmetic::FieldExt, circuit::Cell};
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::{Cell, Value},
+};
 use halo2wrong::utils::decompose;
 use std::marker::PhantomData;
 
@@ -26,7 +29,7 @@ use halo2wrong::curves;
 /// Helper trait for assigned values across halo2stack.
 pub trait Assigned<F: FieldExt> {
     /// Returns witness value
-    fn value(&self) -> Option<F>;
+    fn value(&self) -> Value<F>;
     /// Applies copy constraion to the given `Assigned` witness
     fn constrain_equal(&self, ctx: &mut RegionCtx<'_, '_, F>, other: &Self) -> Result<(), Error> {
         ctx.region.constrain_equal(self.cell(), other.cell())
@@ -37,7 +40,7 @@ pub trait Assigned<F: FieldExt> {
     /// `W = a_0 + a_1 * R + a_1 * R^2 + ...`
     /// where
     /// `R = 2 ** bit_len`
-    fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
+    fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Value<Vec<F>> {
         self.value().map(|e| decompose(e, number_of_limbs, bit_len))
     }
 }
@@ -46,7 +49,7 @@ pub trait Assigned<F: FieldExt> {
 /// or `0`.
 #[derive(Debug, Copy, Clone)]
 pub struct AssignedCondition<F: FieldExt> {
-    bool_value: Option<bool>,
+    bool_value: Value<bool>,
     cell: Cell,
     _marker: PhantomData<F>,
 }
@@ -61,7 +64,7 @@ impl<F: FieldExt> AssignedCondition<F> {
     /// Creates a new [`AssignedCondition`] from a field element.
     /// It will have false value if the provided element is zero
     /// and true otherwise
-    pub fn new(cell: Cell, value: Option<F>) -> Self {
+    pub fn new(cell: Cell, value: Value<F>) -> Self {
         let bool_value = value.map(|value| value != F::zero());
         AssignedCondition {
             bool_value,
@@ -72,7 +75,7 @@ impl<F: FieldExt> AssignedCondition<F> {
 }
 
 impl<F: FieldExt> Assigned<F> for AssignedCondition<F> {
-    fn value(&self) -> Option<F> {
+    fn value(&self) -> Value<F> {
         self.bool_value
             .map(|value| if value { F::one() } else { F::zero() })
     }
@@ -82,7 +85,7 @@ impl<F: FieldExt> Assigned<F> for AssignedCondition<F> {
 }
 
 impl<F: FieldExt> Assigned<F> for &AssignedCondition<F> {
-    fn value(&self) -> Option<F> {
+    fn value(&self) -> Value<F> {
         self.bool_value
             .map(|value| if value { F::one() } else { F::zero() })
     }
@@ -96,7 +99,7 @@ impl<F: FieldExt> Assigned<F> for &AssignedCondition<F> {
 #[derive(Debug, Copy, Clone)]
 pub struct AssignedValue<F: FieldExt> {
     // Witness value. shoulde be `None` at synthesis time must be `Some ` at prover time.
-    value: Option<F>,
+    value: Value<F>,
     // `cell` is where this witness accomadates. `cell` will be needed to constrain equality
     // between assigned values.
     cell: Cell,
@@ -121,7 +124,7 @@ impl<F: FieldExt> From<&AssignedCondition<F>> for AssignedValue<F> {
 }
 
 impl<F: FieldExt> Assigned<F> for AssignedValue<F> {
-    fn value(&self) -> Option<F> {
+    fn value(&self) -> Value<F> {
         self.value
     }
     fn cell(&self) -> Cell {
@@ -130,7 +133,7 @@ impl<F: FieldExt> Assigned<F> for AssignedValue<F> {
 }
 
 impl<F: FieldExt> Assigned<F> for &AssignedValue<F> {
-    fn value(&self) -> Option<F> {
+    fn value(&self) -> Value<F> {
         self.value
     }
     fn cell(&self) -> Cell {
@@ -140,28 +143,28 @@ impl<F: FieldExt> Assigned<F> for &AssignedValue<F> {
 
 impl<F: FieldExt> AssignedValue<F> {
     /// Creates a new [`AssignedValue`] from a field element
-    pub fn new(cell: Cell, value: Option<F>) -> Self {
+    pub fn new(cell: Cell, value: Value<F>) -> Self {
         AssignedValue { value, cell }
     }
 }
 
 /// Value of a field element without an assigned cell in the circuit
 #[derive(Debug, Clone)]
-pub struct UnassignedValue<F: FieldExt>(Option<F>);
+pub struct UnassignedValue<F: FieldExt>(Value<F>);
 
-impl<F: FieldExt> From<Option<F>> for UnassignedValue<F> {
-    fn from(value: Option<F>) -> Self {
+impl<F: FieldExt> From<Value<F>> for UnassignedValue<F> {
+    fn from(value: Value<F>) -> Self {
         UnassignedValue(value)
     }
 }
 
-impl<F: FieldExt> From<&Option<F>> for UnassignedValue<F> {
-    fn from(value: &Option<F>) -> Self {
+impl<F: FieldExt> From<&Value<F>> for UnassignedValue<F> {
+    fn from(value: &Value<F>) -> Self {
         UnassignedValue(*value)
     }
 }
 
-impl<F: FieldExt> From<UnassignedValue<F>> for Option<F> {
+impl<F: FieldExt> From<UnassignedValue<F>> for Value<F> {
     fn from(value: UnassignedValue<F>) -> Self {
         value.0
     }
@@ -169,12 +172,12 @@ impl<F: FieldExt> From<UnassignedValue<F>> for Option<F> {
 
 impl<F: FieldExt> UnassignedValue<F> {
     /// Returns the value
-    pub fn value(&self) -> Option<F> {
+    pub fn value(&self) -> Value<F> {
         self.0
     }
 
     /// Returns the value in limb representation
-    pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Option<Vec<F>> {
+    pub fn decompose(&self, number_of_limbs: usize, bit_len: usize) -> Value<Vec<F>> {
         self.0.map(|e| decompose(e, number_of_limbs, bit_len))
     }
 

@@ -5,8 +5,9 @@ use crate::{halo2, maingate};
 use halo2::arithmetic::CurveAffine;
 use halo2::circuit::Layouter;
 use halo2::plonk::Error;
+use integer::halo2::circuit::Value;
 use integer::maingate::{MainGateInstructions, RegionCtx};
-use integer::{IntegerInstructions, Range, UnassignedInteger};
+use integer::{IntegerInstructions, Range};
 use maingate::{AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -28,7 +29,7 @@ pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const 
     /// Auxiliary point for optimized multiplication algorithm
     aux_generator: Option<(
         AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        Option<C>,
+        Value<C>,
     )>,
     /// Auxiliary points for optimized multiplication for each (window_size,
     /// n_pairs) pairs
@@ -154,18 +155,15 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     pub fn assign_point(
         &self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        point: Option<C>,
+        point: Value<C>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
 
         let point = point.map(|point| self.to_rns_point(point));
-        let (x, y) = match point {
-            Some(point) => (Some(point.get_x()).into(), Some(point.get_y()).into()),
-            None => (UnassignedInteger::from(None), UnassignedInteger::from(None)),
-        };
+        let (x, y) = point.map(|point| (point.get_x(), point.get_y())).unzip();
 
-        let x = integer_chip.assign_integer(ctx, x, Range::Remainder)?;
-        let y = integer_chip.assign_integer(ctx, y, Range::Remainder)?;
+        let x = integer_chip.assign_integer(ctx, x.into(), Range::Remainder)?;
+        let y = integer_chip.assign_integer(ctx, y.into(), Range::Remainder)?;
 
         let point = AssignedPoint::new(x, y);
         self.assert_is_on_curve(ctx, &point)?;
@@ -176,7 +174,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     pub fn assign_aux_generator(
         &mut self,
         ctx: &mut RegionCtx<'_, '_, C::Scalar>,
-        aux_generator: Option<C>,
+        aux_generator: Value<C>,
     ) -> Result<(), Error> {
         let aux_generator_assigned = self.assign_point(ctx, aux_generator)?;
         self.aux_generator = Some((aux_generator_assigned, aux_generator));
@@ -362,7 +360,7 @@ mod tests {
     use crate::maingate;
     use group::{Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
-    use halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::maingate::RegionCtx;
@@ -466,9 +464,9 @@ mod tests {
                     let b = C::CurveExt::random(OsRng);
 
                     let c = a + b;
-                    let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
-                    let b = &ecc_chip.assign_point(ctx, Some(b.into()))?;
-                    let c_0 = &ecc_chip.assign_point(ctx, Some(c.into()))?;
+                    let a = &ecc_chip.assign_point(ctx, Value::known(a.into()))?;
+                    let b = &ecc_chip.assign_point(ctx, Value::known(b.into()))?;
+                    let c_0 = &ecc_chip.assign_point(ctx, Value::known(c.into()))?;
                     let c_1 = &ecc_chip.add(ctx, a, b)?;
                     ecc_chip.assert_equal(ctx, c_0, c_1)?;
 
@@ -480,8 +478,8 @@ mod tests {
                     let a = C::CurveExt::random(OsRng);
                     let c = a + a;
 
-                    let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
-                    let c_0 = &ecc_chip.assign_point(ctx, Some(c.into()))?;
+                    let a = &ecc_chip.assign_point(ctx, Value::known(a.into()))?;
+                    let c_0 = &ecc_chip.assign_point(ctx, Value::known(c.into()))?;
                     let c_1 = &ecc_chip.double(ctx, a)?;
                     ecc_chip.assert_equal(ctx, c_0, c_1)?;
 
@@ -491,9 +489,9 @@ mod tests {
                     let b = C::CurveExt::random(OsRng);
                     let c = a + b + a;
 
-                    let a = &ecc_chip.assign_point(ctx, Some(a.into()))?;
-                    let b = &ecc_chip.assign_point(ctx, Some(b.into()))?;
-                    let c_0 = &ecc_chip.assign_point(ctx, Some(c.into()))?;
+                    let a = &ecc_chip.assign_point(ctx, Value::known(a.into()))?;
+                    let b = &ecc_chip.assign_point(ctx, Value::known(b.into()))?;
+                    let c_0 = &ecc_chip.assign_point(ctx, Value::known(c.into()))?;
                     let c_1 = &ecc_chip.ladder(ctx, a, b)?;
                     ecc_chip.assert_equal(ctx, c_0, c_1)?;
 
@@ -531,8 +529,8 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccPublicInput<C: CurveAffine> {
-        a: Option<C>,
-        b: Option<C>,
+        a: Value<C>,
+        b: Value<C>,
     }
 
     impl<C: CurveAffine> Circuit<C::Scalar> for TestEccPublicInput<C> {
@@ -609,8 +607,8 @@ mod tests {
             public_data.extend(c1.public());
 
             let circuit = TestEccPublicInput {
-                a: Some(a),
-                b: Some(b),
+                a: Value::known(a),
+                b: Value::known(b),
             };
 
             let prover = match MockProver::run(k, &circuit, vec![public_data]) {
@@ -659,7 +657,7 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                    ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
                     ecc_chip.get_mul_aux(self.window_size, 1)?;
                     Ok(())
@@ -677,9 +675,9 @@ mod tests {
                     let s = C::Scalar::random(OsRng);
                     let result = base * s;
 
-                    let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
-                    let s = main_gate.assign_value(ctx, &Some(s).into())?;
-                    let result_0 = ecc_chip.assign_point(ctx, Some(result.into()))?;
+                    let base = ecc_chip.assign_point(ctx, Value::known(base.into()))?;
+                    let s = main_gate.assign_value(ctx, &Value::known(s).into())?;
+                    let result_0 = ecc_chip.assign_point(ctx, Value::known(result.into()))?;
 
                     let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
                     ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
@@ -754,7 +752,7 @@ mod tests {
                 |mut region| {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
-                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                    ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
                     ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
                     Ok(())
@@ -777,13 +775,13 @@ mod tests {
                             let base = C::CurveExt::random(OsRng);
                             let s = C::Scalar::random(OsRng);
                             acc += base * s;
-                            let base = ecc_chip.assign_point(ctx, Some(base.into()))?;
-                            let s = main_gate.assign_value(ctx, &Some(s).into())?;
+                            let base = ecc_chip.assign_point(ctx, Value::known(base.into()))?;
+                            let s = main_gate.assign_value(ctx, &Value::known(s).into())?;
                             Ok((base, s))
                         })
                         .collect::<Result<_, Error>>()?;
 
-                    let result_0 = ecc_chip.assign_point(ctx, Some(acc.into()))?;
+                    let result_0 = ecc_chip.assign_point(ctx, Value::known(acc.into()))?;
                     let result_1 =
                         ecc_chip.mul_batch_1d_horizontal(ctx, pairs, self.window_size)?;
                     ecc_chip.assert_equal(ctx, &result_0, &result_1)?;

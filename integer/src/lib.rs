@@ -6,7 +6,10 @@
 #![deny(missing_docs)]
 
 use crate::rns::{Common, Integer, Limb};
-use halo2::{arithmetic::FieldExt, circuit::Cell};
+use halo2::{
+    arithmetic::FieldExt,
+    circuit::{Cell, Value},
+};
 use maingate::{big_to_fe, compose, fe_to_big, Assigned, AssignedValue, UnassignedValue};
 use num_bigint::BigUint as big_uint;
 use rns::Rns;
@@ -36,7 +39,7 @@ pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 #[derive(Debug, Clone)]
 pub struct AssignedLimb<F: FieldExt> {
     // Witness value
-    value: Option<Limb<F>>,
+    value: Value<Limb<F>>,
     // Cell that this value accomadates
     cell: Cell,
     // Maximum value to track overflow and reduction flow
@@ -58,7 +61,7 @@ impl<F: FieldExt> From<&AssignedLimb<F>> for AssignedValue<F> {
 }
 
 impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {
-    fn value(&self) -> Option<F> {
+    fn value(&self) -> Value<F> {
         self.value.as_ref().map(|value| value.fe())
     }
     fn cell(&self) -> Cell {
@@ -67,7 +70,7 @@ impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {
 }
 
 impl<F: FieldExt> Assigned<F> for &AssignedLimb<F> {
-    fn value(&self) -> Option<F> {
+    fn value(&self) -> Value<F> {
         self.value.as_ref().map(|value| value.fe())
     }
     fn cell(&self) -> Cell {
@@ -90,7 +93,7 @@ impl<F: FieldExt> AssignedLimb<F> {
 
     /// Helper functions for maximum value tracking
 
-    fn limb(&self) -> Option<Limb<F>> {
+    fn limb(&self) -> Value<Limb<F>> {
         self.value.clone()
     }
 
@@ -130,13 +133,13 @@ pub struct UnassignedInteger<
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
->(Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
+>(Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
 impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-    From<Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
+    From<Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
     for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    fn from(integer: Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
+    fn from(integer: Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         UnassignedInteger(integer)
     }
 }
@@ -194,12 +197,8 @@ impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 
     /// Witness form of the assigned integer that is used to derive further
     /// witnesses
-    pub fn integer(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
-        let has_value = self.limbs[0].value.clone().map(|_| ());
-        let limbs: Option<Vec<Limb<N>>> = has_value.map(|_| {
-            let limbs = self.limbs.iter().map(|limb| limb.limb().unwrap()).collect();
-            limbs
-        });
+    pub fn integer(&self) -> Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+        let limbs: Value<Vec<Limb<N>>> = self.limbs.iter().map(|limb| limb.limb()).collect();
         limbs.map(|limbs| Integer::new(limbs, Rc::clone(&self.rns)))
     }
 

@@ -1,7 +1,7 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::rns::MaybeReduced;
 use crate::{AssignedInteger, FieldExt};
-use halo2::plonk::Error;
+use halo2::{arithmetic::Field, plonk::Error};
 use maingate::Assigned;
 use maingate::{
     halo2, AssignedCondition, AssignedValue, CombinationOptionCommon, MainGateInstructions,
@@ -45,11 +45,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
-        let witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
-            match (a.integer(), b.integer()) {
-                (Some(a_int), Some(b_int)) => Some(a_int.div(&b_int)),
-                _ => None,
-            }
+        let witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> = a
+            .integer()
+            .zip(b.integer())
+            .map(|(a_int, b_int)| a_int.div(&b_int))
             .into();
 
         let result = witness.result();
@@ -100,20 +99,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
 
                 // update running temp value
-                intermediate_value = intermediate_value.map(|t| {
-                    let a = result.limb(j).value().unwrap();
-                    let b = b.limb(k).value().unwrap();
-                    let q = quotient.limb(k).value().unwrap();
-                    let p = negative_wrong_modulus[j];
-                    t - (a * b + q * p)
-                });
+                intermediate_value = intermediate_value
+                    .zip(result.limb(j).value())
+                    .zip(b.limb(k).value())
+                    .zip(quotient.limb(k).value())
+                    .map(|(((t, a), b), q)| {
+                        let p = negative_wrong_modulus[j];
+                        t - (a * b + q * p)
+                    });
 
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        if let Some(value) = intermediate_value {
-                            assert_eq!(value, zero)
-                        };
+                        intermediate_value.assert_if_known(Field::is_zero_vartime);
                     }
                 }
             }

@@ -170,6 +170,7 @@ mod tests {
     use crate::maingate::{MainGateInstructions, RegionCtx};
     use crate::transcript::LimbRepresentation;
     use ecc::halo2::arithmetic::CurveAffine;
+    use ecc::halo2::circuit::Value;
     use ecc::integer::NUMBER_OF_LOOKUP_LIMBS;
     use ecc::maingate::RangeChip;
     use ecc::maingate::RangeConfig;
@@ -221,8 +222,9 @@ mod tests {
 
     struct TestCircuit<C: CurveAffine, const T: usize, const RATE: usize> {
         spec: Spec<C::Scalar, T, RATE>,
-        inputs: Vec<Option<C::Scalar>>,
-        expected: Option<C::Scalar>,
+        n: usize,
+        inputs: Value<Vec<C::Scalar>>,
+        expected: Value<C::Scalar>,
     }
 
     impl<C: CurveAffine, const T: usize, const RATE: usize> Circuit<C::Scalar>
@@ -264,8 +266,8 @@ mod tests {
                             ecc_chip.clone(),
                         )?;
 
-                    for e in self.inputs.iter() {
-                        let e = main_gate.assign_value(ctx, &(*e).into())?;
+                    for e in self.inputs.as_ref().transpose_vec(self.n) {
+                        let e = main_gate.assign_value(ctx, &e.map(|e| *e).into())?;
                         transcript_chip.write_scalar(&e);
                     }
                     let challenge = transcript_chip.squeeze(ctx)?;
@@ -306,11 +308,11 @@ mod tests {
                             ref_hasher.update(&inputs[..]);
                             let expected = ref_hasher.squeeze();
 
-                            let inputs: Vec<Option<Fr>> = inputs.into_iter().map(Some).collect();
                             let circuit: TestCircuit<G1Affine, $T, $RATE> = TestCircuit {
                                 spec: spec.clone(),
-                                inputs,
-                                expected: Some(expected),
+                                n: number_of_inputs,
+                                inputs: Value::known(inputs),
+                                expected: Value::known(expected),
                             };
                             let public_inputs = vec![vec![]];
                             let prover = match MockProver::run(K, &circuit, public_inputs) {

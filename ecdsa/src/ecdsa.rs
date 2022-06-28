@@ -5,7 +5,7 @@ use crate::maingate;
 use ecc::maingate::RegionCtx;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::{CurveAffine, FieldExt};
-use halo2::plonk::Error;
+use halo2::{circuit::Value, plonk::Error};
 use integer::rns::Integer;
 use integer::{AssignedInteger, IntegerInstructions};
 use maingate::{MainGateConfig, RangeConfig};
@@ -117,7 +117,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         let u2 = scalar_chip.mul(ctx, &sig.r, &s_inv)?;
 
         // 5. compute Q = u1*G + u2*pk
-        let e_gen = ecc_chip.assign_point(ctx, Some(E::generator()))?;
+        let e_gen = ecc_chip.assign_point(ctx, Value::known(E::generator()))?;
         let g1 = ecc_chip.mul(ctx, &e_gen, &u1, 2)?;
         let g2 = ecc_chip.mul(ctx, &pk.point, &u2, 2)?;
         let q = ecc_chip.add(ctx, &g1, &g2)?;
@@ -150,7 +150,7 @@ mod tests {
     use group::{Curve, Group};
     use halo2::arithmetic::CurveAffine;
     use halo2::arithmetic::FieldExt;
-    use halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::{IntegerInstructions, NUMBER_OF_LOOKUP_LIMBS};
@@ -202,9 +202,9 @@ mod tests {
 
     #[derive(Default, Clone)]
     struct TestCircuitEcdsaVerify<E: CurveAffine, N: FieldExt> {
-        public_key: Option<E>,
-        signature: Option<(E::Scalar, E::Scalar)>,
-        msg_hash: Option<E::Scalar>,
+        public_key: Value<E>,
+        signature: Value<(E::Scalar, E::Scalar)>,
+        msg_hash: Value<E::Scalar>,
 
         aux_generator: E,
         window_size: usize,
@@ -239,7 +239,7 @@ mod tests {
                     let offset = &mut 0;
                     let ctx = &mut RegionCtx::new(&mut region, offset);
 
-                    ecc_chip.assign_aux_generator(ctx, Some(self.aux_generator))?;
+                    ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
                     Ok(())
                 },
@@ -330,9 +330,9 @@ mod tests {
             let k = 20;
             let aux_generator = C::CurveExt::random(OsRng).to_affine();
             let circuit = TestCircuitEcdsaVerify::<C, N> {
-                public_key: Some(public_key),
-                signature: Some((r, s)),
-                msg_hash: Some(msg_hash),
+                public_key: Value::known(public_key),
+                signature: Value::known((r, s)),
+                msg_hash: Value::known(msg_hash),
 
                 aux_generator,
                 window_size: 2,

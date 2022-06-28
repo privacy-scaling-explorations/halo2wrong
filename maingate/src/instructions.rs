@@ -9,7 +9,7 @@ use halo2wrong::{
 
 use crate::halo2::{
     arithmetic::FieldExt,
-    circuit::{Chip, Layouter},
+    circuit::{Chip, Layouter, Value},
     plonk::Error,
 };
 
@@ -30,7 +30,7 @@ pub enum Term<F: FieldExt> {
     /// Assigned value and fixed scalar
     Assigned(AssignedValue<F>, F),
     /// Unassigned witness and fixed scalar
-    Unassigned(Option<F>, F),
+    Unassigned(Value<F>, F),
     /// Empty term
     Zero,
 }
@@ -125,27 +125,27 @@ impl<'a, F: FieldExt> Term<F> {
     }
 
     /// Wrap an unassigned value that is about to be multiplied by other term
-    pub fn unassigned_to_mul(e: Option<F>) -> Self {
+    pub fn unassigned_to_mul(e: Value<F>) -> Self {
         Term::Unassigned(e, F::zero())
     }
 
     /// Wrap an unassigned value that is about to be added to the other terms
-    pub fn unassigned_to_add(e: Option<F>) -> Self {
+    pub fn unassigned_to_add(e: Value<F>) -> Self {
         Term::Unassigned(e, F::one())
     }
 
     /// Wrap an unassigned value that is about to be subtracted from the other
     /// terms
-    pub fn unassigned_to_sub(e: Option<F>) -> Self {
+    pub fn unassigned_to_sub(e: Value<F>) -> Self {
         Term::Unassigned(e, -F::one())
     }
 
     /// Retuns the witness part of this term
-    pub fn coeff(&self) -> Option<F> {
+    pub fn coeff(&self) -> Value<F> {
         match self {
             Self::Assigned(assigned, _) => assigned.value(),
             Self::Unassigned(unassigned, _) => *unassigned,
-            Self::Zero => Some(F::zero()),
+            Self::Zero => Value::known(F::zero()),
         }
     }
 
@@ -161,13 +161,11 @@ impl<'a, F: FieldExt> Term<F> {
     /// Composes terms as
     /// `w_0 * s_0 + w_1 * s_1 + ...`
     /// And retuns the calculated witness
-    pub fn compose(terms: &[Self], constant: F) -> Option<F> {
-        terms
-            .iter()
-            .fold(Some(constant), |acc, term| match (acc, term.coeff()) {
-                (Some(acc), Some(coeff)) => Some(acc + coeff * term.base()),
-                _ => None,
-            })
+    pub fn compose(terms: &[Self], constant: F) -> Value<F> {
+        terms.iter().fold(Value::known(constant), |acc, term| {
+            acc.zip(term.coeff())
+                .map(|(acc, coeff)| acc + coeff * term.base())
+        })
     }
 }
 
@@ -226,7 +224,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     ) -> Result<AssignedValue<F>, Error> {
         Ok(self.apply(
             ctx,
-            terms!([Term::unassigned_to_sub(Some(constant))]),
+            terms!([Term::unassigned_to_sub(Value::known(constant))]),
             constant,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?[0])
@@ -335,10 +333,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
-        let c = match (c1.value(), c2.value()) {
-            (Some(c1), Some(c2)) => Some(c1 + c2 - c1 * c2),
-            _ => None,
-        };
+        let c = c1.value().zip(c2.value()).map(|(c1, c2)| c1 + c2 - c1 * c2);
 
         let zero = F::zero();
 
@@ -364,10 +359,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
-        let c = match (c1.value(), c2.value()) {
-            (Some(c1), Some(c2)) => Some(c1 * c2),
-            _ => None,
-        };
+        let c = c1.value().zip(c2.value()).map(|(c1, c2)| c1 * c2);
 
         Ok(self.apply(
             ctx,
@@ -412,18 +404,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         // Find the new witness
-        let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => {
-                let b_maybe_inverted: Option<F> = b.invert().into();
-                match b_maybe_inverted {
-                    Some(b_inverted) => Some(a * b_inverted),
-
-                    // Non inversion case will never be verified
-                    _ => Some(F::zero()),
-                }
-            }
-            _ => None,
-        };
+        let c = a
+            .value()
+            .zip(b.value())
+            .map(|(a, b)| match Option::<F>::from(b.invert()) {
+                Some(b_inverted) => a * b_inverted,
+                // Non inversion case will never be verified
+                _ => F::zero(),
+            });
 
         Ok(self.apply(
             ctx,
@@ -458,15 +446,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        let inverse = match a.value() {
-            Some(a) => match a.invert().into() {
-                Some(a) => Some(a),
-
+        let inverse = a.value().map(|a| {
+            match a.invert().into() {
+                Some(a) => a,
                 // Non inversion case will never be verified.
-                _ => Some(F::zero()),
-            },
-            _ => None,
-        };
+                _ => F::zero(),
+            }
+        });
 
         Ok(self.apply(
             ctx,
@@ -498,13 +484,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | a | a' | r |
         // | r | a' | r |
 
-        let (r, a_inv) = match a.value() {
-            Some(a) => match a.invert().into() {
-                Some(e) => (Some(zero), Some(e)),
-                None => (Some(one), Some(one)),
-            },
-            _ => (None, None),
-        };
+        let (r, a_inv) = a
+            .value()
+            .map(|a| match a.invert().into() {
+                Some(a_inverted) => (zero, a_inverted),
+                None => (one, one),
+            })
+            .unzip();
 
         let r = &self.assign_bit(ctx, &r.into())?;
 
@@ -609,16 +595,17 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | r   | x | u |
         // | dif | u | r |
 
-        let (x, r) = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => {
+        let (x, r) = a
+            .value()
+            .zip(b.value())
+            .map(|(a, b)| {
                 let c = a - b;
                 match c.invert().into() {
-                    Some(inverted) => (Some(inverted), Some(zero)),
-                    None => (Some(one), Some(one)),
+                    Some(c_inverted) => (c_inverted, zero),
+                    None => (one, one),
                 }
-            }
-            _ => (None, None),
-        };
+            })
+            .unzip();
 
         let r = &self.assign_bit(ctx, &r.into())?;
         let dif = self.sub(ctx, a, b)?;
@@ -628,10 +615,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | --- | - | - |
         // | r   | x | u |
 
-        let u = match (r.value(), x) {
-            (Some(r), Some(x)) => Some(r - r * x + x),
-            _ => None,
-        };
+        let u = x.zip(r.value()).map(|(x, r)| r - r * x + x);
 
         let u = self.apply(
             ctx,
@@ -681,14 +665,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // Non-zero element must have an inverse
         // a * w - 1 = 0
 
-        let w = match a.value() {
-            Some(a) => match a.invert().into() {
-                Some(inverted) => Some(inverted),
-                // Non inversion case will never be verified
-                _ => Some(F::zero()),
-            },
-            _ => None,
-        };
+        let w = a.value().map(|a| match a.invert().into() {
+            Some(inverted) => inverted,
+            // Non inversion case will never be verified
+            _ => F::zero(),
+        });
 
         self.apply(
             ctx,
@@ -758,10 +739,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => Some(a - b + constant),
-            _ => None,
-        };
+        let c = a.value().zip(b.value()).map(|(a, b)| a - b + constant);
 
         Ok(self.apply(
             ctx,
@@ -842,10 +820,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => Some(a * b),
-            _ => None,
-        };
+        let c = a.value().zip(b.value()).map(|(a, b)| a * b);
 
         Ok(self.apply(
             ctx,
@@ -868,10 +843,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
         to_add: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = match (a.value(), b.value(), to_add.value()) {
-            (Some(a), Some(b), Some(to_add)) => Some((a * b) + to_add),
-            _ => None,
-        };
+        let c = a
+            .value()
+            .zip(b.value())
+            .zip(to_add.value())
+            .map(|((a, b), to_add)| a * b + to_add);
 
         Ok(self.apply(
             ctx,
@@ -895,10 +871,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
         to_add: F,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => Some((a * b) + to_add),
-            _ => None,
-        };
+        let c = a.value().zip(b.value()).map(|(a, b)| a * b + to_add);
 
         Ok(self.apply(
             ctx,
@@ -952,10 +925,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
-        let c = match (a.value(), b.value()) {
-            (Some(a), Some(b)) => Some(a + b + constant),
-            _ => None,
-        };
+        let c = a.value().zip(b.value()).map(|(a, b)| a + b + constant);
 
         Ok(self.apply(
             ctx,
@@ -1007,7 +977,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
-        let w: Option<(F, F)> = a.value().map(|value| {
+        let w: Value<(F, F)> = a.value().map(|value| {
             use num_bigint::BigUint;
             use num_traits::{One, Zero};
             let value = &fe_to_big(value);
@@ -1095,17 +1065,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             let intermediate = Term::Unassigned(remaining, -F::one());
             let constant = if i == 0 { constant } else { F::zero() };
 
-            remaining = match (Term::compose(chunk, constant), remaining) {
-                (Some(composed), Some(remaining)) => Some(remaining - composed),
-                _ => None,
-            };
+            remaining = Term::compose(chunk, constant)
+                .zip(remaining)
+                .map(|(composed, remaining)| remaining - composed);
 
             // Final round
             let combination_option = if i == number_of_chunks - 1 {
                 // Sanity check
-                if let Some(value) = remaining {
-                    assert_eq!(value, F::zero())
-                };
+                remaining.assert_if_known(F::is_zero_vartime);
 
                 CombinationOptionCommon::OneLinerAdd
             // Intermediate round should accumulate the sum
@@ -1179,8 +1146,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     .into(),
                 )?;
 
-                intermediate_sum =
-                    intermediate_sum.map(|cur| cur + Term::compose(chunk, F::zero()).unwrap());
+                intermediate_sum = intermediate_sum
+                    .zip(Term::compose(chunk, F::zero()))
+                    .map(|(cur, result)| cur + result);
 
                 // // Sanity check for prover
                 // if i == number_of_chunks - 1 {

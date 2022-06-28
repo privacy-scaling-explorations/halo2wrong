@@ -219,17 +219,15 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
                 assert!(number_of_limbs - 1 == 4);
                 let unassigned_input = Term::Unassigned(input.value(), -one);
-                let (intermediate, overflow) = match limbs {
-                    Some(limbs) => {
+                let (intermediate, overflow) = limbs
+                    .zip(input.value())
+                    .map(|(limbs, input)| {
                         let overflow = limbs[4];
-                        // input value must exist if limbs do
-                        let input_value = input.value().unwrap();
                         // combination of previous row must go to column 'E'
-                        let intermediate = input_value - overflow * rrrr;
-                        (Some(intermediate), Some(overflow))
-                    }
-                    None => (None, None),
-                };
+                        let intermediate = input - overflow * rrrr;
+                        (intermediate, overflow)
+                    })
+                    .unzip();
                 let intermediate = Term::Unassigned(intermediate, one);
                 let overflow = Term::Unassigned(overflow, rrrr);
 
@@ -401,7 +399,7 @@ mod tests {
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::curves::pasta::Fp;
     use crate::halo2::arithmetic::FieldExt;
-    use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use crate::halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
     use crate::main_gate::MainGate;
@@ -441,7 +439,7 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestCircuit<F: FieldExt> {
-        input: Vec<(usize, Option<F>)>,
+        input: Vec<(usize, Value<F>)>,
     }
 
     impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
@@ -501,7 +499,7 @@ mod tests {
         let input = (min_bit_len..(max_bit_len + 1))
             .map(|i| {
                 let bit_len = i as usize;
-                let value = Some(Fp::from_u128((1 << i) - 1));
+                let value = Value::known(Fp::from_u128((1 << i) - 1));
                 (bit_len, value)
             })
             .collect();
