@@ -34,9 +34,12 @@ impl<'a, 'b, F: FieldExt> RegionCtx<'a, 'b, F> {
         column: Column<Advice>,
         value: Option<F>,
     ) -> Result<AssignedCell<F, F>, Error> {
-        let v = value.ok_or(Error::Synthesis)?;
-        self.region
-            .assign_advice(|| annotation, column, *self.offset, || Value::known(v))
+        self.region.assign_advice(
+            || annotation,
+            column,
+            *self.offset,
+            || Value::known(value.unwrap()),
+        )
     }
 
     pub fn constrain_equal(&mut self, cell_0: Cell, cell_1: Cell) -> Result<(), Error> {
