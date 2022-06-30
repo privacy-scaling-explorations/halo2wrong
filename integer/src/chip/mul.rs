@@ -94,8 +94,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Witness layout for `NUMBER_OF_LIMBS = 4`:
@@ -211,8 +211,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values
@@ -280,8 +280,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         let mut t: Vec<AssignedValue<N>> = vec![];

@@ -36,7 +36,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let borrow = (0..NUMBER_OF_LIMBS - 1)
             .map(|i| {
                 let b_i = borrow.map(|borrow| if borrow[i] { N::one() } else { N::zero() });
-                Ok(main_gate.assign_bit(ctx, &b_i.into())?.into())
+                Ok(main_gate.assign_bit(ctx, b_i)?.into())
             })
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 

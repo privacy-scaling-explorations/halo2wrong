@@ -24,7 +24,8 @@ use crate::halo2::plonk::{ConstraintSystem, Error};
 use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
-use crate::{AssignedValue, UnassignedValue};
+use crate::AssignedValue;
+use halo2wrong::utils::decompose;
 use halo2wrong::RegionCtx;
 
 const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
@@ -90,7 +91,7 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
     fn range_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        input: &UnassignedValue<F>,
+        input: Value<F>,
         bit_len: usize,
     ) -> Result<AssignedValue<F>, Error>;
 
@@ -104,7 +105,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     fn range_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        input: &UnassignedValue<F>,
+        input: Value<F>,
         bit_len: usize,
     ) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
@@ -153,7 +154,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             }
 
             // Input is decomposed insto smaller limbs
-            let limbs = input.decompose(number_of_limbs, self.base_bit_len);
+            let limbs = input.map(|e| decompose(e, number_of_limbs, bit_len));
 
             // Witness layouts for different cases:
 
@@ -218,9 +219,9 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 )?;
 
                 assert!(number_of_limbs - 1 == 4);
-                let unassigned_input = Term::Unassigned(input.value(), -one);
+                let unassigned_input = Term::Unassigned(input, -one);
                 let (intermediate, overflow) = limbs
-                    .zip(input.value())
+                    .zip(input)
                     .map(|(limbs, input)| {
                         let overflow = limbs[4];
                         // combination of previous row must go to column 'E'
@@ -247,7 +248,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                     CombinationOptionCommon::OneLinerAdd.into(),
                 )?[3])
             } else {
-                let unassigned_input = Term::Unassigned(input.value(), -one);
+                let unassigned_input = Term::Unassigned(input, -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
                 Ok(main_gate.apply(
                     ctx,
@@ -404,7 +405,7 @@ mod tests {
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
     use crate::main_gate::MainGate;
     use crate::range::NUMBER_OF_LOOKUP_LIMBS;
-    use crate::{MainGateInstructions, UnassignedValue};
+    use crate::MainGateInstructions;
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
@@ -472,8 +473,8 @@ mod tests {
                         let bit_len = value.0;
                         let value = value.1;
 
-                        let a_0 = main_gate.assign_value(ctx, &UnassignedValue(value))?;
-                        let a_1 = range_chip.range_value(ctx, &UnassignedValue(value), bit_len)?;
+                        let a_0 = main_gate.assign_value(ctx, value)?;
+                        let a_1 = range_chip.range_value(ctx, value, bit_len)?;
                         main_gate.assert_equal(ctx, &a_0, &a_1)?;
                     }
 

@@ -10,7 +10,7 @@ use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Value},
 };
-use maingate::{big_to_fe, compose, fe_to_big, Assigned, AssignedValue, UnassignedValue};
+use maingate::{big_to_fe, compose, fe_to_big, Assigned, AssignedValue};
 use num_bigint::BigUint as big_uint;
 use rns::Rns;
 use std::rc::Rc;
@@ -147,9 +147,9 @@ impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    /// Returns indexed limb as ÏUnassignedValue`
-    fn limb(&self, idx: usize) -> UnassignedValue<N> {
-        self.0.as_ref().map(|e| e.limb(idx).fe()).into()
+    /// Returns indexed limb as `Value`
+    fn limb(&self, idx: usize) -> Value<N> {
+        self.0.as_ref().map(|e| e.limb(idx).fe())
     }
 }
 

@@ -13,7 +13,7 @@ use crate::halo2::{
     plonk::Error,
 };
 
-use crate::{Assigned, AssignedCondition, AssignedValue, UnassignedValue};
+use crate::{Assigned, AssignedCondition, AssignedValue};
 
 /// `Term`s are input arguments for the current rows that is about to be
 /// constrained in the main gate equation. Three types or terms can be expected.
@@ -234,7 +234,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     fn assign_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        unassigned: &UnassignedValue<F>,
+        unassigned: Value<F>,
     ) -> Result<AssignedValue<F>, Error> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::first())
     }
@@ -243,7 +243,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     fn assign_to_acc(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        unassigned: &UnassignedValue<F>,
+        unassigned: Value<F>,
     ) -> Result<AssignedValue<F>, Error> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::accumulator())
     }
@@ -252,7 +252,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     fn assign_to_column(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        value: &UnassignedValue<F>,
+        value: Value<F>,
         column: Self::MainGateColumn,
     ) -> Result<AssignedValue<F>, Error>;
 
@@ -261,14 +261,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     fn assign_bit(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        bit: &UnassignedValue<F>,
+        bit: Value<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         let assigned = self.apply(
             ctx,
             terms!([
-                Term::unassigned_to_mul(bit.value()),
-                Term::unassigned_to_mul(bit.value()),
-                Term::unassigned_to_sub(bit.value()),
+                Term::unassigned_to_mul(bit),
+                Term::unassigned_to_mul(bit),
+                Term::unassigned_to_sub(bit),
             ]),
             F::zero(),
             CombinationOptionCommon::OneLinerMul.into(),
@@ -492,7 +492,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             })
             .unzip();
 
-        let r = &self.assign_bit(ctx, &r.into())?;
+        let r = &self.assign_bit(ctx, r)?;
 
         // (a * a') - 1 + r = 0
         // | A | B  | C |
@@ -607,7 +607,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             })
             .unzip();
 
-        let r = &self.assign_bit(ctx, &r.into())?;
+        let r = &self.assign_bit(ctx, r)?;
         let dif = self.sub(ctx, a, b)?;
 
         // 0 = rx - r - x + u
@@ -986,7 +986,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             (sign, half)
         });
 
-        let sign = self.assign_bit(ctx, &w.map(|w| w.0).into())?;
+        let sign = self.assign_bit(ctx, w.map(|w| w.0))?;
 
         self.apply(
             ctx,
@@ -1019,7 +1019,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         let (terms, bits): (Vec<Term<F>>, Vec<AssignedCondition<F>>) = (0..number_of_bits)
             .map(|i| {
                 let bit = decomposed_value.as_ref().map(|bits| bits[i]);
-                let bit = self.assign_bit(ctx, &bit.into())?;
+                let bit = self.assign_bit(ctx, bit)?;
                 let base = power_of_two(i);
                 Ok((Term::Assigned(bit.into(), base), bit))
             })

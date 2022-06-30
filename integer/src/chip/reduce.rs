@@ -87,11 +87,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // Apply ranges
         let range_chip = self.range_chip();
         let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
-        let quotient = range_chip.range_value(ctx, &quotient.into(), BIT_LEN_LIMB)?;
+        let quotient = range_chip.range_value(ctx, quotient, BIT_LEN_LIMB)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.red_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.red_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values

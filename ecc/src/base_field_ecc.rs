@@ -676,7 +676,7 @@ mod tests {
                     let result = base * s;
 
                     let base = ecc_chip.assign_point(ctx, Value::known(base.into()))?;
-                    let s = main_gate.assign_value(ctx, &Value::known(s).into())?;
+                    let s = main_gate.assign_value(ctx, Value::known(s))?;
                     let result_0 = ecc_chip.assign_point(ctx, Value::known(result.into()))?;
 
                     let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
@@ -776,7 +776,7 @@ mod tests {
                             let s = C::Scalar::random(OsRng);
                             acc += base * s;
                             let base = ecc_chip.assign_point(ctx, Value::known(base.into()))?;
-                            let s = main_gate.assign_value(ctx, &Value::known(s).into())?;
+                            let s = main_gate.assign_value(ctx, Value::known(s))?;
                             Ok((base, s))
                         })
                         .collect::<Result<_, Error>>()?;

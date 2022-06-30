@@ -267,11 +267,11 @@ mod tests {
                         )?;
 
                     for e in self.inputs.as_ref().transpose_vec(self.n) {
-                        let e = main_gate.assign_value(ctx, &e.map(|e| *e).into())?;
+                        let e = main_gate.assign_value(ctx, e.map(|e| *e))?;
                         transcript_chip.write_scalar(&e);
                     }
                     let challenge = transcript_chip.squeeze(ctx)?;
-                    let expected = main_gate.assign_value(ctx, &self.expected.into())?;
+                    let expected = main_gate.assign_value(ctx, self.expected)?;
                     main_gate.assert_equal(ctx, &challenge, &expected)?;
 
                     Ok(())

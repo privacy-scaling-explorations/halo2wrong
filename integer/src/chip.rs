@@ -1354,12 +1354,12 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range().into();
                     let cond = N::zero();
-                    let cond = Value::known(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
                     let b = integer_chip.assign_integer(ctx, b, Range::Remainder)?;
 
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?.into();
                     let selected = integer_chip.select(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &b, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &b, &selected)?;
@@ -1370,12 +1370,12 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range().into();
                     let cond = N::one();
-                    let cond = Value::known(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
                     let b = integer_chip.assign_integer(ctx, b, Range::Remainder)?;
 
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?.into();
                     let selected = integer_chip.select(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &a, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &a, &selected)?;
@@ -1386,10 +1386,10 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range();
                     let cond = N::zero();
-                    let cond = Value::known(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?.into();
                     let selected = integer_chip.select_or_assign(ctx, &a, &b, &cond)?;
                     let b_assigned =
                         integer_chip.assign_integer(ctx, b.into(), Range::Remainder)?;
@@ -1402,10 +1402,10 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range();
                     let cond = N::one();
-                    let cond = Value::known(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?.into();
                     let selected = integer_chip.select_or_assign(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &a, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &a, &selected)?;
