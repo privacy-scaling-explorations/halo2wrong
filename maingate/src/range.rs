@@ -154,7 +154,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             }
 
             // Input is decomposed insto smaller limbs
-            let limbs = input.map(|e| decompose(e, number_of_limbs, bit_len));
+            let limbs = input.map(|e| decompose(e, number_of_limbs, self.base_bit_len));
 
             // Witness layouts for different cases:
 
