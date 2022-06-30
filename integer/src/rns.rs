@@ -1,5 +1,5 @@
 use crate::NUMBER_OF_LOOKUP_LIMBS;
-use halo2::arithmetic::FieldExt;
+use halo2::{arithmetic::FieldExt, circuit::Value};
 use maingate::{big_to_fe, compose, decompose_big, fe_to_big, halo2, modulus};
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
@@ -68,13 +68,13 @@ pub(crate) struct MaybeReduced<
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
->(Option<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
+>(Value<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-    From<Option<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
+    From<Value<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
     for MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    fn from(integer: Option<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
+    fn from(integer: Value<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         MaybeReduced(integer)
     }
 }
@@ -84,7 +84,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     /// Returns the quotient value as [`Integer`].
     /// The quotient expected to be a [`Integer`] otherwise the function panics
-    pub(crate) fn long(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+    pub(crate) fn long(&self) -> Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         self.0
             .as_ref()
             .map(|reduction_result| match reduction_result.quotient.clone() {
@@ -96,7 +96,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     /// Returns the quotient value as an element of the native field.
     /// The quotient expected to be a native field element otherwise the
     /// function panics
-    pub(crate) fn short(&self) -> Option<N> {
+    pub(crate) fn short(&self) -> Value<N> {
         self.0
             .as_ref()
             .map(|reduction_result| match reduction_result.quotient.clone() {
@@ -105,18 +105,18 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             })
     }
 
-    pub(crate) fn result(&self) -> Option<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+    pub(crate) fn result(&self) -> Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         self.0.as_ref().map(|u| u.result.clone())
     }
 
-    pub(crate) fn residues(&self) -> Vec<Option<N>> {
+    pub(crate) fn residues(&self) -> Vec<Value<N>> {
         let u_len = (NUMBER_OF_LIMBS + 1) / 2;
         (0..u_len)
             .map(|i| self.0.as_ref().map(|witness| witness.residues[i]))
             .collect()
     }
 
-    pub(crate) fn intermediates(&self) -> Vec<Option<N>> {
+    pub(crate) fn intermediates(&self) -> Vec<Value<N>> {
         (0..NUMBER_OF_LIMBS)
             .map(|i| self.0.as_ref().map(|witness| witness.intermediate[i]))
             .collect()

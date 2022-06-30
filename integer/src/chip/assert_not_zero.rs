@@ -1,7 +1,6 @@
 use super::IntegerChip;
 use crate::{AssignedInteger, FieldExt};
 use halo2::plonk::Error;
-use maingate::Assigned;
 use maingate::{halo2, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term};
 use num_bigint::BigUint as big_uint;
 use std::convert::TryInto;
@@ -48,7 +47,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // wrong_modulus.native())
         let wrong_modulus = self.rns.wrong_modulus_decomposed;
         let limb_diff = r.limbs[0].value().map(|value| value - wrong_modulus[0]);
-        let limb_diff = main_gate.apply(
+        let limb_diff = (&main_gate.apply(
             ctx,
             &[
                 Term::Assigned(r.limb(0), one),
@@ -59,13 +58,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ],
             -wrong_modulus[0],
             CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1];
+        )?[1])
+            .clone();
 
         let native_diff = r
             .native()
             .value()
-            .map(|value| value - self.rns.wrong_modulus_in_native_modulus);
-        let native_diff = main_gate.apply(
+            .map(|value| *value - self.rns.wrong_modulus_in_native_modulus);
+        let native_diff = (&main_gate.apply(
             ctx,
             &[
                 Term::Assigned(r.native(), one),
@@ -76,7 +76,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ],
             -self.rns.wrong_modulus_in_native_modulus,
             CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1];
+        )?[1])
+            .clone();
 
         let cond_wrong_0 = main_gate.is_zero(ctx, &limb_diff)?;
         let cond_wrong_1 = main_gate.is_zero(ctx, &native_diff)?;

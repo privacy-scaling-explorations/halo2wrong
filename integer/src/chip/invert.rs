@@ -2,8 +2,7 @@ use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::Integer, AssignedInteger, FieldExt};
 use halo2::plonk::Error;
 use maingate::{
-    halo2, Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx,
-    Term,
+    halo2, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term,
 };
 use std::rc::Rc;
 
@@ -22,15 +21,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Error,
     > {
         let main_gate = self.main_gate();
-        let integer_one = Integer::from_big(1u32.into(), Rc::clone(&self.rns));
 
-        let inv_or_one = match a.integer().as_ref() {
-            Some(a) => match a.invert() {
-                Some(a) => Some(a),
-                None => Some(integer_one),
-            },
-            None => None,
-        };
+        let inv_or_one = a.integer().map(|a| {
+            a.invert()
+                .unwrap_or_else(|| Integer::from_big(1u32.into(), Rc::clone(&self.rns)))
+        });
 
         // TODO: For range constraints, we have these options:
         // 1. extend mul to support prenormalized value.
@@ -58,7 +53,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .value()
             .map(|a_mul_inv| N::one() - a_mul_inv);
 
-        let cond = main_gate.apply(
+        let cond = (&main_gate.apply(
             ctx,
             &[
                 Term::Assigned(a_mul_inv.limb(0), N::one()),
@@ -69,9 +64,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ],
             -N::one(),
             CombinationOptionCommon::OneLinerMul.into(),
-        )?[1];
+        )?[1])
+            .clone();
 
-        Ok((inv_or_one, cond.into()))
+        Ok((inv_or_one, cond))
     }
 
     pub(crate) fn invert_incomplete_generic(
@@ -80,17 +76,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a_int = a.integer();
-        let inv = match a_int.as_ref() {
-            Some(a) => match a.invert() {
-                Some(a) => Some(a),
-                None => {
-                    // any number will fail it if a is zero
-                    // no assertion here for now since we might want to fail in tests
-                    Some(Integer::from_big(1u32.into(), Rc::clone(&self.rns)))
-                }
-            },
-            None => None,
-        };
+        let inv = a_int.map(|a| {
+            a.invert().unwrap_or_else(|| {
+                // any number will fail it if a is zero
+                // no assertion here for now since we might want to fail in tests
+                Integer::from_big(1u32.into(), Rc::clone(&self.rns))
+            })
+        });
         let inv = self.assign_integer(ctx, inv.into(), Range::Remainder)?;
         self.mul_into_one(ctx, a, &inv)?;
         Ok(inv)

@@ -35,7 +35,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native_value))
+            Ok(self.new_assigned_integer(&a.limbs, a.native()))
         }
     }
 
@@ -52,7 +52,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native_value))
+            Ok(self.new_assigned_integer(&a.limbs, a.native()))
         }
     }
 
@@ -67,7 +67,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native_value))
+            Ok(self.new_assigned_integer(&a.limbs, a.native()))
         }
     }
 
@@ -87,11 +87,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // Apply ranges
         let range_chip = self.range_chip();
         let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
-        let quotient = range_chip.range_value(ctx, &quotient.into(), BIT_LEN_LIMB)?;
+        let quotient = range_chip.range_value(ctx, quotient, BIT_LEN_LIMB)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.red_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.red_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values
@@ -104,7 +104,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ctx,
                     &[
                         Term::Assigned(a_i.into(), one),
-                        Term::Assigned(quotient, w_i),
+                        Term::Assigned(quotient.clone(), w_i),
                     ],
                     zero,
                 )

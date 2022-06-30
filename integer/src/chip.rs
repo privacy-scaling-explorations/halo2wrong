@@ -437,7 +437,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         for i in 1..NUMBER_OF_LIMBS {
             main_gate.assert_zero(ctx, &a.limb(i))?;
         }
-        main_gate.assert_bit(ctx, &a.limb(0).into())
+        main_gate.assert_bit(ctx, &a.limb(0))
     }
 
     fn select(
@@ -539,7 +539,7 @@ mod tests {
     use crate::rns::{Common, Integer, Rns};
     use crate::{FieldExt, UnassignedInteger, NUMBER_OF_LOOKUP_LIMBS};
     use core::panic;
-    use halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use maingate::{
@@ -570,7 +570,7 @@ mod tests {
         for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
         fn from(integer: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
-            UnassignedInteger(Some(integer))
+            UnassignedInteger(Value::known(integer))
         }
     }
 
@@ -786,12 +786,12 @@ mod tests {
                     let reduced = reduced.result;
                     let overflows = &integer_chip.assign_integer(
                         ctx,
-                        Some(unreduced).into(),
+                        Value::known(unreduced).into(),
                         Range::Unreduced,
                     )?;
                     let reduced_0 = &integer_chip.assign_integer(
                         ctx,
-                        Some(reduced).into(),
+                        Value::known(reduced).into(),
                         Range::Remainder,
                     )?;
                     let reduced_1 = &integer_chip.reduce(ctx, overflows)?;
@@ -1005,19 +1005,26 @@ mod tests {
                     let inv = a.invert().unwrap();
 
                     // 1 / a
-                    let a = &integer_chip.assign_integer(ctx, Some(a).into(), Range::Remainder)?;
-                    let inv_0 =
-                        &integer_chip.assign_integer(ctx, Some(inv).into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(
+                        ctx,
+                        Value::known(a).into(),
+                        Range::Remainder,
+                    )?;
+                    let inv_0 = &integer_chip.assign_integer(
+                        ctx,
+                        Value::known(inv).into(),
+                        Range::Remainder,
+                    )?;
                     let (inv_1, cond) = integer_chip.invert(ctx, a)?;
                     integer_chip.assert_equal(ctx, inv_0, &inv_1)?;
-                    main_gate.assert_zero(ctx, &cond.into())?;
+                    main_gate.assert_zero(ctx, &cond)?;
 
                     // 1 / 0
                     let zero =
                         integer_chip.assign_integer(ctx, t.zero().into(), Range::Remainder)?;
                     let (must_be_one, cond) = integer_chip.invert(ctx, &zero)?;
                     integer_chip.assert_strict_one(ctx, &must_be_one)?;
-                    main_gate.assert_one(ctx, &cond.into())?;
+                    main_gate.assert_one(ctx, &cond)?;
 
                     // 1 / p
                     let wrong_modulus = t.new_from_limbs(&self.rns.wrong_modulus_decomposed);
@@ -1025,7 +1032,7 @@ mod tests {
                         integer_chip.assign_integer(ctx, wrong_modulus.into(), Range::Remainder)?;
                     let (must_be_one, cond) = integer_chip.invert(ctx, &modulus)?;
                     integer_chip.assert_strict_one(ctx, &must_be_one)?;
-                    main_gate.assert_one(ctx, &cond.into())?;
+                    main_gate.assert_one(ctx, &cond)?;
 
                     // 1 / a
                     let inv_1 = integer_chip.invert_incomplete(ctx, a)?;
@@ -1039,32 +1046,40 @@ mod tests {
                     let b = t.rand_in_remainder_range();
 
                     let c = a.mul(&b.invert().unwrap()).result;
-                    let a = &integer_chip.assign_integer(ctx, Some(a).into(), Range::Remainder)?;
-                    let b = &integer_chip.assign_integer(ctx, Some(b).into(), Range::Remainder)?;
+                    let a = &integer_chip.assign_integer(
+                        ctx,
+                        Value::known(a).into(),
+                        Range::Remainder,
+                    )?;
+                    let b = &integer_chip.assign_integer(
+                        ctx,
+                        Value::known(b).into(),
+                        Range::Remainder,
+                    )?;
                     let c_0 = &integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
                     let (c_1, cond) = integer_chip.div(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, c_0, &c_1)?;
-                    main_gate.assert_zero(ctx, &cond.into())?;
+                    main_gate.assert_zero(ctx, &cond)?;
 
                     // 0 / b
                     let (c_1, cond) = integer_chip.div(ctx, &zero, b)?;
                     integer_chip.assert_zero(ctx, &c_1)?;
-                    main_gate.assert_zero(ctx, &cond.into())?;
+                    main_gate.assert_zero(ctx, &cond)?;
 
                     // p / b
                     let (c_1, cond) = integer_chip.div(ctx, &modulus, b)?;
                     integer_chip.assert_zero(ctx, &c_1)?;
-                    main_gate.assert_zero(ctx, &cond.into())?;
+                    main_gate.assert_zero(ctx, &cond)?;
 
                     // a / 0
                     let (must_be_self, cond) = integer_chip.div(ctx, a, &zero)?;
                     integer_chip.assert_equal(ctx, &must_be_self, a)?;
-                    main_gate.assert_one(ctx, &cond.into())?;
+                    main_gate.assert_one(ctx, &cond)?;
 
                     // a / p
                     let (must_be_self, cond) = integer_chip.div(ctx, a, &modulus)?;
                     integer_chip.assert_equal(ctx, &must_be_self, a)?;
-                    main_gate.assert_one(ctx, &cond.into())?;
+                    main_gate.assert_one(ctx, &cond)?;
 
                     // a / b
                     let c_1 = integer_chip.div_incomplete(ctx, a, b)?;
@@ -1161,9 +1176,10 @@ mod tests {
                         let mut a = integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
 
                         for _ in 0..10 {
-                            let c =
-                                (a.integer().unwrap().value() * 2usize) % &self.rns.wrong_modulus;
-                            let c = t.new_from_big(c);
+                            let c = a
+                                .integer()
+                                .map(|a| (a.value() * 2usize) % &self.rns.wrong_modulus)
+                                .map(|c| t.new_from_big(c));
                             a = integer_chip.add(ctx, &a, &a)?;
                             let c_1 =
                                 integer_chip.assign_integer(ctx, c.into(), Range::Remainder)?;
@@ -1247,12 +1263,14 @@ mod tests {
                         for _ in 0..10 {
                             let b = t.rand_in_unreduced_range();
 
-                            let a_norm = (a.integer().unwrap().value()
-                                % self.rns.wrong_modulus.clone())
-                                + self.rns.wrong_modulus.clone();
+                            let a_norm = a.integer().map(|a| {
+                                a.value() % self.rns.wrong_modulus.clone()
+                                    + self.rns.wrong_modulus.clone()
+                            });
                             let b_norm = b.value() % self.rns.wrong_modulus.clone();
-                            let c = (a_norm - b_norm) % self.rns.wrong_modulus.clone();
-                            let c = t.new_from_big(c);
+                            let c = a_norm
+                                .map(|a_norm| (a_norm - b_norm) % self.rns.wrong_modulus.clone())
+                                .map(|c| t.new_from_big(c));
 
                             let b = integer_chip.assign_integer(ctx, b.into(), Range::Unreduced)?;
 
@@ -1336,12 +1354,12 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range().into();
                     let cond = N::zero();
-                    let cond = Some(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
                     let b = integer_chip.assign_integer(ctx, b, Range::Remainder)?;
 
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?;
                     let selected = integer_chip.select(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &b, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &b, &selected)?;
@@ -1352,12 +1370,12 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range().into();
                     let cond = N::one();
-                    let cond = Some(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
                     let b = integer_chip.assign_integer(ctx, b, Range::Remainder)?;
 
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?;
                     let selected = integer_chip.select(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &a, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &a, &selected)?;
@@ -1368,10 +1386,10 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range();
                     let cond = N::zero();
-                    let cond = Some(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?;
                     let selected = integer_chip.select_or_assign(ctx, &a, &b, &cond)?;
                     let b_assigned =
                         integer_chip.assign_integer(ctx, b.into(), Range::Remainder)?;
@@ -1384,10 +1402,10 @@ mod tests {
                     let a = t.rand_in_remainder_range().into();
                     let b = t.rand_in_remainder_range();
                     let cond = N::one();
-                    let cond = Some(cond).into();
+                    let cond = Value::known(cond);
 
                     let a = integer_chip.assign_integer(ctx, a, Range::Remainder)?;
-                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, &cond)?.into();
+                    let cond: AssignedCondition<N> = main_gate.assign_value(ctx, cond)?;
                     let selected = integer_chip.select_or_assign(ctx, &a, &b, &cond)?;
                     integer_chip.assert_equal(ctx, &a, &selected)?;
                     integer_chip.assert_strict_equal(ctx, &a, &selected)?;
@@ -1429,9 +1447,9 @@ mod tests {
                         assert_eq!(expected.len(), decomposed.len());
                         for (c, expected) in decomposed.iter().zip(expected.into_iter()) {
                             if expected != W::zero() {
-                                main_gate.assert_one(ctx, &c.into())?;
+                                main_gate.assert_one(ctx, c)?;
                             } else {
-                                main_gate.assert_zero(ctx, &c.into())?;
+                                main_gate.assert_zero(ctx, c)?;
                             }
                         }
                     }
@@ -1462,13 +1480,13 @@ mod tests {
                     let assigned =
                         integer_chip.assign_integer(ctx, integer.into(), Range::Remainder)?;
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
-                    main_gate.assert_zero(ctx, &assigned_sign.into())?;
+                    main_gate.assert_zero(ctx, &assigned_sign)?;
 
                     let integer = t.new_from_big(big_uint::from(21u64));
                     let assigned =
                         integer_chip.assign_integer(ctx, integer.into(), Range::Remainder)?;
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
-                    main_gate.assert_one(ctx, &assigned_sign.into())?;
+                    main_gate.assert_one(ctx, &assigned_sign)?;
 
                     Ok(())
                 },

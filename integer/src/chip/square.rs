@@ -1,7 +1,6 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::MaybeReduced, AssignedInteger, FieldExt};
-use halo2::plonk::Error;
-use maingate::Assigned;
+use halo2::{arithmetic::Field, plonk::Error};
 use maingate::{
     halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions,
     RegionCtx, Term,
@@ -34,8 +33,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Follow same witness layout with mul:
@@ -71,7 +70,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
                 .into();
 
-                let t_i = main_gate.apply(
+                let t_i = (&main_gate.apply(
                     ctx,
                     &[
                         Term::Assigned(a.limb(j), zero),
@@ -82,7 +81,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ],
                     zero,
                     combination_option,
-                )?[4];
+                )?[4])
+                    .clone();
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -90,20 +90,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
 
                 // update running temp value
-                intermediate_value = intermediate_value.map(|t| {
-                    let a_j = a.limb(j).value().unwrap();
-                    let a_k = a.limb(k).value().unwrap();
-                    let q = quotient.limb(k).value().unwrap();
-                    let p = negative_wrong_modulus[j];
-                    t - (a_j * a_k + q * p)
-                });
+                intermediate_value = intermediate_value
+                    .zip(a.limb(j).value())
+                    .zip(a.limb(k).value())
+                    .zip(quotient.limb(k).value())
+                    .map(|(((t, a_j), a_k), q)| {
+                        let p = negative_wrong_modulus[j];
+                        t - (*a_j * *a_k + *q * p)
+                    });
 
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        if let Some(value) = intermediate_value {
-                            assert_eq!(value, zero)
-                        };
+                        intermediate_value.assert_if_known(Field::is_zero_vartime);
                     }
                 }
             }
@@ -117,7 +116,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         main_gate.apply(
             ctx,
             &[
-                Term::Assigned(native, zero),
+                Term::Assigned(native.clone(), zero),
                 Term::Assigned(native, zero),
                 Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
                 Term::Assigned(result.native(), -one),

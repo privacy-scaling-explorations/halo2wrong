@@ -215,7 +215,7 @@ impl<
                     .0
                     .iter()
                     .zip(row.iter())
-                    .map(|(e, word)| Term::Assigned(*e, *word))
+                    .map(|(e, word)| Term::Assigned(e.clone(), *word))
                     .collect::<Vec<Term<F>>>();
 
                 self.main_gate().compose(ctx, &terms[..], F::zero())
@@ -242,17 +242,17 @@ impl<
             .0
             .iter()
             .zip(mds.row().iter())
-            .map(|(e, word)| Term::Assigned(*e, *word))
+            .map(|(e, word)| Term::Assigned(e.clone(), *word))
             .collect::<Vec<Term<F>>>();
         let mut new_state = vec![self.main_gate().compose(ctx, &terms[..], F::zero())?];
 
         // Rest of the trainsition ie the sparse part
-        for (e, word) in mds.col_hat().iter().zip(self.state.0.into_iter().skip(1)) {
+        for (e, word) in mds.col_hat().iter().zip(self.state.0.iter().skip(1)) {
             new_state.push(self.main_gate().compose(
                 ctx,
                 &[
-                    Term::Assigned(self.state.0[0], *e),
-                    Term::Assigned(word, F::one()),
+                    Term::Assigned(self.state.0[0].clone(), *e),
+                    Term::Assigned(word.clone(), F::one()),
                 ],
                 F::zero(),
             )?);
@@ -327,6 +327,6 @@ impl<
             self.permutation(ctx, vec![])?;
         }
 
-        Ok(self.state.0[1])
+        Ok(self.state.0[1].clone())
     }
 }

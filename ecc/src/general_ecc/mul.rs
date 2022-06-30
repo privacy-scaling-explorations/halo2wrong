@@ -27,7 +27,7 @@ impl<
         // shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
         let zeros: Vec<AssignedCondition<N>> = (0..padding_offset)
-            .map(|_| Ok(self.main_gate().assign_constant(region, N::zero())?.into()))
+            .map(|_| self.main_gate().assign_constant(region, N::zero()))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();
@@ -43,7 +43,7 @@ impl<
             (0..number_of_windows)
                 .map(|i| {
                     let mut selector: Vec<AssignedCondition<N>> = (0..window_size)
-                        .map(|j| bits[i * window_size + j])
+                        .map(|j| bits[i * window_size + j].clone())
                         .collect();
                     selector.reverse();
                     Selector(selector)

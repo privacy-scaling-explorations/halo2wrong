@@ -22,11 +22,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         // Apply ranges
         let range_chip = self.range_chip();
-        let quotient = range_chip.range_value(ctx, &quotient.into(), BIT_LEN_LIMB)?;
+        let quotient = range_chip.range_value(ctx, quotient, BIT_LEN_LIMB)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.red_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.red_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values
@@ -39,7 +39,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ctx,
                     &[
                         Term::Assigned(a_i.into(), one),
-                        Term::Assigned(quotient, w_i),
+                        Term::Assigned(quotient.clone(), w_i),
                     ],
                     zero,
                 )
@@ -52,26 +52,26 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let mut carry = Term::Zero;
         for (t_chunk, v) in t.chunks(2).zip(residues.into_iter()) {
             if t_chunk.len() == 2 {
-                let (t_lo, t_hi) = (t_chunk[0], t_chunk[1]);
+                let (t_lo, t_hi) = (t_chunk[0].clone(), t_chunk[1].clone());
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
                         // R^2 * v = t_lo + R * t_hi + carry
                         Term::Assigned(t_lo, one),
                         Term::Assigned(t_hi, lsh_one),
-                        Term::Assigned(v, -lsh_two),
+                        Term::Assigned(v.clone(), -lsh_two),
                         carry.clone(),
                     ],
                     zero,
                 )?;
                 carry = Term::Assigned(v, one);
             } else {
-                let t = t[0];
+                let t = &t[0];
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
                         // R * v = t + carry
-                        Term::Assigned(t, one),
+                        Term::Assigned(t.clone(), one),
                         Term::Assigned(v, -lsh_one),
                         carry.clone(),
                     ],

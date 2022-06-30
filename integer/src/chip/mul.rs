@@ -1,8 +1,7 @@
 use super::{IntegerChip, IntegerInstructions, Range};
 use crate::rns::{Common, Integer, MaybeReduced};
 use crate::{AssignedInteger, FieldExt};
-use halo2::plonk::Error;
-use maingate::Assigned;
+use halo2::{arithmetic::Field, plonk::Error};
 use maingate::{
     halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RangeInstructions,
     RegionCtx, Term,
@@ -32,7 +31,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .zip(residues.into_iter())
         {
             if t_chunk.len() == 2 {
-                let (t_lo, t_hi) = (t_chunk[0], t_chunk[1]);
+                let (t_lo, t_hi) = (t_chunk[0].clone(), t_chunk[1].clone());
                 let (r_lo, r_hi) = (r_chunk[0].clone(), r_chunk[1].clone());
                 main_gate.assert_zero_sum(
                     ctx,
@@ -42,21 +41,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                         Term::Assigned(t_hi, lsh_one),
                         Term::Assigned(r_lo.into(), -one),
                         Term::Assigned(r_hi.into(), -lsh_one),
-                        Term::Assigned(v, -lsh_two),
+                        Term::Assigned(v.clone(), -lsh_two),
                         carry.clone(),
                     ],
                     zero,
                 )?;
                 carry = Term::Assigned(v, one);
             } else {
-                let t = t_chunk[0];
-                let r = r_chunk[0].clone();
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
                         // R * v = t + carry
-                        Term::Assigned(t, one),
-                        Term::Assigned(r.into(), one),
+                        Term::Assigned(t_chunk[0].clone(), one),
+                        Term::Assigned(r_chunk[0].clone().into(), one),
                         Term::Assigned(v, -lsh_one),
                         carry.clone(),
                     ],
@@ -79,11 +76,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
-        let witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
-            match (a.integer(), b.integer()) {
-                (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
-                _ => None,
-            }
+        let witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> = a
+            .integer()
+            .zip(b.integer())
+            .map(|(a_int, b_int)| a_int.mul(&b_int))
             .into();
         let result = witness.result();
         let quotient = witness.long();
@@ -95,8 +91,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Witness layout for `NUMBER_OF_LIMBS = 4`:
@@ -132,7 +128,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
                 .into();
 
-                let t_i = main_gate.apply(
+                let t_i = (&main_gate.apply(
                     ctx,
                     &[
                         Term::Assigned(a.limb(j), zero),
@@ -143,7 +139,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ],
                     zero,
                     combination_option,
-                )?[4];
+                )?[4])
+                    .clone();
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -151,20 +148,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
 
                 // update running temp value
-                intermediate_value = intermediate_value.map(|t| {
-                    let a = a.limb(j).value().unwrap();
-                    let b = b.limb(k).value().unwrap();
-                    let q = quotient.limb(k).value().unwrap();
-                    let p = negative_wrong_modulus[j];
-                    t - (a * b + q * p)
-                });
+                intermediate_value = intermediate_value
+                    .zip(a.limb(j).value())
+                    .zip(b.limb(k).value())
+                    .zip(quotient.limb(k).value())
+                    .map(|(((t, a), b), q)| {
+                        let p = negative_wrong_modulus[j];
+                        t - (*a * *b + *q * p)
+                    });
 
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        if let Some(value) = intermediate_value {
-                            assert_eq!(value, zero)
-                        };
+                        intermediate_value.assert_if_known(Field::is_zero_vartime);
                     }
                 }
             }
@@ -213,8 +209,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values
@@ -269,11 +265,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let negative_wrong_modulus = self.rns.negative_wrong_modulus_decomposed;
 
-        let witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
-            match (a.integer(), b.integer()) {
-                (Some(a_int), Some(b_int)) => Some(a_int.mul(&b_int)),
-                _ => None,
-            }
+        let witness: MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> = a
+            .integer()
+            .zip(b.integer())
+            .map(|(a_int, b_int)| a_int.mul(&b_int))
             .into();
         let _ = witness.result(); // Must be equal to 1
         let quotient = witness.long();
@@ -283,8 +278,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
-            .iter()
-            .map(|v| range_chip.range_value(ctx, &v.into(), self.rns.mul_v_bit_len))
+            .into_iter()
+            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         let mut t: Vec<AssignedValue<N>> = vec![];
@@ -303,7 +298,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
                 .into();
 
-                let t_i = main_gate.apply(
+                let t_i = (&main_gate.apply(
                     ctx,
                     &[
                         Term::Assigned(a.limb(j), zero),
@@ -314,7 +309,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ],
                     zero,
                     combination_option,
-                )?[4];
+                )?[4])
+                    .clone();
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -322,20 +318,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
 
                 // update running temp value
-                intermediate_value = intermediate_value.map(|t| {
-                    let a = a.limb(j).value().unwrap();
-                    let b = b.limb(k).value().unwrap();
-                    let q = quotient.limb(k).value().unwrap();
-                    let p = negative_wrong_modulus[j];
-                    t - (a * b + q * p)
-                });
+                intermediate_value = intermediate_value
+                    .zip(a.limb(j).value())
+                    .zip(b.limb(k).value())
+                    .zip(quotient.limb(k).value())
+                    .map(|(((t, a), b), q)| {
+                        let p = negative_wrong_modulus[j];
+                        t - (*a * *b + *q * p)
+                    });
 
                 // Sanity check for the last running subtraction value
                 {
                     if j == i {
-                        if let Some(value) = intermediate_value {
-                            assert_eq!(value, zero)
-                        };
+                        intermediate_value.assert_if_known(Field::is_zero_vartime);
                     }
                 }
             }
@@ -348,26 +343,26 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         for (i, (t_chunk, v)) in t.chunks(2).zip(residues.into_iter()).enumerate() {
             if t_chunk.len() == 2 {
-                let (t_lo, t_hi) = (t_chunk[0], t_chunk[1]);
+                let (t_lo, t_hi) = (t_chunk[0].clone(), t_chunk[1].clone());
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
                         // R^2 * v = t_lo - 1 + R * t_hi
                         Term::Assigned(t_lo, one),
                         Term::Assigned(t_hi, lsh_one),
-                        Term::Assigned(v, -lsh_two),
+                        Term::Assigned(v.clone(), -lsh_two),
                         carry.clone(),
                     ],
                     if i == 0 { -one } else { zero },
                 )?;
                 carry = Term::Assigned(v, one);
             } else {
-                let t = t[0];
+                let t = &t[0];
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
                         // R * v = t + carry
-                        Term::Assigned(t, one),
+                        Term::Assigned(t.clone(), one),
                         Term::Assigned(v, -lsh_one),
                         carry.clone(),
                     ],

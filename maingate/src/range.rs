@@ -24,7 +24,8 @@ use crate::halo2::plonk::{ConstraintSystem, Error};
 use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
-use crate::{AssignedValue, UnassignedValue};
+use crate::AssignedValue;
+use halo2wrong::utils::decompose;
 use halo2wrong::RegionCtx;
 
 const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
@@ -90,7 +91,7 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
     fn range_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        input: &UnassignedValue<F>,
+        input: Value<F>,
         bit_len: usize,
     ) -> Result<AssignedValue<F>, Error>;
 
@@ -104,7 +105,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     fn range_value(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
-        input: &UnassignedValue<F>,
+        input: Value<F>,
         bit_len: usize,
     ) -> Result<AssignedValue<F>, Error> {
         let main_gate = self.main_gate();
@@ -153,7 +154,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             }
 
             // Input is decomposed insto smaller limbs
-            let limbs = input.decompose(number_of_limbs, self.base_bit_len);
+            let limbs = input.map(|e| decompose(e, number_of_limbs, self.base_bit_len));
 
             // Witness layouts for different cases:
 
@@ -218,25 +219,23 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 )?;
 
                 assert!(number_of_limbs - 1 == 4);
-                let unassigned_input = Term::Unassigned(input.value(), -one);
-                let (intermediate, overflow) = match limbs {
-                    Some(limbs) => {
+                let unassigned_input = Term::Unassigned(input, -one);
+                let (intermediate, overflow) = limbs
+                    .zip(input)
+                    .map(|(limbs, input)| {
                         let overflow = limbs[4];
-                        // input value must exist if limbs do
-                        let input_value = input.value().unwrap();
                         // combination of previous row must go to column 'E'
-                        let intermediate = input_value - overflow * rrrr;
-                        (Some(intermediate), Some(overflow))
-                    }
-                    None => (None, None),
-                };
+                        let intermediate = input - overflow * rrrr;
+                        (intermediate, overflow)
+                    })
+                    .unzip();
                 let intermediate = Term::Unassigned(intermediate, one);
                 let overflow = Term::Unassigned(overflow, rrrr);
 
                 // should meet with overflow bit len
                 ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
 
-                Ok(main_gate.apply(
+                Ok((&main_gate.apply(
                     ctx,
                     &[
                         Term::Zero,
@@ -248,15 +247,17 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                     zero,
                     CombinationOptionCommon::OneLinerAdd.into(),
                 )?[3])
+                    .clone())
             } else {
-                let unassigned_input = Term::Unassigned(input.value(), -one);
+                let unassigned_input = Term::Unassigned(input, -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
-                Ok(main_gate.apply(
+                Ok((&main_gate.apply(
                     ctx,
                     &[term_0, term_1, term_2, term_3, unassigned_input],
                     zero,
                     combination_option,
                 )?[4])
+                    .clone())
             }
         }
     }
@@ -401,12 +402,12 @@ mod tests {
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::curves::pasta::Fp;
     use crate::halo2::arithmetic::FieldExt;
-    use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
+    use crate::halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
     use crate::main_gate::MainGate;
     use crate::range::NUMBER_OF_LOOKUP_LIMBS;
-    use crate::{MainGateInstructions, UnassignedValue};
+    use crate::MainGateInstructions;
 
     #[derive(Clone, Debug)]
     struct TestCircuitConfig {
@@ -441,7 +442,7 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestCircuit<F: FieldExt> {
-        input: Vec<(usize, Option<F>)>,
+        input: Vec<(usize, Value<F>)>,
     }
 
     impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
@@ -474,8 +475,8 @@ mod tests {
                         let bit_len = value.0;
                         let value = value.1;
 
-                        let a_0 = main_gate.assign_value(ctx, &UnassignedValue(value))?;
-                        let a_1 = range_chip.range_value(ctx, &UnassignedValue(value), bit_len)?;
+                        let a_0 = main_gate.assign_value(ctx, value)?;
+                        let a_1 = range_chip.range_value(ctx, value, bit_len)?;
                         main_gate.assert_equal(ctx, &a_0, &a_1)?;
                     }
 
@@ -498,10 +499,10 @@ mod tests {
         let min_bit_len = 1;
         let max_bit_len = base_bit_len * (NUMBER_OF_LOOKUP_LIMBS + 1) - 1;
 
-        let input = (min_bit_len..(max_bit_len + 1))
+        let input = (min_bit_len..=max_bit_len)
             .map(|i| {
                 let bit_len = i as usize;
-                let value = Some(Fp::from_u128((1 << i) - 1));
+                let value = Value::known(Fp::from_u128((1 << i) - 1));
                 (bit_len, value)
             })
             .collect();
@@ -514,18 +515,5 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
         assert_eq!(prover.verify(), Ok(()));
-
-        // // negative paths
-        // for bit_len in min_bit_len..(max_bit_len + 1) {
-        //     let input = vec![(bit_len, Some(Fp::from_u128(1 << bit_len)))];
-
-        //     let circuit = TestCircuit::<Fp> { input };
-
-        //     let prover = match MockProver::run(k, &circuit, vec![]) {
-        //         Ok(prover) => prover,
-        //         Err(e) => panic!("{:#?}", e),
-        //     };
-        //     assert_ne!(prover.verify(), Ok(()));
-        // }
     }
 }

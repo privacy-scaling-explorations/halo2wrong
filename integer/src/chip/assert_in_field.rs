@@ -36,7 +36,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let borrow = (0..NUMBER_OF_LIMBS - 1)
             .map(|i| {
                 let b_i = borrow.map(|borrow| if borrow[i] { N::one() } else { N::zero() });
-                Ok(main_gate.assign_bit(ctx, &b_i.into())?.into())
+                main_gate.assign_bit(ctx, b_i)
             })
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
@@ -55,7 +55,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             &[
                 Term::Assigned(result.limb(0), -one),
                 Term::Assigned(input.limb(0), -one),
-                Term::Assigned(borrow[0], left_shifter),
+                Term::Assigned(borrow[0].clone(), left_shifter),
                 Term::Zero,
                 Term::Zero,
             ],
@@ -69,8 +69,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 &[
                     Term::Assigned(result.limb(i), -one),
                     Term::Assigned(input.limb(i), -one),
-                    Term::Assigned(borrow[i], left_shifter),
-                    Term::Assigned(borrow[i - 1], -one),
+                    Term::Assigned(borrow[i].clone(), left_shifter),
+                    Term::Assigned(borrow[i - 1].clone(), -one),
                     Term::Zero,
                 ],
                 modulus_minus_one[i],
@@ -85,7 +85,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 Term::Assigned(result.limb(last), -one),
                 Term::Assigned(input.limb(last), -one),
                 Term::Zero,
-                Term::Assigned(borrow[last - 1], -one),
+                Term::Assigned(borrow[last - 1].clone(), -one),
                 Term::Zero,
             ],
             modulus_minus_one[last],
