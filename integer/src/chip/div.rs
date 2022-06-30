@@ -2,7 +2,6 @@ use super::{IntegerChip, IntegerInstructions, Range};
 use crate::rns::MaybeReduced;
 use crate::{AssignedInteger, FieldExt};
 use halo2::{arithmetic::Field, plonk::Error};
-use maingate::Assigned;
 use maingate::{
     halo2, AssignedCondition, AssignedValue, CombinationOptionCommon, MainGateInstructions,
     RangeInstructions, RegionCtx, Term,
@@ -80,7 +79,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
                 .into();
 
-                let t_i = main_gate.apply(
+                let t_i = (&main_gate.apply(
                     ctx,
                     &[
                         Term::Assigned(result.limb(j), zero),
@@ -91,7 +90,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ],
                     zero,
                     combination_option,
-                )?[4];
+                )?[4])
+                    .clone();
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -105,7 +105,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     .zip(quotient.limb(k).value())
                     .map(|(((t, a), b), q)| {
                         let p = negative_wrong_modulus[j];
-                        t - (a * b + q * p)
+                        t - (*a * *b + *q * p)
                     });
 
                 // Sanity check for the last running subtraction value

@@ -2,8 +2,7 @@ use super::{IntegerChip, IntegerInstructions, Range};
 use crate::{rns::Integer, AssignedInteger, FieldExt};
 use halo2::plonk::Error;
 use maingate::{
-    halo2, Assigned, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx,
-    Term,
+    halo2, AssignedCondition, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term,
 };
 use std::rc::Rc;
 
@@ -54,7 +53,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .value()
             .map(|a_mul_inv| N::one() - a_mul_inv);
 
-        let cond = main_gate.apply(
+        let cond = (&main_gate.apply(
             ctx,
             &[
                 Term::Assigned(a_mul_inv.limb(0), N::one()),
@@ -65,9 +64,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ],
             -N::one(),
             CombinationOptionCommon::OneLinerMul.into(),
-        )?[1];
+        )?[1])
+            .clone();
 
-        Ok((inv_or_one, cond.into()))
+        Ok((inv_or_one, cond))
     }
 
     pub(crate) fn invert_incomplete_generic(

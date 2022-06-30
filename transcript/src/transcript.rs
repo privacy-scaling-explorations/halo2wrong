@@ -38,7 +38,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
             .iter()
             .map(|limb| limb.into())
             .collect();
-        encoded.push(ecc_chip.sign(ctx, point)?.into());
+        encoded.push(ecc_chip.sign(ctx, point)?);
         Ok(encoded)
     }
 }
@@ -133,7 +133,7 @@ impl<
 
     /// Write scalar to the transcript
     pub fn write_scalar(&mut self, scalar: &AssignedValue<C::Scalar>) {
-        self.hasher_chip.update(&[*scalar]);
+        self.hasher_chip.update(&[scalar.clone()]);
     }
 
     /// Write point to the transcript

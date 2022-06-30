@@ -6,11 +6,8 @@
 #![deny(missing_docs)]
 
 use crate::rns::{Common, Integer, Limb};
-use halo2::{
-    arithmetic::FieldExt,
-    circuit::{Cell, Value},
-};
-use maingate::{big_to_fe, compose, fe_to_big, Assigned, AssignedValue};
+use halo2::{arithmetic::FieldExt, circuit::Value};
+use maingate::{big_to_fe, compose, fe_to_big, AssignedValue};
 use num_bigint::BigUint as big_uint;
 use rns::Rns;
 use std::rc::Rc;
@@ -39,9 +36,7 @@ pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
 #[derive(Debug, Clone)]
 pub struct AssignedLimb<F: FieldExt> {
     // Witness value
-    value: Value<Limb<F>>,
-    // Cell that this value accomadates
-    cell: Cell,
+    value: AssignedValue<F>,
     // Maximum value to track overflow and reduction flow
     max_val: big_uint,
 }
@@ -49,52 +44,34 @@ pub struct AssignedLimb<F: FieldExt> {
 /// `AssignedLimb` can be also represented as `AssignedValue`
 impl<F: FieldExt> From<AssignedLimb<F>> for AssignedValue<F> {
     fn from(limb: AssignedLimb<F>) -> Self {
-        AssignedValue::new(limb.cell(), limb.value())
+        limb.value
     }
 }
 
 /// `AssignedLimb` can be also represented as `AssignedValue`
 impl<F: FieldExt> From<&AssignedLimb<F>> for AssignedValue<F> {
     fn from(limb: &AssignedLimb<F>) -> Self {
-        AssignedValue::new(limb.cell(), limb.value())
+        limb.value.clone()
     }
 }
 
-impl<F: FieldExt> Assigned<F> for AssignedLimb<F> {
+impl<F: FieldExt> AssignedLimb<F> {
     fn value(&self) -> Value<F> {
-        self.value.as_ref().map(|value| value.fe())
-    }
-    fn cell(&self) -> Cell {
-        self.cell
-    }
-}
-
-impl<F: FieldExt> Assigned<F> for &AssignedLimb<F> {
-    fn value(&self) -> Value<F> {
-        self.value.as_ref().map(|value| value.fe())
-    }
-    fn cell(&self) -> Cell {
-        self.cell
+        self.value.value().cloned()
     }
 }
 
 impl<F: FieldExt> AssignedLimb<F> {
     /// Given an assigned value and expected maximum value constructs new
     /// `AssignedLimb`
-    fn from(assigned: AssignedValue<F>, max_val: big_uint) -> Self {
-        let value = assigned.value().map(|value| Limb::<F>::new(value));
-        let cell = assigned.cell();
-        AssignedLimb {
-            value,
-            cell,
-            max_val,
-        }
+    fn from(value: AssignedValue<F>, max_val: big_uint) -> Self {
+        AssignedLimb { value, max_val }
     }
 
     /// Helper functions for maximum value tracking
 
     fn limb(&self) -> Value<Limb<F>> {
-        self.value.clone()
+        self.value.value().map(|value| Limb::new(*value))
     }
 
     fn max_val(&self) -> big_uint {
@@ -192,7 +169,7 @@ impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 
     /// Returns value under native modulus
     pub fn native(&self) -> AssignedValue<N> {
-        self.native_value
+        self.native_value.clone()
     }
 
     /// Witness form of the assigned integer that is used to derive further

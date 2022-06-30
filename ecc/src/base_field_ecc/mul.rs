@@ -23,12 +23,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         // shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
         let zeros: Vec<AssignedCondition<C::Scalar>> = (0..padding_offset)
-            .map(|_| {
-                Ok(self
-                    .main_gate()
-                    .assign_constant(ctx, C::Scalar::zero())?
-                    .into())
-            })
+            .map(|_| self.main_gate().assign_constant(ctx, C::Scalar::zero()))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();
@@ -44,7 +39,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
             (0..number_of_windows)
                 .map(|i| {
                     let mut selector: Vec<AssignedCondition<C::Scalar>> = (0..window_size)
-                        .map(|j| bits[i * window_size + j])
+                        .map(|j| bits[i * window_size + j].clone())
                         .collect();
                     selector.reverse();
                     Selector(selector)

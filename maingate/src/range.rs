@@ -235,7 +235,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                 // should meet with overflow bit len
                 ctx.enable(self.get_table(fine_limb_bit_len)?.selector)?;
 
-                Ok(main_gate.apply(
+                Ok((&main_gate.apply(
                     ctx,
                     &[
                         Term::Zero,
@@ -247,15 +247,17 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                     zero,
                     CombinationOptionCommon::OneLinerAdd.into(),
                 )?[3])
+                    .clone())
             } else {
                 let unassigned_input = Term::Unassigned(input, -one);
                 let combination_option = CombinationOptionCommon::OneLinerAdd.into();
-                Ok(main_gate.apply(
+                Ok((&main_gate.apply(
                     ctx,
                     &[term_0, term_1, term_2, term_3, unassigned_input],
                     zero,
                     combination_option,
                 )?[4])
+                    .clone())
             }
         }
     }
@@ -497,7 +499,7 @@ mod tests {
         let min_bit_len = 1;
         let max_bit_len = base_bit_len * (NUMBER_OF_LOOKUP_LIMBS + 1) - 1;
 
-        let input = (min_bit_len..(max_bit_len + 1))
+        let input = (min_bit_len..=max_bit_len)
             .map(|i| {
                 let bit_len = i as usize;
                 let value = Value::known(Fp::from_u128((1 << i) - 1));
@@ -513,18 +515,5 @@ mod tests {
             Err(e) => panic!("{:#?}", e),
         };
         assert_eq!(prover.verify(), Ok(()));
-
-        // // negative paths
-        // for bit_len in min_bit_len..(max_bit_len + 1) {
-        //     let input = vec![(bit_len, Some(Fp::from_u128(1 << bit_len)))];
-
-        //     let circuit = TestCircuit::<Fp> { input };
-
-        //     let prover = match MockProver::run(k, &circuit, vec![]) {
-        //         Ok(prover) => prover,
-        //         Err(e) => panic!("{:#?}", e),
-        //     };
-        //     assert_ne!(prover.verify(), Ok(()));
-        // }
     }
 }

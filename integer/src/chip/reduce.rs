@@ -35,7 +35,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native_value))
+            Ok(self.new_assigned_integer(&a.limbs, a.native()))
         }
     }
 
@@ -52,7 +52,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native_value))
+            Ok(self.new_assigned_integer(&a.limbs, a.native()))
         }
     }
 
@@ -67,7 +67,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native_value))
+            Ok(self.new_assigned_integer(&a.limbs, a.native()))
         }
     }
 
@@ -104,7 +104,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                     ctx,
                     &[
                         Term::Assigned(a_i.into(), one),
-                        Term::Assigned(quotient, w_i),
+                        Term::Assigned(quotient.clone(), w_i),
                     ],
                     zero,
                 )

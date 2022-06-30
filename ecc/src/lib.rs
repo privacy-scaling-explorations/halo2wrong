@@ -23,7 +23,7 @@ use crate::halo2::arithmetic::{CurveAffine, FieldExt};
 use crate::integer::chip::IntegerConfig;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::AssignedInteger;
-use crate::maingate::{big_to_fe, Assigned, AssignedCondition, MainGateConfig, RangeConfig};
+use crate::maingate::{big_to_fe, AssignedCondition, MainGateConfig, RangeConfig};
 use group::Curve;
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
