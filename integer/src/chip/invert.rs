@@ -22,11 +22,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Error,
     > {
         let main_gate = self.main_gate();
-        let integer_one = Integer::from_big(1u32.into(), Rc::clone(&self.rns));
 
-        let inv_or_one = a.integer().map(|a| match a.invert() {
-            Some(a) => a,
-            None => integer_one,
+        let inv_or_one = a.integer().map(|a| {
+            a.invert()
+                .unwrap_or_else(|| Integer::from_big(1u32.into(), Rc::clone(&self.rns)))
         });
 
         // TODO: For range constraints, we have these options:
@@ -77,13 +76,12 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let a_int = a.integer();
-        let inv = a_int.map(|a| match a.invert() {
-            Some(a) => a,
-            None => {
+        let inv = a_int.map(|a| {
+            a.invert().unwrap_or_else(|| {
                 // any number will fail it if a is zero
                 // no assertion here for now since we might want to fail in tests
                 Integer::from_big(1u32.into(), Rc::clone(&self.rns))
-            }
+            })
         });
         let inv = self.assign_integer(ctx, inv.into(), Range::Remainder)?;
         self.mul_into_one(ctx, a, &inv)?;

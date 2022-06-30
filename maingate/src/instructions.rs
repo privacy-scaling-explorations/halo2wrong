@@ -404,14 +404,12 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         // Find the new witness
-        let c = a
-            .value()
-            .zip(b.value())
-            .map(|(a, b)| match Option::<F>::from(b.invert()) {
-                Some(b_inverted) => a * b_inverted,
-                // Non inversion case will never be verified
-                _ => F::zero(),
-            });
+        let c = a.value().zip(b.value()).map(|(a, b)| {
+            // Non inversion case will never be verified
+            Option::<F>::from(b.invert())
+                .map(|b_inverted| a * b_inverted)
+                .unwrap_or_else(F::zero)
+        });
 
         Ok(self.apply(
             ctx,
@@ -447,11 +445,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let inverse = a.value().map(|a| {
-            match a.invert().into() {
-                Some(a) => a,
-                // Non inversion case will never be verified.
-                _ => F::zero(),
-            }
+            // Non inversion case will never be verified.
+            a.invert().unwrap_or_else(F::zero)
         });
 
         Ok(self.apply(
@@ -486,9 +481,10 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         let (r, a_inv) = a
             .value()
-            .map(|a| match a.invert().into() {
-                Some(a_inverted) => (zero, a_inverted),
-                None => (one, one),
+            .map(|a| {
+                Option::from(a.invert())
+                    .map(|a_inverted| (zero, a_inverted))
+                    .unwrap_or_else(|| (one, one))
             })
             .unzip();
 
@@ -600,10 +596,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .zip(b.value())
             .map(|(a, b)| {
                 let c = a - b;
-                match c.invert().into() {
-                    Some(c_inverted) => (c_inverted, zero),
-                    None => (one, one),
-                }
+                Option::from(c.invert())
+                    .map(|c_inverted| (c_inverted, zero))
+                    .unwrap_or_else(|| (one, one))
             })
             .unzip();
 
@@ -665,10 +660,9 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // Non-zero element must have an inverse
         // a * w - 1 = 0
 
-        let w = a.value().map(|a| match a.invert().into() {
-            Some(inverted) => inverted,
-            // Non inversion case will never be verified
-            _ => F::zero(),
+        let w = a.value().map(|a| {
+            // Non inversion case will never be verified.
+            a.invert().unwrap_or_else(F::zero)
         });
 
         self.apply(
