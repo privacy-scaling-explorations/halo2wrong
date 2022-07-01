@@ -198,4 +198,100 @@ impl<
 
         self.add(region, &acc, &aux.to_sub)
     }
+
+    /// Computes multi-product variant for ecdsa
+    ///
+    /// Takes as input the generator point `gen_point` $G$
+    /// and a vector of triplets formed by:
+    ///  - Public Key point $P$ as `AssignedPoint`
+    ///  - Scalar to mul with generator $u_1$ as `AssignedInteger`
+    ///  - Scalar to mul with Public Key point $u_2$ as `AssignedInteger`
+    ///
+    /// Returns [G * u_1_i + P_i * u_2_i] for each i in the triplet Vec
+    pub fn mul_batch_ecdsa(
+        &self,
+        region: &mut RegionCtx<'_, '_, N>,
+        gen_point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        triplets: Vec<(
+            AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        )>,
+        window_size: usize,
+    ) -> Result<Vec<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>, Error> {
+        assert!(window_size > 0);
+        assert!(triplets.len() > 0);
+        let aux = self.get_mul_aux(window_size, 2).unwrap();
+
+        let scalar_chip = self.scalar_field_chip();
+        // 1. Decompose scalars in bits
+        let mut decomposed_scalars: Vec<(Vec<AssignedCondition<N>>, Vec<AssignedCondition<N>>)> =
+            triplets
+                .iter()
+                .map(|(_, u1, u2)| {
+                    let decomposed_u1 = scalar_chip.decompose(region, u1)?;
+                    let decomposed_u2 = scalar_chip.decompose(region, u2)?;
+                    Ok((decomposed_u1, decomposed_u2))
+                })
+                .collect::<Result<_, Error>>()?;
+
+        // 2. Pad scalars bit representations
+        for (decomposed_u1, decomposed_u2) in decomposed_scalars.iter_mut() {
+            self.pad(region, decomposed_u1, window_size)?;
+            self.pad(region, decomposed_u2, window_size)?;
+        }
+
+        // 3. Split scalar bits into windows
+        let windowed_scalars: Vec<(Windowed<N>, Windowed<N>)> = decomposed_scalars
+            .iter()
+            .map(|(decomposed_u1, decomposed_u2)| {
+                (
+                    Self::window(decomposed_u1.to_vec(), window_size),
+                    Self::window(decomposed_u2.to_vec(), window_size),
+                )
+            })
+            .collect();
+        let number_of_windows = windowed_scalars[0].0 .0.len();
+
+        // Table for the generator point
+        let gen_table =
+            self.make_incremental_table(region, &aux.to_add, &gen_point, window_size)?;
+
+        // Tables for the public key points
+        let mut binary_aux = aux.to_add.clone();
+        binary_aux = self.double(region, &binary_aux)?;
+        let pk_tables: Vec<Table<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = triplets
+            .iter()
+            .map(|(point, _, _)| {
+                self.make_incremental_table(region, &binary_aux, point, window_size)
+            })
+            .collect::<Result<_, Error>>()?;
+
+        // Reorganize tables and scalars
+        let result = pk_tables
+            .iter()
+            .zip(windowed_scalars.iter())
+            .map(|(pk_table, (w_u1, w_u2))| {
+                // First window
+                let mut acc = self.select_multi(region, &w_u1.0[0], &gen_table)?;
+                let to_add = self.select_multi(region, &w_u2.0[0], &pk_table)?;
+                acc = self.add(region, &acc, &to_add)?;
+
+                // Rest of windows
+                for i in 1..number_of_windows {
+                    acc = self.double_n(region, &acc, window_size)?;
+                    let selector = &w_u1.0[i];
+                    let to_add = self.select_multi(region, selector, &gen_table)?;
+                    acc = self.add(region, &acc, &to_add)?;
+                    let selector = &w_u2.0[i];
+                    let to_add = self.select_multi(region, selector, &pk_table)?;
+                    acc = self.add(region, &acc, &to_add)?;
+                }
+
+                acc = self.add(region, &acc, &aux.to_sub)?;
+                Ok(acc)
+            })
+            .collect();
+        result
+    }
 }
