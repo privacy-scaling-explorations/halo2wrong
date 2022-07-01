@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 
 use super::main_gate::{MainGate, MainGateConfig};
@@ -30,8 +30,8 @@ impl TableConfig {}
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
     main_gate_config: MainGateConfig,
-    composition_tables: HashMap<usize, TableConfig>,
-    overflow_tables: HashMap<usize, TableConfig>,
+    composition_tables: BTreeMap<usize, TableConfig>,
+    overflow_tables: BTreeMap<usize, TableConfig>,
 }
 
 /// ['RangeChip'] applies binary range constraints
@@ -253,8 +253,8 @@ impl<F: FieldExt> RangeChip<F> {
             };
         }
 
-        let mut composition_tables = HashMap::<usize, TableConfig>::new();
-        let mut overflow_tables = HashMap::<usize, TableConfig>::new();
+        let mut composition_tables = BTreeMap::<usize, TableConfig>::new();
+        let mut overflow_tables = BTreeMap::<usize, TableConfig>::new();
 
         for bit_len in composition_bit_lens.iter() {
             let config = TableConfig {
