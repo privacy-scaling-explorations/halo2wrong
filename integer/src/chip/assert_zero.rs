@@ -22,11 +22,15 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         // Apply ranges
         let range_chip = self.range_chip();
-        let quotient = range_chip.range_value(ctx, quotient, BIT_LEN_LIMB)?;
+        let quotient = range_chip.assign(ctx, quotient, Self::sublimb_bit_len(), BIT_LEN_LIMB)?;
         let residues = witness
             .residues()
-            .into_iter()
-            .map(|v| range_chip.range_value(ctx, v, self.rns.red_v_bit_len))
+            .iter()
+            .map(|v| {
+                let residue =
+                    range_chip.assign(ctx, *v, Self::sublimb_bit_len(), self.rns.red_v_bit_len)?;
+                Ok(residue)
+            })
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Assign intermediate values
@@ -35,14 +39,15 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .into_iter()
             .zip(self.rns.negative_wrong_modulus_decomposed.into_iter())
             .map(|(a_i, w_i)| {
-                main_gate.compose(
+                let t = main_gate.compose(
                     ctx,
                     &[
                         Term::Assigned(a_i.into(), one),
                         Term::Assigned(quotient.clone(), w_i),
                     ],
                     zero,
-                )
+                )?;
+                Ok(t)
             })
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 

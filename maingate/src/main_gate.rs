@@ -12,13 +12,24 @@ use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::{Chip, Layouter};
 use crate::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance};
 use crate::halo2::poly::Rotation;
-use crate::instructions::{ColumnTags, CombinationOptionCommon, MainGateInstructions, Term};
+use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedCondition, AssignedValue};
 use halo2wrong::halo2::circuit::Value;
 use halo2wrong::RegionCtx;
 use std::marker::PhantomData;
 
 const WIDTH: usize = 5;
+
+/// `ColumnTags` is an helper to find special columns that are frequently used
+/// across gates
+pub trait ColumnTags<Column> {
+    /// Next row accumulator
+    fn next() -> Column;
+    /// First column
+    fn first() -> Column;
+    /// Index that last term should in linear combination
+    fn last_term_index() -> usize;
+}
 
 /// Enumerates columns of the main gate
 #[derive(Debug)]
@@ -40,8 +51,12 @@ impl ColumnTags<MainGateColumn> for MainGateColumn {
         MainGateColumn::A
     }
 
-    fn accumulator() -> Self {
+    fn next() -> Self {
         MainGateColumn::E
+    }
+
+    fn last_term_index() -> usize {
+        Self::first() as usize
     }
 }
 

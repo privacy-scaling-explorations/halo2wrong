@@ -3,7 +3,6 @@ use std::rc::Rc;
 use super::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use crate::instructions::{IntegerInstructions, Range};
 use crate::rns::{Common, Integer, Rns};
-use crate::NUMBER_OF_LOOKUP_LIMBS;
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
 use maingate::{halo2, AssignedCondition, AssignedValue, MainGateInstructions, RegionCtx};
@@ -58,6 +57,12 @@ pub struct IntegerChip<
 impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
+    fn sublimb_bit_len() -> usize {
+        let number_of_lookup_limbs = 4;
+        assert!(BIT_LEN_LIMB % number_of_lookup_limbs == 0);
+        BIT_LEN_LIMB / number_of_lookup_limbs
+    }
+
     /// Creates a new [`AssignedInteger`] from its limb representation and its
     /// native value
     pub(crate) fn new_assigned_integer(
@@ -522,8 +527,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
     /// Getter for [`RangeChip`]
     pub fn range_chip(&self) -> RangeChip<N> {
-        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
-        RangeChip::<N>::new(self.config.range_config.clone(), bit_len_lookup)
+        RangeChip::<N>::new(self.config.range_config.clone())
     }
 
     /// Getter for [`MainGate`]
@@ -537,7 +541,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 mod tests {
     use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
     use crate::rns::{Common, Integer, Rns};
-    use crate::{FieldExt, UnassignedInteger, NUMBER_OF_LOOKUP_LIMBS};
+    use crate::{FieldExt, UnassignedInteger};
     use core::panic;
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::dev::MockProver;
@@ -665,9 +669,15 @@ mod tests {
         ) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
 
-            let overflow_bit_lengths = rns::<W, N, BIT_LEN_LIMB>().overflow_lengths();
-            let range_config =
-                RangeChip::<N>::configure(meta, &main_gate_config, overflow_bit_lengths);
+            let overflow_bit_lens = rns::<W, N, BIT_LEN_LIMB>().overflow_lengths();
+            let composition_bit_len =
+                IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::sublimb_bit_len();
+            let range_config = RangeChip::<N>::configure(
+                meta,
+                &main_gate_config,
+                vec![composition_bit_len],
+                overflow_bit_lens,
+            );
 
             TestCircuitConfig {
                 range_config,
@@ -682,15 +692,10 @@ mod tests {
             }
         }
 
-        fn config_range<N: FieldExt>(
-            &self,
-            layouter: &mut impl Layouter<N>,
-            bit_len_limb: usize,
-        ) -> Result<(), Error> {
-            let bit_len_lookup = bit_len_limb / NUMBER_OF_LOOKUP_LIMBS;
-            let range_chip = RangeChip::<N>::new(self.range_config.clone(), bit_len_lookup);
-            range_chip.load_limb_range_table(layouter)?;
-            range_chip.load_overflow_range_tables(layouter)?;
+        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
+            let range_chip = RangeChip::<N>::new(self.range_config.clone());
+            range_chip.load_composition_tables(layouter)?;
+            range_chip.load_overflow_tables(layouter)?;
 
             Ok(())
         }
@@ -761,7 +766,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -801,7 +806,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -830,7 +835,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -904,7 +909,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -951,7 +956,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -980,7 +985,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -1092,7 +1097,7 @@ mod tests {
                 },
             )?;
 
-            config.config_range(&mut layouter, BIT_LEN_LIMB)?;
+            config.config_range(&mut layouter)?;
 
             Ok(())
         }
@@ -1328,7 +1333,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -1414,7 +1419,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -1456,7 +1461,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 
@@ -1491,7 +1496,7 @@ mod tests {
                     Ok(())
                 },
             )?;
-            config.config_range(&mut layouter, BIT_LEN_LIMB)
+            config.config_range(&mut layouter)
         }
     );
 

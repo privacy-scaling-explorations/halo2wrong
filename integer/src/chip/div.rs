@@ -59,8 +59,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
-            .into_iter()
-            .map(|v| range_chip.range_value(ctx, v, self.rns.mul_v_bit_len))
+            .iter()
+            .map(|v| range_chip.assign(ctx, *v, Self::sublimb_bit_len(), self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         let mut t: Vec<AssignedValue<N>> = vec![];

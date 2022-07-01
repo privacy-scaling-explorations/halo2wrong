@@ -3,14 +3,18 @@
 //! for optimisation purposes.
 
 use halo2wrong::{
+    halo2::plonk::Selector,
     utils::{big_to_fe, decompose, fe_to_big, power_of_two},
     RegionCtx,
 };
 
-use crate::halo2::{
-    arithmetic::FieldExt,
-    circuit::{Chip, Layouter, Value},
-    plonk::Error,
+use crate::{
+    halo2::{
+        arithmetic::{Field, FieldExt},
+        circuit::{Chip, Layouter, Value},
+        plonk::Error,
+    },
+    ColumnTags, MainGateColumn,
 };
 
 use crate::{AssignedCondition, AssignedValue};
@@ -169,13 +173,6 @@ impl<'a, F: FieldExt> Term<F> {
     }
 }
 
-/// `ColumnTags` is an helper to find special columns that are frequently used
-/// across gates
-pub trait ColumnTags<Column> {
-    fn accumulator() -> Column;
-    fn first() -> Column;
-}
-
 /// Common combination options defines the behaviour of the `main_gate` at the
 /// current row. Options here can be applied most of the standart like circuits
 /// when it has one multiplication gate one addition gate and one further
@@ -247,7 +244,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, '_, F>,
         unassigned: Value<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        self.assign_to_column(ctx, unassigned, Self::MainGateColumn::accumulator())
+        self.assign_to_column(ctx, unassigned, Self::MainGateColumn::next())
     }
 
     /// Assigns new witness to the specified column
@@ -1040,12 +1037,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Assigns a new witness composed of given array of terms
     /// `result = constant + term_0 + term_1 + ... `
     /// where `term_i = a_i * q_i`
-    fn compose(
+    fn decompose<T: FnMut(bool) -> Vec<Selector>>(
         &self,
         ctx: &mut RegionCtx<'_, '_, F>,
         terms: &[Term<F>],
         constant: F,
-    ) -> Result<AssignedValue<F>, Error> {
+        mut fetch_tables: T,
+    ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
         // Remove zero iterms
@@ -1064,19 +1062,29 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // `result` will be assigned in the first iteration.
         // First iteration is guaranteed to be present disallowing empty
         let mut result = None;
+        let last_term_index: usize = MainGateColumn::last_term_index();
 
+        let mut assigned: Vec<AssignedValue<F>> = vec![];
         for (i, chunk) in terms.chunks(chunk_width).enumerate() {
             let intermediate = Term::Unassigned(remaining, -F::one());
             let constant = if i == 0 { constant } else { F::zero() };
+            let mut chunk = chunk.to_vec();
 
-            remaining = Term::compose(chunk, constant)
+            let composed = Term::compose(&chunk[..], constant);
+
+            remaining = composed
                 .zip(remaining)
                 .map(|(composed, remaining)| remaining - composed);
 
+            let is_final = i == number_of_chunks - 1;
             // Final round
-            let combination_option = if i == number_of_chunks - 1 {
+            let combination_option = if is_final {
                 // Sanity check
-                remaining.assert_if_known(F::is_zero_vartime);
+                remaining.assert_if_known(Field::is_zero_vartime);
+
+                // Assign last term to the first column to enable overflow range check
+                let last_term = chunk.pop().unwrap();
+                chunk.insert(last_term_index, last_term);
 
                 CombinationOptionCommon::OneLinerAdd
             // Intermediate round should accumulate the sum
@@ -1084,17 +1092,49 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 CombinationOptionCommon::CombineToNextAdd(F::one())
             };
 
-            let combined = &self.apply(
+            // Enable tables if there is any
+            let tables = fetch_tables(is_final);
+            for table in tables {
+                ctx.enable(table)?;
+            }
+
+            let chunk_len = chunk.len();
+            let combined = self.apply(
                 ctx,
                 terms_with_acc!(chunk, intermediate),
                 constant,
                 combination_option.into(),
             )?;
+
+            // Set the result at the first iter
             if i == 0 {
                 result = Some(combined[WIDTH - 1].clone());
             }
+
+            let mut combined = combined[..chunk_len].to_vec();
+            if is_final {
+                // Rewind the overflow range trick
+                let last_term = combined.remove(last_term_index);
+                combined.push(last_term);
+            }
+            assigned.extend(combined.into_iter().take(chunk_len));
         }
-        Ok(result.unwrap())
+        Ok((result.unwrap(), assigned))
+    }
+
+    /// Assigns a new witness composed of given array of terms
+    /// `result = constant + term_0 + term_1 + ... `
+    /// where `term_i = a_i * q_i`
+    fn compose(
+        &self,
+        ctx: &mut RegionCtx<'_, '_, F>,
+        terms: &[Term<F>],
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
+        assert!(!terms.is_empty(), "At least one term is expected");
+        let (composed, _) = self.decompose(ctx, terms, constant, |_| vec![])?;
+
+        Ok(composed)
     }
 
     /// Given array of terms asserts sum is equal to zero
