@@ -159,8 +159,8 @@ impl<
 
         // 3. Split scalar bits into windows
         let windowed_scalars: Vec<Windowed<N>> = decomposed_scalars
-            .iter()
-            .map(|decomposed| Self::window(decomposed.to_vec(), window_size))
+            .into_iter()
+            .map(|decomposed| Self::window(decomposed, window_size))
             .collect();
         let number_of_windows = windowed_scalars[0].0.len();
 

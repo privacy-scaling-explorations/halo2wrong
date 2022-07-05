@@ -35,7 +35,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native()))
+            Ok(self.new_assigned_integer(a.limbs(), a.native().clone()))
         }
     }
 
@@ -52,7 +52,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native()))
+            Ok(self.new_assigned_integer(a.limbs(), a.native().clone()))
         }
     }
 
@@ -67,7 +67,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         if exceeds_max_value {
             self.reduce(ctx, a)
         } else {
-            Ok(self.new_assigned_integer(&a.limbs, a.native()))
+            Ok(self.new_assigned_integer(a.limbs(), a.native().clone()))
         }
     }
 
@@ -86,7 +86,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         // Apply ranges
         let range_chip = self.range_chip();
-        let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
+        let result = self.assign_integer(ctx, result.into(), Range::Remainder)?;
         let quotient = range_chip.assign(ctx, quotient, Self::sublimb_bit_len(), BIT_LEN_LIMB)?;
         let residues = witness
             .residues()
@@ -97,14 +97,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // Assign intermediate values
         let t: Vec<AssignedValue<N>> = a
             .limbs()
-            .into_iter()
+            .iter()
             .zip(self.rns.negative_wrong_modulus_decomposed.into_iter())
             .map(|(a_i, w_i)| {
                 main_gate.compose(
                     ctx,
                     &[
-                        Term::Assigned(a_i.into(), one),
-                        Term::Assigned(quotient.clone(), w_i),
+                        Term::Assigned(a_i.as_ref(), one),
+                        Term::Assigned(&quotient, w_i),
                     ],
                     zero,
                 )
@@ -112,19 +112,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Constrain binary part of crt
-        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), result, residues)?;
+        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), &result, residues)?;
 
         // Constrain native part of crt
         main_gate.assert_zero_sum(
             ctx,
             &[
                 Term::Assigned(a.native(), -one),
-                Term::Assigned(quotient, self.rns.wrong_modulus_in_native_modulus),
+                Term::Assigned(&quotient, self.rns.wrong_modulus_in_native_modulus),
                 Term::Assigned(result.native(), one),
             ],
             zero,
         )?;
 
-        Ok(result.clone())
+        Ok(result)
     }
 }

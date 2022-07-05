@@ -40,7 +40,7 @@ impl<
         let t = &ch.mul(ctx, t, lambda)?;
         let y = ch.sub(ctx, t, &a.y)?;
 
-        let p_0 = AssignedPoint::new(x.clone(), y);
+        let p_0 = AssignedPoint::new(x, y);
 
         Ok(p_0)
     }

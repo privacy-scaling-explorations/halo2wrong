@@ -29,7 +29,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
             .try_into()
             .unwrap();
-        let c_native = main_gate.add(ctx, &a.native(), &b.native())?;
+        let c_native = main_gate.add(ctx, a.native(), b.native())?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
@@ -66,9 +66,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let c_native = main_gate.compose(
             ctx,
             &[
-                Term::assigned_to_add(&a.native()),
-                Term::assigned_to_add(&b_0.native()),
-                Term::assigned_to_add(&b_1.native()),
+                Term::assigned_to_add(a.native()),
+                Term::assigned_to_add(b_0.native()),
+                Term::assigned_to_add(b_1.native()),
             ],
             N::zero(),
         )?;
@@ -98,7 +98,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
             .try_into()
             .unwrap();
-        let c_native = main_gate.sub_with_constant(ctx, &a.native(), &b.native(), aux.native())?;
+        let c_native = main_gate.sub_with_constant(ctx, a.native(), b.native(), aux.native())?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
@@ -143,9 +143,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .unwrap();
         let c_native = main_gate.sub_sub_with_constant(
             ctx,
-            &a.native(),
-            &b_0.native(),
-            &b_1.native(),
+            a.native(),
+            b_0.native(),
+            b_1.native(),
             aux.native(),
         )?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
@@ -170,7 +170,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
             .try_into()
             .unwrap();
-        let c_native = main_gate.neg_with_constant(ctx, &a.native(), aux.native())?;
+        let c_native = main_gate.neg_with_constant(ctx, a.native(), aux.native())?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
@@ -192,7 +192,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
             .try_into()
             .unwrap();
-        let c_native = main_gate.mul2(ctx, &a.native())?;
+        let c_native = main_gate.mul2(ctx, a.native())?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
@@ -214,7 +214,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
             .try_into()
             .unwrap();
-        let c_native = main_gate.mul3(ctx, &a.native())?;
+        let c_native = main_gate.mul3(ctx, a.native())?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 
@@ -238,7 +238,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?
             .try_into()
             .unwrap();
-        let c_native = main_gate.add_constant(ctx, &a.native(), b.native())?;
+        let c_native = main_gate.add_constant(ctx, a.native(), b.native())?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }
 }

@@ -29,7 +29,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         // Apply ranges
         let range_chip = self.range_chip();
-        let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
+        let result = self.assign_integer(ctx, result.into(), Range::Remainder)?;
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
             .residues()
@@ -70,19 +70,20 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
                 .into();
 
-                let t_i = (&main_gate.apply(
-                    ctx,
-                    &[
-                        Term::Assigned(a.limb(j), zero),
-                        Term::Assigned(a.limb(k), zero),
-                        Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
-                        Term::Zero,
-                        Term::Unassigned(intermediate_value, -one),
-                    ],
-                    zero,
-                    combination_option,
-                )?[4])
-                    .clone();
+                let t_i = main_gate
+                    .apply(
+                        ctx,
+                        [
+                            Term::Assigned(a.limb(j), zero),
+                            Term::Assigned(a.limb(k), zero),
+                            Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
+                            Term::Zero,
+                            Term::Unassigned(intermediate_value, -one),
+                        ],
+                        zero,
+                        combination_option,
+                    )?
+                    .swap_remove(4);
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -109,14 +110,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
 
         // Constrain binary part of crt
-        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), result, residues)?;
+        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), &result, residues)?;
 
         // Constrain native part of crt
         let native = a.native();
         main_gate.apply(
             ctx,
-            &[
-                Term::Assigned(native.clone(), zero),
+            [
+                Term::Assigned(native, zero),
                 Term::Assigned(native, zero),
                 Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
                 Term::Assigned(result.native(), -one),
@@ -126,7 +127,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
-        Ok(result.clone())
+        Ok(result)
     }
 }
 

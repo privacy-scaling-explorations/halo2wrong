@@ -44,8 +44,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // Here we short x.limbs[i] as x[i].
         // 1. (a_mul_inv[0] - 1) * (inv_or_one.native - 1) = 0
         // 2. (a_mul_inv[0] - 1) * (inv_or_one[0] - 1) = 0
-        main_gate.one_or_one(ctx, &a_mul_inv.limb(0), &inv_or_one.native())?;
-        main_gate.one_or_one(ctx, &a_mul_inv.limb(0), &inv_or_one.limb(0))?;
+        main_gate.one_or_one(ctx, a_mul_inv.limb(0), inv_or_one.native())?;
+        main_gate.one_or_one(ctx, a_mul_inv.limb(0), inv_or_one.limb(0))?;
 
         // Align with main_gain.invert(), cond = 1 - a_mul_inv
         let cond = a_mul_inv
@@ -53,19 +53,20 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .value()
             .map(|a_mul_inv| N::one() - a_mul_inv);
 
-        let cond = (&main_gate.apply(
-            ctx,
-            &[
-                Term::Assigned(a_mul_inv.limb(0), N::one()),
-                Term::Unassigned(cond, N::one()),
-                Term::Zero,
-                Term::Zero,
-                Term::Zero,
-            ],
-            -N::one(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[1])
-            .clone();
+        let cond = main_gate
+            .apply(
+                ctx,
+                [
+                    Term::Assigned(a_mul_inv.limb(0), N::one()),
+                    Term::Unassigned(cond, N::one()),
+                    Term::Zero,
+                    Term::Zero,
+                    Term::Zero,
+                ],
+                -N::one(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(1);
 
         Ok((inv_or_one, cond))
     }

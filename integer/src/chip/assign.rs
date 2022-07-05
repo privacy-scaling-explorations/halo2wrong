@@ -76,13 +76,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let limbs_to_compose: Vec<Term<N>> = limbs
             .iter()
             .zip(self.rns.left_shifters.iter())
-            .map(|(limb, sh)| Term::Assigned(limb.into(), *sh))
+            .map(|(limb, sh)| Term::Assigned(limb.as_ref(), *sh))
             .collect();
+        let native = main_gate.compose(ctx, &limbs_to_compose, N::zero())?;
 
-        Ok(self.new_assigned_integer(
-            &limbs.try_into().unwrap(),
-            main_gate.compose(ctx, &limbs_to_compose[..], N::zero())?,
-        ))
+        Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native))
     }
 
     pub(super) fn assign_constant_generic(
