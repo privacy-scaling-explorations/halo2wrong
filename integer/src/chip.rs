@@ -84,7 +84,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // TODO: external integer might have different parameter settings
         a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let to_be_reduced = self.new_assigned_integer(&a.limbs(), a.native());
+        let to_be_reduced = self.new_assigned_integer(a.limbs(), a.native().clone());
         self.reduce(ctx, &to_be_reduced)
     }
 
@@ -121,7 +121,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             } else {
                 BIT_LEN_LIMB
             };
-            let decomposed_limb = main_gate.to_bits(ctx, &integer.limb(idx), number_of_bits)?;
+            let decomposed_limb = main_gate.to_bits(ctx, integer.limb(idx), number_of_bits)?;
             decomposed.extend(decomposed_limb);
         }
 
@@ -369,7 +369,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for idx in 0..NUMBER_OF_LIMBS {
-            main_gate.assert_equal(ctx, &a.limb(idx), &b.limb(idx))?;
+            main_gate.assert_equal(ctx, a.limb(idx), b.limb(idx))?;
         }
         Ok(())
     }
@@ -428,9 +428,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(ctx, &a.limb(i))?;
+            main_gate.assert_zero(ctx, a.limb(i))?;
         }
-        main_gate.assert_one(ctx, &a.limb(0))
+        main_gate.assert_one(ctx, a.limb(0))
     }
 
     fn assert_strict_bit(
@@ -440,9 +440,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(ctx, &a.limb(i))?;
+            main_gate.assert_zero(ctx, a.limb(i))?;
         }
-        main_gate.assert_bit(ctx, &a.limb(0))
+        main_gate.assert_bit(ctx, a.limb(0))
     }
 
     fn select(
@@ -456,7 +456,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
         for i in 0..NUMBER_OF_LIMBS {
-            let res = main_gate.select(ctx, &a.limb(i), &b.limb(i), cond)?;
+            let res = main_gate.select(ctx, a.limb(i), b.limb(i), cond)?;
 
             let max_val = if a.limbs[i].max_val > b.limbs[i].max_val {
                 a.limbs[i].max_val.clone()
@@ -467,7 +467,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.select(ctx, &a.native(), &b.native(), cond)?;
+        let native_value = main_gate.select(ctx, a.native(), b.native(), cond)?;
 
         Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native_value))
     }
@@ -485,14 +485,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         for i in 0..NUMBER_OF_LIMBS {
             let b_limb = b.limb(i);
 
-            let res = main_gate.select_or_assign(ctx, &a.limb(i), b_limb.fe(), cond)?;
+            let res = main_gate.select_or_assign(ctx, a.limb(i), b_limb.fe(), cond)?;
 
             // here we assume given constant is always in field
             let max_val = a.limbs[i].max_val();
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.select_or_assign(ctx, &a.native(), b.native(), cond)?;
+        let native_value = main_gate.select_or_assign(ctx, a.native(), b.native(), cond)?;
 
         Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native_value))
     }
@@ -513,7 +513,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedCondition<N>, Error> {
         self.assert_in_field(ctx, a)?;
-        self.main_gate().sign(ctx, &a.limb(0))
+        self.main_gate().sign(ctx, a.limb(0))
     }
 }
 

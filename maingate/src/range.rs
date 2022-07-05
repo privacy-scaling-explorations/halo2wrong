@@ -403,7 +403,7 @@ mod tests {
 
                         let terms: Vec<Term<F>> = bases
                             .iter()
-                            .zip(decomposed.into_iter())
+                            .zip(decomposed.iter())
                             .map(|(base, limb)| Term::Assigned(limb, *base))
                             .collect();
                         let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;

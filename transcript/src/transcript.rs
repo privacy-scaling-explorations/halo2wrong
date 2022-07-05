@@ -71,7 +71,10 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
-        Ok(vec![point.get_x().native(), point.get_y().native()])
+        Ok(vec![
+            point.get_x().native().clone(),
+            point.get_y().native().clone(),
+        ])
     }
 }
 
@@ -171,7 +174,6 @@ mod tests {
     use crate::transcript::LimbRepresentation;
     use ecc::halo2::arithmetic::CurveAffine;
     use ecc::halo2::circuit::Value;
-    use ecc::integer::NUMBER_OF_LOOKUP_LIMBS;
     use ecc::maingate::RangeChip;
     use ecc::maingate::RangeConfig;
     use ecc::maingate::RangeInstructions;

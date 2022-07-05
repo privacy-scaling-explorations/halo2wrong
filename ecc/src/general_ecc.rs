@@ -217,7 +217,9 @@ impl<
         let integer_chip = self.base_field_chip();
 
         let point = point.map(|point| self.to_rns_point(point));
-        let (x, y) = point.map(|point| (point.get_x(), point.get_y())).unzip();
+        let (x, y) = point
+            .map(|point| (point.get_x().clone(), point.get_y().clone()))
+            .unzip();
 
         let x = integer_chip.assign_integer(ctx, x.into(), Range::Remainder)?;
         let y = integer_chip.assign_integer(ctx, y.into(), Range::Remainder)?;
@@ -267,9 +269,9 @@ impl<
     ) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
 
-        let y_square = &integer_chip.square(ctx, &point.get_y())?;
-        let x_square = &integer_chip.square(ctx, &point.get_x())?;
-        let x_cube = &integer_chip.mul(ctx, &point.get_x(), x_square)?;
+        let y_square = &integer_chip.square(ctx, point.get_y())?;
+        let x_square = &integer_chip.square(ctx, point.get_x())?;
+        let x_cube = &integer_chip.mul(ctx, point.get_x(), x_square)?;
         let x_cube_b = &integer_chip.add_constant(ctx, x_cube, &self.parameter_b())?;
         integer_chip.assert_equal(ctx, x_cube_b, y_square)?;
         Ok(())
@@ -283,8 +285,8 @@ impl<
         p1: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
-        integer_chip.assert_equal(ctx, &p0.get_x(), &p1.get_x())?;
-        integer_chip.assert_equal(ctx, &p0.get_y(), &p1.get_y())
+        integer_chip.assert_equal(ctx, p0.get_x(), p1.get_x())?;
+        integer_chip.assert_equal(ctx, p0.get_y(), p1.get_y())
     }
 
     /// Selects between 2 `AssignedPoint` determined by an `AssignedCondition`
@@ -296,8 +298,8 @@ impl<
         p2: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
-        let x = integer_chip.select(ctx, &p1.get_x(), &p2.get_x(), c)?;
-        let y = integer_chip.select(ctx, &p1.get_y(), &p2.get_y(), c)?;
+        let x = integer_chip.select(ctx, p1.get_x(), p2.get_x(), c)?;
+        let y = integer_chip.select(ctx, p1.get_y(), p2.get_y(), c)?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -312,8 +314,8 @@ impl<
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
         let p2 = self.to_rns_point(p2);
-        let x = integer_chip.select_or_assign(ctx, &p1.get_x(), &p2.get_x(), c)?;
-        let y = integer_chip.select_or_assign(ctx, &p1.get_y(), &p2.get_y(), c)?;
+        let x = integer_chip.select_or_assign(ctx, p1.get_x(), p2.get_x(), c)?;
+        let y = integer_chip.select_or_assign(ctx, p1.get_y(), p2.get_y(), c)?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -324,8 +326,8 @@ impl<
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
-        let x = integer_chip.reduce(ctx, &point.get_x())?;
-        let y = integer_chip.reduce(ctx, &point.get_y())?;
+        let x = integer_chip.reduce(ctx, point.get_x())?;
+        let y = integer_chip.reduce(ctx, point.get_y())?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -341,7 +343,7 @@ impl<
         // equal addition to that we strictly disallow addition result to be
         // point of infinity
         self.base_field_chip()
-            .assert_not_equal(ctx, &p0.get_x(), &p1.get_x())?;
+            .assert_not_equal(ctx, p0.get_x(), p1.get_x())?;
 
         self._add_incomplete_unsafe(ctx, p0, p1)
     }
@@ -388,8 +390,8 @@ impl<
         p: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
-        let y_neg = integer_chip.neg(ctx, &p.get_y())?;
-        Ok(AssignedPoint::new(p.get_x(), y_neg))
+        let y_neg = integer_chip.neg(ctx, p.get_y())?;
+        Ok(AssignedPoint::new(p.get_x().clone(), y_neg))
     }
 }
 
