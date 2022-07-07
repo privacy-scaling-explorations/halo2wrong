@@ -553,6 +553,7 @@ mod tests {
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
     use rand_core::OsRng;
+    use std::cell::RefCell;
     use std::rc::Rc;
 
     const NUMBER_OF_LIMBS: usize = 4;
@@ -707,6 +708,7 @@ mod tests {
 
             #[derive(Clone, Debug)]
             struct $circuit_name<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+                end_of_row: RefCell<usize>,
                 rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
             }
 
@@ -763,6 +765,9 @@ mod tests {
                     // should fail
                     // let a = t.new_from_big(rns.max_operand.clone() + 1usize);
                     // integer_chip.assign_integer(ctx, a.into(), Range::Operand)?
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -803,6 +808,9 @@ mod tests {
                     assert_eq!(reduced_1.max_val(), self.rns.max_remainder);
                     integer_chip.assert_equal(ctx, reduced_0, reduced_1)?;
                     integer_chip.assert_strict_equal(ctx, reduced_0, reduced_1)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -832,6 +840,9 @@ mod tests {
                     integer_chip.assert_not_equal(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, a, a)?;
                     integer_chip.assert_not_zero(ctx, a)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -906,6 +917,8 @@ mod tests {
                     let inv = &integer_chip.assign_integer(ctx, inv.into(), Range::Remainder)?;
                     integer_chip.mul_into_one(ctx, a, inv)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -953,6 +966,8 @@ mod tests {
                     integer_chip.assert_equal(ctx, c_0, c_1)?;
                     integer_chip.assert_strict_equal(ctx, c_0, c_1)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -982,6 +997,9 @@ mod tests {
                     // let a = t.new_from_big(rns.wrong_modulus.clone());
                     // let a = &integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
                     // integer_chip.assert_in_field(ctx, a)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1092,6 +1110,8 @@ mod tests {
 
                     // must fail
                     // integer_chip.div_incomplete(ctx, a, &zero)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
 
                     Ok(())
                 },
@@ -1330,6 +1350,8 @@ mod tests {
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1416,6 +1438,8 @@ mod tests {
                     integer_chip.assert_strict_equal(ctx, &a, &selected)?;
                     assert_eq!(a.max_val(), selected.max_val());
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1458,6 +1482,9 @@ mod tests {
                             }
                         }
                     }
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1493,6 +1520,8 @@ mod tests {
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
                     main_gate.assert_one(ctx, &assigned_sign)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1507,13 +1536,14 @@ mod tests {
             $(
                 let (rns, k):(Rns<$wrong_field, $native_field, NUMBER_OF_LIMBS, $bit_len_limb>, u32) = setup();
 
-                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns: Rc::new(rns) };
+                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { end_of_row: RefCell::new(0), rns: Rc::new(rns) };
                 let public_inputs = vec![vec![]];
                 let prover = match MockProver::run(k, &circuit, public_inputs) {
                     Ok(prover) => prover,
                     Err(e) => panic!("{:#?}", e),
                 };
-                assert_eq!(prover.verify(), Ok(()));
+                let rows = 0..circuit.end_of_row.take();
+                assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
             )*
         };
     }

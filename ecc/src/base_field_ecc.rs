@@ -349,6 +349,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::marker::PhantomData;
     use std::rc::Rc;
 
@@ -370,6 +371,7 @@ mod tests {
         AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
         RangeInstructions,
     };
+    use paste::paste;
     use rand_core::OsRng;
 
     const NUMBER_OF_LIMBS: usize = 4;
@@ -436,8 +438,9 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Debug)]
-    struct TestEccAddition<C: CurveAffine> {
+    #[derive(Clone, Debug, Default)]
+    struct TestEccAddition<C> {
+        end_of_row: RefCell<usize>,
         _marker: PhantomData<C>,
     }
 
@@ -502,6 +505,8 @@ mod tests {
                     let c_1 = &ecc_chip.ladder(ctx, a, b)?;
                     ecc_chip.assert_equal(ctx, c_0, c_1)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -517,9 +522,7 @@ mod tests {
         fn run<C: CurveAffine>() {
             let (_, k) = setup::<C>(0);
 
-            let circuit = TestEccAddition::<C> {
-                _marker: PhantomData,
-            };
+            let circuit = TestEccAddition::<C>::default();
 
             let public_inputs = vec![vec![]];
             let prover = match MockProver::run(k, &circuit, public_inputs) {
@@ -527,7 +530,8 @@ mod tests {
                 Err(e) => panic!("{:#?}", e),
             };
 
-            assert_eq!(prover.verify(), Ok(()));
+            let rows = 0..circuit.end_of_row.take();
+            assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
         }
         run::<Bn256>();
         run::<Pallas>();
@@ -536,6 +540,7 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccPublicInput<C: CurveAffine> {
+        end_of_row: RefCell<usize>,
         a: Value<C>,
         b: Value<C>,
     }
@@ -572,7 +577,11 @@ mod tests {
                     let a = ecc_chip.assign_point(ctx, a)?;
                     let b = ecc_chip.assign_point(ctx, b)?;
                     let c = ecc_chip.add(ctx, &a, &b)?;
-                    ecc_chip.normalize(ctx, &c)
+                    let sum = ecc_chip.normalize(ctx, &c)?;
+
+                    *self.end_of_row.borrow_mut() += *offset;
+
+                    Ok(sum)
                 },
             )?;
             ecc_chip.expose_public(layouter.namespace(|| "sum"), sum, 0)?;
@@ -586,7 +595,11 @@ mod tests {
                     let a = self.a;
                     let a = ecc_chip.assign_point(ctx, a)?;
                     let c = ecc_chip.double(ctx, &a)?;
-                    ecc_chip.normalize(ctx, &c)
+                    let sum = ecc_chip.normalize(ctx, &c)?;
+
+                    *self.end_of_row.borrow_mut() += *offset;
+
+                    Ok(sum)
                 },
             )?;
             ecc_chip.expose_public(layouter.namespace(|| "sum"), sum, 8)?;
@@ -616,6 +629,7 @@ mod tests {
             let circuit = TestEccPublicInput {
                 a: Value::known(a),
                 b: Value::known(b),
+                ..Default::default()
             };
 
             let prover = match MockProver::run(k, &circuit, vec![public_data]) {
@@ -623,7 +637,8 @@ mod tests {
                 Err(e) => panic!("{:#?}", e),
             };
 
-            assert_eq!(prover.verify(), Ok(()));
+            let rows = 0..circuit.end_of_row.take();
+            assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
         }
 
         run::<Bn256>();
@@ -633,6 +648,7 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccMul<C: CurveAffine> {
+        end_of_row: RefCell<usize>,
         window_size: usize,
         aux_generator: C,
     }
@@ -667,6 +683,9 @@ mod tests {
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
                     ecc_chip.get_mul_aux(self.window_size, 1)?;
+
+                    *self.end_of_row.borrow_mut() += *offset;
+
                     Ok(())
                 },
             )?;
@@ -689,6 +708,8 @@ mod tests {
                     let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
                     ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
 
+                    *self.end_of_row.borrow_mut() += *offset;
+
                     Ok(())
                 },
             )?;
@@ -709,6 +730,7 @@ mod tests {
                 let circuit = TestEccMul {
                     aux_generator,
                     window_size,
+                    ..Default::default()
                 };
 
                 let public_inputs = vec![vec![]];
@@ -716,7 +738,8 @@ mod tests {
                     Ok(prover) => prover,
                     Err(e) => panic!("{:#?}", e),
                 };
-                assert_eq!(prover.verify(), Ok(()));
+                let rows = 0..circuit.end_of_row.take();
+                assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
             }
         }
         run::<Bn256>();
@@ -726,6 +749,7 @@ mod tests {
 
     #[derive(Default, Clone, Debug)]
     struct TestEccBatchMul<C: CurveAffine> {
+        end_of_row: RefCell<usize>,
         window_size: usize,
         number_of_pairs: usize,
         aux_generator: C,
@@ -762,6 +786,9 @@ mod tests {
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
                     ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
+
+                    *self.end_of_row.borrow_mut() += *offset;
+
                     Ok(())
                 },
             )?;
@@ -793,6 +820,8 @@ mod tests {
                         ecc_chip.mul_batch_1d_horizontal(ctx, pairs, self.window_size)?;
                     ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
 
+                    *self.end_of_row.borrow_mut() += *offset;
+
                     Ok(())
                 },
             )?;
@@ -803,33 +832,39 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_base_field_ecc_mul_batch_circuit() {
-        fn run<C: CurveAffine>() {
-            let (_, k) = setup::<C>(20);
+    macro_rules! test_base_field_ecc_mul_batch_circuit {
+        ($C:ty) => {
+            paste! {
+                #[test]
+                fn [<test_base_field_ecc_mul_batch_circuit_ $C:lower>]() {
+                    let (_, k) = setup::<$C>(20);
 
-            for number_of_pairs in 5..7 {
-                for window_size in 1..3 {
-                    let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
+                    for number_of_pairs in 5..7 {
+                        for window_size in 1..3 {
+                            let aux_generator = <$C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-                    let circuit = TestEccBatchMul {
-                        aux_generator,
-                        window_size,
-                        number_of_pairs,
-                    };
+                            let circuit = TestEccBatchMul {
+                                aux_generator,
+                                window_size,
+                                number_of_pairs,
+                                ..Default::default()
+                            };
 
-                    let public_inputs = vec![vec![]];
-                    let prover = match MockProver::run(k, &circuit, public_inputs) {
-                        Ok(prover) => prover,
-                        Err(e) => panic!("{:#?}", e),
-                    };
-                    assert_eq!(prover.verify(), Ok(()));
+                            let public_inputs = vec![vec![]];
+                            let prover = match MockProver::run(k, &circuit, public_inputs) {
+                                Ok(prover) => prover,
+                                Err(e) => panic!("{:#?}", e),
+                            };
+                            let rows = 0..circuit.end_of_row.take();
+                            assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
+                        }
+                    }
                 }
             }
-        }
-
-        run::<Bn256>();
-        run::<Pallas>();
-        run::<Vesta>();
+        };
     }
+
+    test_base_field_ecc_mul_batch_circuit!(Bn256);
+    test_base_field_ecc_mul_batch_circuit!(Pallas);
+    test_base_field_ecc_mul_batch_circuit!(Vesta);
 }

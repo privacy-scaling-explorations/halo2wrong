@@ -156,6 +156,7 @@ mod tests {
     use integer::IntegerInstructions;
     use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
     use rand_core::OsRng;
+    use std::cell::RefCell;
     use std::marker::PhantomData;
 
     const BIT_LEN_LIMB: usize = 68;
@@ -207,6 +208,7 @@ mod tests {
 
     #[derive(Default, Clone)]
     struct TestCircuitEcdsaVerify<E: CurveAffine, N: FieldExt> {
+        end_of_row: RefCell<usize>,
         public_key: Value<E>,
         signature: Value<(E::Scalar, E::Scalar)>,
         msg_hash: Value<E::Scalar>,
@@ -246,6 +248,9 @@ mod tests {
 
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+
+                    *self.end_of_row.borrow_mut() += *offset;
+
                     Ok(())
                 },
             )?;
@@ -278,7 +283,11 @@ mod tests {
                         point: pk_in_circuit,
                     };
                     let msg_hash = scalar_chip.assign_integer(ctx, msg_hash, Range::Remainder)?;
-                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)
+                    ecdsa_chip.verify(ctx, &sig, &pk_assigned, &msg_hash)?;
+
+                    *self.end_of_row.borrow_mut() += *offset;
+
+                    Ok(())
                 },
             )?;
 
@@ -338,10 +347,9 @@ mod tests {
                 public_key: Value::known(public_key),
                 signature: Value::known((r, s)),
                 msg_hash: Value::known(msg_hash),
-
                 aux_generator,
                 window_size: 2,
-                _marker: PhantomData,
+                ..Default::default()
             };
 
             let public_inputs = vec![vec![]];
@@ -349,7 +357,8 @@ mod tests {
                 Ok(prover) => prover,
                 Err(e) => panic!("{:#?}", e),
             };
-            assert_eq!(prover.verify(), Ok(()));
+            let rows = 0..circuit.end_of_row.take();
+            assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
         }
 
         use crate::curves::bn256::Fr as BnScalar;
