@@ -243,9 +243,8 @@ impl<F: FieldExt> RangeChip<F> {
         );
 
         macro_rules! meta_lookup {
-            ($column:expr, $table_config:expr) => {
-                // meta.lookup(stringify!($column), |meta| {
-                meta.lookup(|meta| {
+            ($prefix:literal, $column:expr, $table_config:expr) => {
+                meta.lookup(concat!($prefix, "_", stringify!($column)), |meta| {
                     let exp = meta.query_advice($column, Rotation::cur());
                     let s = meta.query_selector($table_config.selector);
                     vec![(exp * s, $table_config.column)]
@@ -261,10 +260,10 @@ impl<F: FieldExt> RangeChip<F> {
                 selector: meta.complex_selector(),
                 column: meta.lookup_table_column(),
             };
-            meta_lookup!(a, config);
-            meta_lookup!(b, config);
-            meta_lookup!(c, config);
-            meta_lookup!(d, config);
+            meta_lookup!("composition", a, config);
+            meta_lookup!("composition", b, config);
+            meta_lookup!("composition", c, config);
+            meta_lookup!("composition", d, config);
             composition_tables.insert(*bit_len, config);
         }
         for bit_len in overflow_bit_lens.iter() {
@@ -273,7 +272,7 @@ impl<F: FieldExt> RangeChip<F> {
                 column: meta.lookup_table_column(),
             };
 
-            meta_lookup!(a, config);
+            meta_lookup!("overflow", a, config);
             overflow_tables.insert(*bit_len, config);
         }
 
