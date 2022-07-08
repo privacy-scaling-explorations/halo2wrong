@@ -55,6 +55,12 @@ impl<F: FieldExt> From<&AssignedLimb<F>> for AssignedValue<F> {
     }
 }
 
+impl<F: FieldExt> AsRef<AssignedValue<F>> for AssignedLimb<F> {
+    fn as_ref(&self) -> &AssignedValue<F> {
+        &self.value
+    }
+}
+
 impl<F: FieldExt> AssignedLimb<F> {
     fn value(&self) -> Value<F> {
         self.value.value().cloned()
@@ -163,13 +169,13 @@ impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
     }
 
     /// Returns assigned limbs
-    pub fn limbs(&self) -> [AssignedLimb<N>; NUMBER_OF_LIMBS] {
-        self.limbs.clone()
+    pub fn limbs(&self) -> &[AssignedLimb<N>; NUMBER_OF_LIMBS] {
+        &self.limbs
     }
 
     /// Returns value under native modulus
-    pub fn native(&self) -> AssignedValue<N> {
-        self.native_value.clone()
+    pub fn native(&self) -> &AssignedValue<N> {
+        &self.native_value
     }
 
     /// Witness form of the assigned integer that is used to derive further
@@ -218,7 +224,7 @@ impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
             .unwrap()
     }
 
-    fn limb(&self, idx: usize) -> AssignedValue<N> {
-        self.limbs[idx].clone().into()
+    fn limb(&self, idx: usize) -> &AssignedValue<N> {
+        self.limbs[idx].as_ref()
     }
 }

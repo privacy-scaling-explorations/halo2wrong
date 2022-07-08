@@ -71,7 +71,10 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
-        Ok(vec![point.get_x().native(), point.get_y().native()])
+        Ok(vec![
+            point.get_x().native().clone(),
+            point.get_y().native().clone(),
+        ])
     }
 }
 
@@ -158,7 +161,6 @@ impl<
 
 #[cfg(test)]
 mod tests {
-
     use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::Layouter;
     use crate::halo2::circuit::SimpleFloorPlanner;
@@ -171,16 +173,17 @@ mod tests {
     use crate::transcript::LimbRepresentation;
     use ecc::halo2::arithmetic::CurveAffine;
     use ecc::halo2::circuit::Value;
-    use ecc::integer::NUMBER_OF_LOOKUP_LIMBS;
     use ecc::maingate::RangeChip;
     use ecc::maingate::RangeConfig;
     use ecc::maingate::RangeInstructions;
     use ecc::BaseFieldEccChip;
     use ecc::EccConfig;
     use group::ff::Field;
+    use paste::paste;
     use poseidon::Poseidon;
     use poseidon::Spec;
     use rand_core::OsRng;
+    use std::cell::RefCell;
 
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
@@ -225,6 +228,7 @@ mod tests {
     }
 
     struct TestCircuit<C: CurveAffine, const T: usize, const RATE: usize> {
+        end_of_row: RefCell<usize>,
         spec: Spec<C::Scalar, T, RATE>,
         n: usize,
         inputs: Value<Vec<C::Scalar>>,
@@ -278,6 +282,8 @@ mod tests {
                     let expected = main_gate.assign_value(ctx, self.expected)?;
                     main_gate.assert_equal(ctx, &challenge, &expected)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -288,55 +294,52 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_permutation() {
-        use crate::curves::bn256::{Fr, G1Affine};
-        const K: u32 = 20;
+    macro_rules! test {
+        ($RF:expr, $RP:expr, $T:expr, $RATE:expr) => {
+            paste! {
+                #[test]
+                fn [<test_permutation_ $RF _ $RP _ $T _ $RATE>]() {
+                    use crate::curves::bn256::{Fr, G1Affine};
+                    const K: u32 = 20;
 
-        macro_rules! run_test {
-            (
-                $([$RF:expr, $RP:expr, $T:expr, $RATE:expr]),*
-            ) => {
-                $(
-                    {
+                    for number_of_inputs in 0..3*$T {
 
-                        for number_of_inputs in 0..3*$T {
+                        let mut ref_hasher = Poseidon::<Fr, $T, $RATE>::new($RF, $RP);
+                        let spec = Spec::<Fr, $T, $RATE>::new($RF, $RP);
 
-                            let mut ref_hasher = Poseidon::<Fr, $T, $RATE>::new($RF, $RP);
-                            let spec = Spec::<Fr, $T, $RATE>::new($RF, $RP);
+                        let inputs: Vec<Fr> = (0..number_of_inputs)
+                            .map(|_| Fr::random(OsRng))
+                            .collect::<Vec<Fr>>();
 
-                            let inputs: Vec<Fr> = (0..number_of_inputs)
-                                .map(|_| Fr::random(OsRng))
-                                .collect::<Vec<Fr>>();
+                        ref_hasher.update(&inputs[..]);
+                        let expected = ref_hasher.squeeze();
 
-                            ref_hasher.update(&inputs[..]);
-                            let expected = ref_hasher.squeeze();
-
-                            let circuit: TestCircuit<G1Affine, $T, $RATE> = TestCircuit {
-                                spec: spec.clone(),
-                                n: number_of_inputs,
-                                inputs: Value::known(inputs),
-                                expected: Value::known(expected),
-                            };
-                            let public_inputs = vec![vec![]];
-                            let prover = match MockProver::run(K, &circuit, public_inputs) {
-                                Ok(prover) => prover,
-                                Err(e) => panic!("{:#?}", e),
-                            };
-                            assert_eq!(prover.verify(), Ok(()));
-                        }
+                        let circuit: TestCircuit<G1Affine, $T, $RATE> = TestCircuit {
+                            end_of_row: RefCell::new(0),
+                            spec: spec.clone(),
+                            n: number_of_inputs,
+                            inputs: Value::known(inputs),
+                            expected: Value::known(expected),
+                        };
+                        let public_inputs = vec![vec![]];
+                        let prover = match MockProver::run(K, &circuit, public_inputs) {
+                            Ok(prover) => prover,
+                            Err(e) => panic!("{:#?}", e),
+                        };
+                        let rows = 0..circuit.end_of_row.take();
+                        assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
                     }
-                )*
-            };
-        }
-
-        run_test!([8, 57, 3, 2]);
-        run_test!([8, 57, 4, 3]);
-        run_test!([8, 57, 5, 4]);
-        run_test!([8, 57, 6, 5]);
-        run_test!([8, 57, 7, 6]);
-        run_test!([8, 57, 8, 7]);
-        run_test!([8, 57, 9, 8]);
-        run_test!([8, 57, 10, 9]);
+                }
+            }
+        };
     }
+
+    test!(8, 57, 3, 2);
+    test!(8, 57, 4, 3);
+    test!(8, 57, 5, 4);
+    test!(8, 57, 6, 5);
+    test!(8, 57, 7, 6);
+    test!(8, 57, 8, 7);
+    test!(8, 57, 9, 8);
+    test!(8, 57, 10, 9);
 }

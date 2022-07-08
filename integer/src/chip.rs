@@ -84,7 +84,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // TODO: external integer might have different parameter settings
         a: &AssignedInteger<T, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let to_be_reduced = self.new_assigned_integer(&a.limbs(), a.native());
+        let to_be_reduced = self.new_assigned_integer(a.limbs(), a.native().clone());
         self.reduce(ctx, &to_be_reduced)
     }
 
@@ -121,7 +121,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             } else {
                 BIT_LEN_LIMB
             };
-            let decomposed_limb = main_gate.to_bits(ctx, &integer.limb(idx), number_of_bits)?;
+            let decomposed_limb = main_gate.to_bits(ctx, integer.limb(idx), number_of_bits)?;
             decomposed.extend(decomposed_limb);
         }
 
@@ -369,7 +369,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for idx in 0..NUMBER_OF_LIMBS {
-            main_gate.assert_equal(ctx, &a.limb(idx), &b.limb(idx))?;
+            main_gate.assert_equal(ctx, a.limb(idx), b.limb(idx))?;
         }
         Ok(())
     }
@@ -428,9 +428,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(ctx, &a.limb(i))?;
+            main_gate.assert_zero(ctx, a.limb(i))?;
         }
-        main_gate.assert_one(ctx, &a.limb(0))
+        main_gate.assert_one(ctx, a.limb(0))
     }
 
     fn assert_strict_bit(
@@ -440,9 +440,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for i in 1..NUMBER_OF_LIMBS {
-            main_gate.assert_zero(ctx, &a.limb(i))?;
+            main_gate.assert_zero(ctx, a.limb(i))?;
         }
-        main_gate.assert_bit(ctx, &a.limb(0))
+        main_gate.assert_bit(ctx, a.limb(0))
     }
 
     fn select(
@@ -456,7 +456,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         let mut limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
         for i in 0..NUMBER_OF_LIMBS {
-            let res = main_gate.select(ctx, &a.limb(i), &b.limb(i), cond)?;
+            let res = main_gate.select(ctx, a.limb(i), b.limb(i), cond)?;
 
             let max_val = if a.limbs[i].max_val > b.limbs[i].max_val {
                 a.limbs[i].max_val.clone()
@@ -467,7 +467,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.select(ctx, &a.native(), &b.native(), cond)?;
+        let native_value = main_gate.select(ctx, a.native(), b.native(), cond)?;
 
         Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native_value))
     }
@@ -485,14 +485,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         for i in 0..NUMBER_OF_LIMBS {
             let b_limb = b.limb(i);
 
-            let res = main_gate.select_or_assign(ctx, &a.limb(i), b_limb.fe(), cond)?;
+            let res = main_gate.select_or_assign(ctx, a.limb(i), b_limb.fe(), cond)?;
 
             // here we assume given constant is always in field
             let max_val = a.limbs[i].max_val();
             limbs.push(AssignedLimb::from(res, max_val));
         }
 
-        let native_value = main_gate.select_or_assign(ctx, &a.native(), b.native(), cond)?;
+        let native_value = main_gate.select_or_assign(ctx, a.native(), b.native(), cond)?;
 
         Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native_value))
     }
@@ -513,7 +513,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedCondition<N>, Error> {
         self.assert_in_field(ctx, a)?;
-        self.main_gate().sign(ctx, &a.limb(0))
+        self.main_gate().sign(ctx, a.limb(0))
     }
 }
 
@@ -553,6 +553,7 @@ mod tests {
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
     use rand_core::OsRng;
+    use std::cell::RefCell;
     use std::rc::Rc;
 
     const NUMBER_OF_LIMBS: usize = 4;
@@ -707,6 +708,7 @@ mod tests {
 
             #[derive(Clone, Debug)]
             struct $circuit_name<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+                end_of_row: RefCell<usize>,
                 rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
             }
 
@@ -763,6 +765,9 @@ mod tests {
                     // should fail
                     // let a = t.new_from_big(rns.max_operand.clone() + 1usize);
                     // integer_chip.assign_integer(ctx, a.into(), Range::Operand)?
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -803,6 +808,9 @@ mod tests {
                     assert_eq!(reduced_1.max_val(), self.rns.max_remainder);
                     integer_chip.assert_equal(ctx, reduced_0, reduced_1)?;
                     integer_chip.assert_strict_equal(ctx, reduced_0, reduced_1)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -832,6 +840,9 @@ mod tests {
                     integer_chip.assert_not_equal(ctx, a, b)?;
                     integer_chip.assert_equal(ctx, a, a)?;
                     integer_chip.assert_not_zero(ctx, a)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -906,6 +917,8 @@ mod tests {
                     let inv = &integer_chip.assign_integer(ctx, inv.into(), Range::Remainder)?;
                     integer_chip.mul_into_one(ctx, a, inv)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -953,6 +966,8 @@ mod tests {
                     integer_chip.assert_equal(ctx, c_0, c_1)?;
                     integer_chip.assert_strict_equal(ctx, c_0, c_1)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -982,6 +997,9 @@ mod tests {
                     // let a = t.new_from_big(rns.wrong_modulus.clone());
                     // let a = &integer_chip.assign_integer(ctx, a.into(), Range::Remainder)?;
                     // integer_chip.assert_in_field(ctx, a)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1092,6 +1110,8 @@ mod tests {
 
                     // must fail
                     // integer_chip.div_incomplete(ctx, a, &zero)?;
+
+                    *self.end_of_row.borrow_mut() = *offset;
 
                     Ok(())
                 },
@@ -1330,6 +1350,8 @@ mod tests {
                         integer_chip.assert_equal(ctx, c_0, &c_1)?;
                     }
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1416,6 +1438,8 @@ mod tests {
                     integer_chip.assert_strict_equal(ctx, &a, &selected)?;
                     assert_eq!(a.max_val(), selected.max_val());
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1458,6 +1482,9 @@ mod tests {
                             }
                         }
                     }
+
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1493,6 +1520,8 @@ mod tests {
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
                     main_gate.assert_one(ctx, &assigned_sign)?;
 
+                    *self.end_of_row.borrow_mut() = *offset;
+
                     Ok(())
                 },
             )?;
@@ -1507,13 +1536,14 @@ mod tests {
             $(
                 let (rns, k):(Rns<$wrong_field, $native_field, NUMBER_OF_LIMBS, $bit_len_limb>, u32) = setup();
 
-                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns: Rc::new(rns) };
+                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { end_of_row: RefCell::new(0), rns: Rc::new(rns) };
                 let public_inputs = vec![vec![]];
                 let prover = match MockProver::run(k, &circuit, public_inputs) {
                     Ok(prover) => prover,
                     Err(e) => panic!("{:#?}", e),
                 };
-                assert_eq!(prover.verify(), Ok(()));
+                let rows = 0..circuit.end_of_row.take();
+                assert_eq!(prover.verify_at_rows_par(rows.clone(), rows), Ok(()));
             )*
         };
     }

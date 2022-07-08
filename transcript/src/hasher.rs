@@ -215,7 +215,7 @@ impl<
                     .0
                     .iter()
                     .zip(row.iter())
-                    .map(|(e, word)| Term::Assigned(e.clone(), *word))
+                    .map(|(e, word)| Term::Assigned(e, *word))
                     .collect::<Vec<Term<F>>>();
 
                 self.main_gate().compose(ctx, &terms[..], F::zero())
@@ -242,7 +242,7 @@ impl<
             .0
             .iter()
             .zip(mds.row().iter())
-            .map(|(e, word)| Term::Assigned(e.clone(), *word))
+            .map(|(e, word)| Term::Assigned(e, *word))
             .collect::<Vec<Term<F>>>();
         let mut new_state = vec![self.main_gate().compose(ctx, &terms[..], F::zero())?];
 
@@ -251,8 +251,8 @@ impl<
             new_state.push(self.main_gate().compose(
                 ctx,
                 &[
-                    Term::Assigned(self.state.0[0].clone(), *e),
-                    Term::Assigned(word.clone(), F::one()),
+                    Term::Assigned(&self.state.0[0], *e),
+                    Term::Assigned(word, F::one()),
                 ],
                 F::zero(),
             )?);
