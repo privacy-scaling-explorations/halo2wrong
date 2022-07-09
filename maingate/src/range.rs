@@ -3,33 +3,33 @@ use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
 use crate::halo2::circuit::Layouter;
 use crate::halo2::circuit::Value;
-use crate::halo2::plonk::{ConstraintSystem, Error};
+use crate::halo2::plonk::{ConstraintSystem, Error, Expression};
 use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{MainGateInstructions, Term};
 use crate::AssignedValue;
+use halo2wrong::halo2::plonk::Column;
+use halo2wrong::halo2::plonk::Fixed;
 use halo2wrong::utils::decompose;
 use halo2wrong::RegionCtx;
 use num_integer::Integer;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 /// Maximum number of cells in one line enabled with composition selector
 pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct TableConfig {
-    selector: Selector,
-    column: TableColumn,
-}
-
-impl TableConfig {}
 
 /// Range gate configuration
 #[derive(Clone, Debug)]
 pub struct RangeConfig {
     main_gate_config: MainGateConfig,
-    composition_tables: BTreeMap<usize, TableConfig>,
-    overflow_tables: BTreeMap<usize, TableConfig>,
+    bit_len_tag: BTreeMap<usize, usize>,
+    t_tag: TableColumn,
+    t_value: TableColumn,
+    s_composition: Selector,
+    tag_composition: Option<Column<Fixed>>,
+    s_overflow: Option<Selector>,
+    tag_overflow: Option<Column<Fixed>>,
 }
 
 /// ['RangeChip'] applies binary range constraints
@@ -77,10 +77,8 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
         bit_len: usize,
     ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error>;
 
-    /// Appends base limb length table in sythnesis time
-    fn load_composition_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
-    /// Appends shorter range tables in sythesis time
-    fn load_overflow_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
+    /// Load table in sythnesis time
+    fn load_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
@@ -115,72 +113,89 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             .map(|(limb, base)| Term::Unassigned(limb, *base))
             .collect();
 
-        let composition_table = self
-            .config
-            .composition_tables
-            .get(&limb_bit_len)
-            .expect(&format!(
-                "composition table is not set, bit lenght: {}",
-                limb_bit_len,
-            ));
         self.main_gate()
-            .decompose(ctx, &terms[..], F::zero(), |is_last| {
-                if is_last && overflow_bit_len != 0 {
-                    let overflow_table =
-                        self.config
-                            .overflow_tables
-                            .get(&overflow_bit_len)
-                            .expect(&format!(
-                                "overflow table is not set, bit lenght: {}",
-                                overflow_bit_len
-                            ));
-                    vec![composition_table.selector, overflow_table.selector]
-                } else {
-                    vec![composition_table.selector]
+            .decompose(ctx, &terms[..], F::zero(), |ctx, is_last| {
+                let composition_tag =
+                    self.config
+                        .bit_len_tag
+                        .get(&limb_bit_len)
+                        .unwrap_or_else(|| {
+                            panic!("composition table is not set, bit lenght: {limb_bit_len}")
+                        });
+                ctx.enable(self.config.s_composition)?;
+                if let Some(tag_composition) = self.config.tag_composition {
+                    ctx.assign_fixed(
+                        || "tag_composition",
+                        tag_composition,
+                        F::from(*composition_tag as u64),
+                    )?;
                 }
+
+                if is_last && overflow_bit_len != 0 {
+                    let overflow_tag = self
+                        .config
+                        .bit_len_tag
+                        .get(&overflow_bit_len)
+                        .unwrap_or_else(|| {
+                            panic!("overflow table is not set, bit lenght: {overflow_bit_len}")
+                        });
+                    ctx.enable(self.config.s_overflow.unwrap())?;
+                    if let Some(tag_overflow) = self.config.tag_overflow {
+                        ctx.assign_fixed(
+                            || "tag_overflow",
+                            tag_overflow,
+                            F::from(*overflow_tag as u64),
+                        )?;
+                    }
+                }
+
+                Ok(())
             })
     }
 
-    fn load_composition_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        for (bit_len, config) in self.config.composition_tables.iter() {
-            let table_values: Vec<F> = (0..1 << bit_len).map(|e| F::from(e)).collect();
-            layouter.assign_table(
-                || "",
-                |mut table| {
-                    for (index, &value) in table_values.iter().enumerate() {
-                        table.assign_cell(
-                            || "composition table",
-                            config.column,
-                            index,
-                            || Value::known(value),
-                        )?;
-                    }
-                    Ok(())
-                },
-            )?;
-        }
+    fn load_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        layouter.assign_table(
+            || "",
+            |mut table| {
+                let mut offset = 0;
 
-        Ok(())
-    }
+                table.assign_cell(
+                    || "table tag",
+                    self.config.t_tag,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
+                table.assign_cell(
+                    || "table value",
+                    self.config.t_value,
+                    offset,
+                    || Value::known(F::zero()),
+                )?;
+                offset += 1;
 
-    fn load_overflow_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        for (bit_len, config) in self.config.overflow_tables.iter() {
-            let table_values: Vec<F> = (0..1 << bit_len).map(|e| F::from(e)).collect();
-            layouter.assign_table(
-                || "",
-                |mut table| {
-                    for (index, &value) in table_values.iter().enumerate() {
+                for (bit_len, tag) in self.config.bit_len_tag.iter() {
+                    let tag = F::from(*tag as u64);
+                    let table_values: Vec<F> = (0..1 << bit_len).map(|e| F::from(e)).collect();
+                    for value in table_values.iter() {
                         table.assign_cell(
-                            || "composition table",
-                            config.column,
-                            index,
-                            || Value::known(value),
+                            || "table tag",
+                            self.config.t_tag,
+                            offset,
+                            || Value::known(tag),
                         )?;
+                        table.assign_cell(
+                            || "table value",
+                            self.config.t_value,
+                            offset,
+                            || Value::known(*value),
+                        )?;
+                        offset += 1;
                     }
-                    Ok(())
-                },
-            )?;
-        }
+                }
+
+                Ok(())
+            },
+        )?;
 
         Ok(())
     }
@@ -191,13 +206,17 @@ impl<F: FieldExt> RangeChip<F> {
     pub fn new(config: RangeConfig) -> Self {
         let main_gate = MainGate::new(config.main_gate_config.clone());
         let bases = config
-            .composition_tables
+            .bit_len_tag
             .keys()
-            .map(|&bit_len| {
-                let bases = (0..F::NUM_BITS as usize / bit_len)
-                    .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
-                    .collect();
-                (bit_len, bases)
+            .filter_map(|&bit_len| {
+                if bit_len == 0 {
+                    None
+                } else {
+                    let bases = (0..F::NUM_BITS as usize / bit_len)
+                        .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
+                        .collect();
+                    Some((bit_len, bases))
+                }
             })
             .collect();
         Self {
@@ -215,19 +234,42 @@ impl<F: FieldExt> RangeChip<F> {
         composition_bit_lens: Vec<usize>,
         overflow_bit_lens: Vec<usize>,
     ) -> RangeConfig {
-        let mut overflow_bit_lens = overflow_bit_lens;
-        overflow_bit_lens.sort_unstable();
-        overflow_bit_lens.dedup();
-        let overflow_bit_lens: Vec<usize> =
-            overflow_bit_lens.into_iter().filter(|e| *e != 0).collect();
+        let [composition_bit_lens, overflow_bit_lens] = [composition_bit_lens, overflow_bit_lens]
+            .map(|mut bit_lens| {
+                bit_lens.sort_unstable();
+                bit_lens.dedup();
+                bit_lens
+            });
 
-        let mut composition_bit_lens = composition_bit_lens;
-        composition_bit_lens.sort_unstable();
-        composition_bit_lens.dedup();
-        let composition_bit_lens: Vec<usize> = composition_bit_lens
-            .into_iter()
-            .filter(|e| *e != 0)
-            .collect();
+        let has_overflow_limb = !overflow_bit_lens.is_empty();
+        let bit_len_tag = BTreeMap::from_iter(
+            BTreeSet::from_iter(composition_bit_lens.iter().chain(overflow_bit_lens.iter()))
+                .into_iter()
+                .enumerate()
+                .map(|(idx, bit_len)| (*bit_len, idx + 1)),
+        );
+
+        let t_tag = meta.lookup_table_column();
+        let t_value = meta.lookup_table_column();
+
+        macro_rules! lookup {
+            ($prefix:literal, $selector:ident, $tag:ident, $bit_lens:ident, [$($value:ident),*]) => {
+                $(
+                    meta.lookup(concat!($prefix, stringify!($value)), |meta| {
+                        let selector = meta.query_selector($selector);
+                        let tag = match $tag {
+                            Some(tag) =>  meta.query_fixed(tag, Rotation::cur()),
+                            None => {
+                                let tag = F::from(bit_len_tag[&$bit_lens[0]] as u64);
+                                selector.clone() * Expression::Constant(tag)
+                            },
+                        };
+                        let value = meta.query_advice($value, Rotation::cur());
+                        vec![(tag, t_tag), (selector * value, t_value)]
+                    });
+                )*
+            };
+        }
 
         // TODO: consider for a generic MainGateConfig
         let (a, b, c, d) = (
@@ -237,44 +279,43 @@ impl<F: FieldExt> RangeChip<F> {
             main_gate_config.d,
         );
 
-        macro_rules! meta_lookup {
-            ($prefix:literal, $column:expr, $table_config:expr) => {
-                meta.lookup(concat!($prefix, "_", stringify!($column)), |meta| {
-                    let exp = meta.query_advice($column, Rotation::cur());
-                    let s = meta.query_selector($table_config.selector);
-                    vec![(exp * s, $table_config.column)]
-                });
-            };
-        }
+        let s_composition = meta.complex_selector();
+        let tag_composition = if composition_bit_lens.len() > 1 {
+            Some(meta.fixed_column())
+        } else {
+            None
+        };
+        lookup!(
+            "composition",
+            s_composition,
+            tag_composition,
+            composition_bit_lens,
+            [a, b, c, d]
+        );
 
-        let mut composition_tables = BTreeMap::<usize, TableConfig>::new();
-        let mut overflow_tables = BTreeMap::<usize, TableConfig>::new();
-
-        for bit_len in composition_bit_lens.iter() {
-            let config = TableConfig {
-                selector: meta.complex_selector(),
-                column: meta.lookup_table_column(),
+        let (s_overflow, tag_overflow) = if has_overflow_limb {
+            let s_overflow = meta.complex_selector();
+            let tag_overflow = if overflow_bit_lens.len() > 1 {
+                Some(meta.fixed_column())
+            } else {
+                None
             };
-            meta_lookup!("composition", a, config);
-            meta_lookup!("composition", b, config);
-            meta_lookup!("composition", c, config);
-            meta_lookup!("composition", d, config);
-            composition_tables.insert(*bit_len, config);
-        }
-        for bit_len in overflow_bit_lens.iter() {
-            let config = TableConfig {
-                selector: meta.complex_selector(),
-                column: meta.lookup_table_column(),
-            };
+            lookup!("overflow", s_overflow, tag_overflow, overflow_bit_lens, [a]);
 
-            meta_lookup!("overflow", a, config);
-            overflow_tables.insert(*bit_len, config);
-        }
+            (Some(s_overflow), tag_overflow)
+        } else {
+            (None, None)
+        };
 
         RangeConfig {
             main_gate_config: main_gate_config.clone(),
-            composition_tables,
-            overflow_tables,
+            bit_len_tag,
+            t_tag,
+            t_value,
+            s_composition,
+            tag_composition,
+            s_overflow,
+            tag_overflow,
         }
     }
 
@@ -408,8 +449,7 @@ mod tests {
                 },
             )?;
 
-            range_chip.load_composition_tables(&mut layouter)?;
-            range_chip.load_overflow_tables(&mut layouter)?;
+            range_chip.load_table(&mut layouter)?;
 
             Ok(())
         }

@@ -49,12 +49,8 @@ impl<
         ecc_chip: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<N>>, Error> {
-        let mut encoded: Vec<AssignedValue<N>> = point
-            .x()
-            .limbs()
-            .iter()
-            .map(|limb| limb.into())
-            .collect();
+        let mut encoded: Vec<AssignedValue<N>> =
+            point.x().limbs().iter().map(|limb| limb.into()).collect();
         encoded.push(ecc_chip.sign(ctx, point)?);
         Ok(encoded)
     }
@@ -89,10 +85,7 @@ impl<
         _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<N>>, Error> {
-        Ok(vec![
-            point.x().native().clone(),
-            point.y().native().clone(),
-        ])
+        Ok(vec![point.x().native().clone(), point.y().native().clone()])
     }
 
     fn encode(point: C) -> Option<Vec<N>> {
@@ -234,8 +227,7 @@ mod tests {
 
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
             let range_chip = RangeChip::<N>::new(self.range_config.clone());
-            range_chip.load_composition_tables(layouter)?;
-            range_chip.load_overflow_tables(layouter)?;
+            range_chip.load_table(layouter)?;
 
             Ok(())
         }

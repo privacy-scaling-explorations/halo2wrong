@@ -200,8 +200,7 @@ mod tests {
             layouter: &mut impl Layouter<N>,
         ) -> Result<(), Error> {
             let range_chip = RangeChip::<N>::new(self.range_config.clone());
-            range_chip.load_composition_tables(layouter)?;
-            range_chip.load_overflow_tables(layouter)?;
+            range_chip.load_table(layouter)?;
 
             Ok(())
         }
