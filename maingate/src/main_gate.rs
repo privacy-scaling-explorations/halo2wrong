@@ -84,6 +84,13 @@ pub struct MainGateConfig {
     pub(crate) instance: Column<Instance>,
 }
 
+impl MainGateConfig {
+    /// Returns advice columns of `MainGateConfig`
+    pub fn advices(&self) -> [Column<Advice>; WIDTH] {
+        [self.a, self.b, self.c, self.d, self.e]
+    }
+}
+
 /// MainGate implements instructions with [`MainGateConfig`]
 #[derive(Clone, Debug)]
 pub struct MainGate<F: FieldExt> {
