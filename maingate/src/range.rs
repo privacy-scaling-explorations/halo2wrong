@@ -67,7 +67,7 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
     /// Assigns new witness
     fn assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
         limb_bit_len: usize,
         bit_len: usize,
@@ -76,7 +76,7 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
     /// Decomposes and assign new witness
     fn decompose(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
         limb_bit_len: usize,
         bit_len: usize,
@@ -91,7 +91,7 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
 impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     fn assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
         limb_bit_len: usize,
         bit_len: usize,
@@ -102,7 +102,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 
     fn decompose(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
         limb_bit_len: usize,
         bit_len: usize,
@@ -378,9 +378,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     for input in self.inputs.iter() {
                         let value = input.value;

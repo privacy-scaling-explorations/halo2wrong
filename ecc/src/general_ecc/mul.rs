@@ -17,7 +17,7 @@ impl<
     /// Pads scalar up to the next window_size mul
     fn pad(
         &self,
-        region: &mut RegionCtx<'_, '_, N>,
+        region: &mut RegionCtx<'_, N>,
         bits: &mut Vec<AssignedCondition<N>>,
         window_size: usize,
     ) -> Result<(), Error> {
@@ -57,7 +57,7 @@ impl<
     /// additions for selections
     fn make_incremental_table(
         &self,
-        region: &mut RegionCtx<'_, '_, N>,
+        region: &mut RegionCtx<'_, N>,
         aux: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
@@ -73,7 +73,7 @@ impl<
     /// Selects a point in > 2 sized table using a selector
     fn select_multi(
         &self,
-        region: &mut RegionCtx<'_, '_, N>,
+        region: &mut RegionCtx<'_, N>,
         selector: &Selector<N>,
         table: &Table<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -96,7 +96,7 @@ impl<
     /// Performed with the sliding-window algorithm
     pub fn mul(
         &self,
-        region: &mut RegionCtx<'_, '_, N>,
+        region: &mut RegionCtx<'_, N>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         scalar: &AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
@@ -134,7 +134,7 @@ impl<
     #[allow(clippy::type_complexity)]
     pub fn mul_batch_1d_horizontal(
         &self,
-        region: &mut RegionCtx<'_, '_, N>,
+        region: &mut RegionCtx<'_, N>,
         pairs: Vec<(
             AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
             AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,

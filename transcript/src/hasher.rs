@@ -35,7 +35,7 @@ impl<
     // Constructs new hasher chip with assigned initial state
     pub(crate) fn new(
         // TODO: we can remove initial state assingment in construction
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         spec: &Spec<F, T, RATE>,
         main_gate_config: &MainGateConfig,
     ) -> Result<Self, Error> {
@@ -117,11 +117,7 @@ impl<
     > HasherChip<F, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>
 {
     /// Applies full state sbox then adds constants to each word in the state
-    fn sbox_full(
-        &mut self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        constants: &[F; T],
-    ) -> Result<(), Error> {
+    fn sbox_full(&mut self, ctx: &mut RegionCtx<'_, F>, constants: &[F; T]) -> Result<(), Error> {
         let main_gate = self.main_gate();
         for (word, constant) in self.state.0.iter_mut().zip(constants.iter()) {
             let t = main_gate.mul(ctx, word, word)?;
@@ -133,7 +129,7 @@ impl<
 
     /// Applies sbox to the first word then adds constants to each word in the
     /// state
-    fn sbox_part(&mut self, ctx: &mut RegionCtx<'_, '_, F>, constant: F) -> Result<(), Error> {
+    fn sbox_part(&mut self, ctx: &mut RegionCtx<'_, F>, constant: F) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let word = &mut self.state.0[0];
         let t = main_gate.mul(ctx, word, word)?;
@@ -146,7 +142,7 @@ impl<
     // Adds pre constants and chunked inputs to the state.
     fn absorb_with_pre_constants(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         //
         // * inputs size equals to RATE: absorbing
         // * inputs size is less then RATE but not 0: padding
@@ -200,11 +196,7 @@ impl<
     }
 
     /// Applies MDS State multiplication
-    fn apply_mds(
-        &mut self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        mds: &[[F; T]; T],
-    ) -> Result<(), Error> {
+    fn apply_mds(&mut self, ctx: &mut RegionCtx<'_, F>, mds: &[[F; T]; T]) -> Result<(), Error> {
         // Calculate new state
         let new_state = mds
             .iter()
@@ -233,7 +225,7 @@ impl<
     /// Applies sparse MDS to the state
     fn apply_sparse_mds(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         mds: &SparseMDSMatrix<F, T, RATE>,
     ) -> Result<(), Error> {
         // For the 0th word
@@ -269,7 +261,7 @@ impl<
     /// Constrains poseidon permutation while mutating the given state
     pub(crate) fn permutation(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         inputs: Vec<AssignedValue<F>>,
     ) -> Result<(), Error> {
         let r_f = self.r_f_half();
@@ -306,10 +298,7 @@ impl<
         Ok(())
     }
 
-    pub(crate) fn hash(
-        &mut self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-    ) -> Result<AssignedValue<F>, Error> {
+    pub(crate) fn hash(&mut self, ctx: &mut RegionCtx<'_, F>) -> Result<AssignedValue<F>, Error> {
         // Get elements to be hashed
         let input_elements = self.absorbing.clone();
         // Flush the input que

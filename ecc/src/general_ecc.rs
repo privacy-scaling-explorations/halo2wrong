@@ -195,7 +195,7 @@ impl<
     /// Returned as `AssignedPoint`
     pub fn assign_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         point: Emulated,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let coords = point.coordinates();
@@ -211,7 +211,7 @@ impl<
     /// Takes `Point` of the EC and returns it as `AssignedPoint`
     pub fn assign_point(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         point: Value<Emulated>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
@@ -232,7 +232,7 @@ impl<
     /// Assigns the auxiliary generator point
     pub fn assign_aux_generator(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         aux_generator: Value<Emulated>,
     ) -> Result<(), Error> {
         let aux_generator_assigned = self.assign_point(ctx, aux_generator)?;
@@ -244,7 +244,7 @@ impl<
     /// n_pairs)
     pub fn assign_aux(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         window_size: usize,
         number_of_pairs: usize,
     ) -> Result<(), Error> {
@@ -264,7 +264,7 @@ impl<
     /// Constraints to ensure `AssignedPoint` is on curve
     pub fn assert_is_on_curve(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.base_field_chip();
@@ -280,7 +280,7 @@ impl<
     /// Constraints assert two `AssignedPoint`s are equal
     pub fn assert_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         p0: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p1: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
@@ -292,7 +292,7 @@ impl<
     /// Selects between 2 `AssignedPoint` determined by an `AssignedCondition`
     pub fn select(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         c: &AssignedCondition<N>,
         p1: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p2: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -307,7 +307,7 @@ impl<
     /// determined by an `AssignedCondition`
     pub fn select_or_assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         c: &AssignedCondition<N>,
         p1: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p2: Emulated,
@@ -322,7 +322,7 @@ impl<
     /// Normalizes an `AssignedPoint` by reducing each of its coordinates
     pub fn normalize(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
@@ -334,7 +334,7 @@ impl<
     /// Adds 2 distinct `AssignedPoints`
     pub fn add(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         p0: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p1: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -351,7 +351,7 @@ impl<
     /// Doubles an `AssignedPoint`
     pub fn double(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         p: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         // point must be asserted to be in curve and not infinity
@@ -361,7 +361,7 @@ impl<
     /// Given an `AssignedPoint` $P$ computes P * 2^logn
     pub fn double_n(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         p: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         logn: usize,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -376,7 +376,7 @@ impl<
     /// Given 2 `AssignedPoint` $P$ and $Q$ efficiently computes $2*P + Q$
     pub fn ladder(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         to_double: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         to_add: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -386,7 +386,7 @@ impl<
     /// Returns the negative or inverse of an `AssignedPoint`
     pub fn neg(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         p: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.base_field_chip();
@@ -406,17 +406,24 @@ mod tests {
     use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
     use crate::integer::{AssignedInteger, IntegerInstructions};
     use crate::maingate;
-    use group::{Curve as _, Group};
+    use group::{prime::PrimeCurveAffine, Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
-    use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::rns::Integer;
     use integer::Range;
+    use maingate::mock_prover_verify;
     use maingate::{
         MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
     };
+    use paste::paste;
     use rand_core::OsRng;
+
+    use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
+    use crate::curves::pasta::{
+        EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
+    };
+    use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
@@ -498,7 +505,7 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Default)]
     struct TestEccAddition<
         C: CurveAffine,
         N: FieldExt,
@@ -532,9 +539,9 @@ mod tests {
                 GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = C::Curve::random(OsRng);
                     let b = C::Curve::random(OsRng);
@@ -589,23 +596,10 @@ mod tests {
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
-            let (_, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(0);
-            let circuit = TestEccAddition::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-                _marker: PhantomData,
-            };
-            let public_inputs = vec![vec![]];
-            let prover = match MockProver::run(k, &circuit, public_inputs) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-            assert_eq!(prover.verify(), Ok(()));
+            let circuit = TestEccAddition::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::default();
+            let instance = vec![vec![]];
+            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
-
-        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
-        use crate::curves::pasta::{
-            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
-        };
-        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
         run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
@@ -661,9 +655,9 @@ mod tests {
 
             let sum = layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = self.a;
                     let b = self.b;
@@ -677,9 +671,9 @@ mod tests {
 
             let sum = layouter.assign_region(
                 || "region 1",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = self.a;
                     let a = ecc_chip.assign_point(ctx, a)?;
@@ -703,7 +697,7 @@ mod tests {
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
-            let (rns_base, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(0);
+            let (rns_base, _, _) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(0);
             let rns_base = Rc::new(rns_base);
 
             let a = C::Curve::random(OsRng).to_affine();
@@ -718,20 +712,11 @@ mod tests {
             let circuit = TestEccPublicInput::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                 a: Value::known(a),
                 b: Value::known(b),
-                _marker: PhantomData,
+                ..Default::default()
             };
-            let prover = match MockProver::run(k, &circuit, vec![public_data]) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-            assert_eq!(prover.verify(), Ok(()));
+            let instance = vec![public_data];
+            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
-        // TODO: add secp256k1
-        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
-        use crate::curves::pasta::{
-            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
-        };
-        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
         run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
@@ -788,9 +773,9 @@ mod tests {
 
             layouter.assign_region(
                 || "assign aux values",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
                     ecc_chip.get_mul_aux(self.window_size, 1)?;
@@ -800,10 +785,10 @@ mod tests {
 
             layouter.assign_region(
                 || "region mul",
-                |mut region| {
+                |region| {
                     use group::ff::Field;
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let base = C::Curve::random(OsRng);
                     let s = C::Scalar::random(OsRng);
@@ -839,31 +824,18 @@ mod tests {
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
-            let (_, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(20);
             for window_size in 1..5 {
                 let aux_generator = C::Curve::random(OsRng).to_affine();
 
                 let circuit = TestEccMul::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     aux_generator,
                     window_size,
-                    _marker: PhantomData,
+                    ..Default::default()
                 };
-
-                let public_inputs = vec![vec![]];
-                let prover = match MockProver::run(k, &circuit, public_inputs) {
-                    Ok(prover) => prover,
-                    Err(e) => panic!("{:#?}", e),
-                };
-                assert_eq!(prover.verify(), Ok(()));
+                let instance = vec![vec![]];
+                assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
             }
         }
-
-        // TODO: add secp256k1
-        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
-        use crate::curves::pasta::{
-            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
-        };
-        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
         run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
         run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
@@ -922,9 +894,9 @@ mod tests {
 
             layouter.assign_region(
                 || "assign aux values",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
                     ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
@@ -934,10 +906,10 @@ mod tests {
 
             layouter.assign_region(
                 || "region mul",
-                |mut region| {
+                |region| {
                     use group::ff::Field;
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let mut acc = C::Curve::identity();
                     let pairs: Vec<(
@@ -974,57 +946,43 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_general_ecc_mul_batch_circuit() {
-        fn run<
-            C: CurveAffine,
-            N: FieldExt,
-            const NUMBER_OF_LIMBS: usize,
-            const BIT_LEN_LIMB: usize,
-        >() {
-            let (_, _, k) = setup::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(20);
-            for number_of_pairs in 5..7 {
-                for window_size in 1..3 {
-                    let aux_generator = C::Curve::random(OsRng).to_affine();
+    macro_rules! test_general_ecc_mul_batch_circuit {
+        ($C:ty, $N:ty, $NUMBER_OF_LIMBS:expr, $BIT_LEN_LIMB:expr) => {
+            paste! {
+                #[test]
+                fn [<test_general_ecc_mul_batch_circuit_ $C:lower _ $N:lower>]() {
+                    for number_of_pairs in 5..7 {
+                        for window_size in 1..3 {
+                            let aux_generator = <$C as PrimeCurveAffine>::Curve::random(OsRng).to_affine();
 
-                    let circuit = TestEccBatchMul::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-                        aux_generator,
-                        window_size,
-                        number_of_pairs,
-                        _marker: PhantomData,
-                    };
-
-                    let public_inputs = vec![vec![]];
-                    let prover = match MockProver::run(k, &circuit, public_inputs) {
-                        Ok(prover) => prover,
-                        Err(e) => panic!("{:#?}", e),
-                    };
-                    assert_eq!(prover.verify(), Ok(()));
+                            let circuit = TestEccBatchMul::<$C, $N, $NUMBER_OF_LIMBS, $BIT_LEN_LIMB> {
+                                aux_generator,
+                                window_size,
+                                number_of_pairs,
+                                ..Default::default()
+                            };
+                            let instance = vec![vec![]];
+                            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                        }
+                    }
                 }
             }
         }
-
-        // TODO: add secp256k1
-        use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
-        use crate::curves::pasta::{
-            EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
-        };
-        use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
-
-        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-
-        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-
-        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-
-        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
     }
+
+    test_general_ecc_mul_batch_circuit!(Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+
+    test_general_ecc_mul_batch_circuit!(Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+
+    test_general_ecc_mul_batch_circuit!(Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+
+    test_general_ecc_mul_batch_circuit!(Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
 }

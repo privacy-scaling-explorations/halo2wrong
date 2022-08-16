@@ -138,7 +138,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn assign_to_column(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
         column: MainGateColumn,
     ) -> Result<AssignedValue<F>, Error> {
@@ -157,7 +157,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn sub_sub_with_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b_0: &AssignedValue<F>,
         b_1: &AssignedValue<F>,
@@ -186,7 +186,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn select(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         cond: &AssignedCondition<F>,
@@ -231,7 +231,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn select_or_assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: F,
         cond: &AssignedCondition<F>,
@@ -288,7 +288,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn apply<'t>(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         terms: impl IntoIterator<Item = Term<'t, F>> + 't,
         constant: F,
         option: CombinationOption<F>,
@@ -407,7 +407,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     }
 
     /// Skip this row without any operation
-    fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
+    fn no_operation(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
         ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
         ctx.assign_fixed(|| "sc", self.config.sc, F::zero())?;
@@ -573,9 +573,9 @@ mod tests {
 
             let value = layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let value = main_gate.assign_value(ctx, Value::known(self.public_input))?;
                     Ok(value)
                 },
@@ -632,9 +632,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     // OneLinerAdd
                     {
@@ -906,9 +906,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     if self.neg_path {
                         let minus_one = -F::one();
@@ -986,9 +986,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let rand = || -> F { F::random(OsRng) };
 
@@ -1106,9 +1106,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = rand();
                     let b = rand();
@@ -1257,9 +1257,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = rand();
                     let b = rand();
@@ -1372,9 +1372,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = rand();
                     let number_of_bits = F::NUM_BITS as usize;
@@ -1464,9 +1464,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     for number_of_terms in 1..50 {
                         let constant = rand();
@@ -1531,9 +1531,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = F::from(20u64);
                     let assigned = main_gate.assign_value(ctx, Value::known(a))?;

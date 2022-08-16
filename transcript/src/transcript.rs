@@ -15,7 +15,7 @@ pub trait PointRepresentation<
 >
 {
     fn encode(
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         ecc_chip: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error>;
@@ -28,7 +28,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     PointRepresentation<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB> for LimbRepresentation
 {
     fn encode(
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         ecc_chip: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
@@ -52,7 +52,7 @@ impl LimbRepresentation {
         const T: usize,
         const RATE: usize,
     >(
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         spec: &Spec<C::Scalar, T, RATE>,
         ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<TranscriptChip<Self, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>, Error> {
@@ -67,7 +67,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     PointRepresentation<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB> for NativeRepresentation
 {
     fn encode(
-        _: &mut RegionCtx<'_, '_, C::Scalar>,
+        _: &mut RegionCtx<'_, C::Scalar>,
         _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
@@ -87,7 +87,7 @@ impl NativeRepresentation {
         const T: usize,
         const RATE: usize,
     >(
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         spec: &Spec<C::Scalar, T, RATE>,
         ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<TranscriptChip<Self, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>, Error> {
@@ -120,7 +120,7 @@ impl<
 {
     /// Constructs the transcript chip
     pub fn new(
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         spec: &Spec<C::Scalar, T, RATE>,
         ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN>,
     ) -> Result<Self, Error> {
@@ -142,7 +142,7 @@ impl<
     /// Write point to the transcript
     pub fn write_point(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN>,
     ) -> Result<(), Error> {
         let encoded = E::encode(ctx, &self.ecc_chip, point)?;
@@ -153,7 +153,7 @@ impl<
     // Constrain squeezing new challenge
     pub fn squeeze(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
     ) -> Result<AssignedValue<C::Scalar>, Error> {
         self.hasher_chip.hash(ctx)
     }
@@ -161,13 +161,12 @@ impl<
 
 #[cfg(test)]
 mod tests {
-
     use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::Layouter;
     use crate::halo2::circuit::SimpleFloorPlanner;
-    use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::Error;
     use crate::halo2::plonk::{Circuit, ConstraintSystem};
+    use crate::maingate::mock_prover_verify;
     use crate::maingate::MainGate;
     use crate::maingate::MainGateConfig;
     use crate::maingate::{MainGateInstructions, RegionCtx};
@@ -180,6 +179,7 @@ mod tests {
     use ecc::BaseFieldEccChip;
     use ecc::EccConfig;
     use group::ff::Field;
+    use paste::paste;
     use poseidon::Poseidon;
     use poseidon::Spec;
     use rand_core::OsRng;
@@ -261,9 +261,9 @@ mod tests {
             // compare results
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let mut transcript_chip =
                         LimbRepresentation::new::<_, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>(
@@ -290,55 +290,44 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_permutation() {
-        use crate::curves::bn256::{Fr, G1Affine};
-        const K: u32 = 20;
+    macro_rules! test {
+        ($RF:expr, $RP:expr, $T:expr, $RATE:expr) => {
+            paste! {
+                #[test]
+                fn [<test_permutation_ $RF _ $RP _ $T _ $RATE>]() {
+                    use crate::curves::bn256::{Fr, G1Affine};
+                    for number_of_inputs in 0..3*$T {
 
-        macro_rules! run_test {
-            (
-                $([$RF:expr, $RP:expr, $T:expr, $RATE:expr]),*
-            ) => {
-                $(
-                    {
+                        let mut ref_hasher = Poseidon::<Fr, $T, $RATE>::new($RF, $RP);
+                        let spec = Spec::<Fr, $T, $RATE>::new($RF, $RP);
 
-                        for number_of_inputs in 0..3*$T {
+                        let inputs: Vec<Fr> = (0..number_of_inputs)
+                            .map(|_| Fr::random(OsRng))
+                            .collect::<Vec<Fr>>();
 
-                            let mut ref_hasher = Poseidon::<Fr, $T, $RATE>::new($RF, $RP);
-                            let spec = Spec::<Fr, $T, $RATE>::new($RF, $RP);
+                        ref_hasher.update(&inputs[..]);
+                        let expected = ref_hasher.squeeze();
 
-                            let inputs: Vec<Fr> = (0..number_of_inputs)
-                                .map(|_| Fr::random(OsRng))
-                                .collect::<Vec<Fr>>();
-
-                            ref_hasher.update(&inputs[..]);
-                            let expected = ref_hasher.squeeze();
-
-                            let circuit: TestCircuit<G1Affine, $T, $RATE> = TestCircuit {
-                                spec: spec.clone(),
-                                n: number_of_inputs,
-                                inputs: Value::known(inputs),
-                                expected: Value::known(expected),
-                            };
-                            let public_inputs = vec![vec![]];
-                            let prover = match MockProver::run(K, &circuit, public_inputs) {
-                                Ok(prover) => prover,
-                                Err(e) => panic!("{:#?}", e),
-                            };
-                            assert_eq!(prover.verify(), Ok(()));
-                        }
+                        let circuit: TestCircuit<G1Affine, $T, $RATE> = TestCircuit {
+                            spec: spec.clone(),
+                            n: number_of_inputs,
+                            inputs: Value::known(inputs),
+                            expected: Value::known(expected),
+                        };
+                        let instance = vec![vec![]];
+                        assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
                     }
-                )*
-            };
-        }
-
-        run_test!([8, 57, 3, 2]);
-        run_test!([8, 57, 4, 3]);
-        run_test!([8, 57, 5, 4]);
-        run_test!([8, 57, 6, 5]);
-        run_test!([8, 57, 7, 6]);
-        run_test!([8, 57, 8, 7]);
-        run_test!([8, 57, 9, 8]);
-        run_test!([8, 57, 10, 9]);
+                }
+            }
+        };
     }
+
+    test!(8, 57, 3, 2);
+    test!(8, 57, 4, 3);
+    test!(8, 57, 5, 4);
+    test!(8, 57, 6, 5);
+    test!(8, 57, 7, 6);
+    test!(8, 57, 8, 7);
+    test!(8, 57, 9, 8);
+    test!(8, 57, 10, 9);
 }
