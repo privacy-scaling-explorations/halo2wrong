@@ -35,7 +35,7 @@ pub struct RangeConfig {
 }
 
 /// ['RangeChip'] applies binary range constraints
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
     _marker: PhantomData<F>,

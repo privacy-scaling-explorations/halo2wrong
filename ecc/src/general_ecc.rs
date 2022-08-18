@@ -24,12 +24,10 @@ pub struct GeneralEccChip<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    /// Chip configuration
-    config: EccConfig,
-    /// Rns for EC base field
-    rns_base_field: Rc<Rns<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
-    /// Rns for EC scalar field
-    rns_scalar_field: Rc<Rns<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+    /// `IntegerChip` for the base field of the EC
+    base_field_chip: IntegerChip<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    /// `IntegerChip` for the scalar field of the EC
+    scalar_field_chip: IntegerChip<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     /// Auxiliary point for optimized multiplication algorithm
     aux_generator: Option<(
         AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -61,10 +59,10 @@ impl<
     /// Return `GeneralEccChip` from `EccConfig`
     pub fn new(config: EccConfig) -> Self {
         let (rns_base_field, rns_scalar_field) = Self::rns();
+        let integer_config = config.integer_chip_config();
         Self {
-            config,
-            rns_base_field: Rc::new(rns_base_field),
-            rns_scalar_field: Rc::new(rns_scalar_field),
+            base_field_chip: IntegerChip::new(integer_config.clone(), Rc::new(rns_base_field)),
+            scalar_field_chip: IntegerChip::new(integer_config, Rc::new(rns_scalar_field)),
             aux_generator: None,
             aux_registry: BTreeMap::new(),
         }
@@ -73,13 +71,13 @@ impl<
     /// Residue numeral system for the base field of the curve
     /// Return new refence for chips' rns base field
     pub fn rns_base(&self) -> Rc<Rns<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
-        Rc::clone(&self.rns_base_field)
+        self.base_field_chip.rns()
     }
 
     /// Residue numeral system for the scalar field of the curve
     /// Return new refence for chips' rns scalar field
     pub fn rns_scalar(&self) -> Rc<Rns<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
-        Rc::clone(&self.rns_scalar_field)
+        self.scalar_field_chip.rns()
     }
 
     /// Assign Rns base for chip
@@ -99,26 +97,22 @@ impl<
     }
 
     /// Return `IntegerChip` for the base field of the EC
-    pub fn base_field_chip(&self) -> IntegerChip<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        IntegerChip::new(
-            self.config.integer_chip_config(),
-            Rc::clone(&self.rns_base_field),
-        )
+    pub fn base_field_chip(
+        &self,
+    ) -> &IntegerChip<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.base_field_chip
     }
 
     /// Return `IntegerChip` for the scalar field of the EC
     pub fn scalar_field_chip(
         &self,
-    ) -> IntegerChip<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        IntegerChip::new(
-            self.config.integer_chip_config(),
-            Rc::clone(&self.rns_scalar_field),
-        )
+    ) -> &IntegerChip<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.scalar_field_chip
     }
 
     /// Return `Maingate` of the `GeneralEccChip`
-    pub fn main_gate(&self) -> MainGate<N> {
-        MainGate::<N>::new(self.config.main_gate_config())
+    pub fn main_gate(&self) -> &MainGate<N> {
+        self.base_field_chip.main_gate()
     }
 
     /// Returns a `Point` (Rns representation) from a point in the emulated EC
@@ -131,14 +125,14 @@ impl<
         // it will not pass assing point enforcement
         let coords = coords.unwrap();
 
-        let x = Integer::from_fe(*coords.x(), Rc::clone(&self.rns_base_field));
-        let y = Integer::from_fe(*coords.y(), Rc::clone(&self.rns_base_field));
+        let x = Integer::from_fe(*coords.x(), self.rns_base());
+        let y = Integer::from_fe(*coords.y(), self.rns_base());
         Point { x, y }
     }
 
     /// Returns emulated EC constant $b$
     fn parameter_b(&self) -> Integer<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        Integer::from_fe(Emulated::b(), Rc::clone(&self.rns_base_field))
+        Integer::from_fe(Emulated::b(), self.rns_base())
     }
 
     /// Auxilary point for optimized multiplication algorithm
@@ -769,7 +763,6 @@ mod tests {
             let ecc_chip_config = config.ecc_chip_config();
             let mut ecc_chip =
                 GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
-            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "assign aux values",
@@ -782,6 +775,8 @@ mod tests {
                     Ok(())
                 },
             )?;
+
+            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "region mul",
@@ -890,7 +885,6 @@ mod tests {
             let ecc_chip_config = config.ecc_chip_config();
             let mut ecc_chip =
                 GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
-            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "assign aux values",
@@ -903,6 +897,8 @@ mod tests {
                     Ok(())
                 },
             )?;
+
+            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "region mul",

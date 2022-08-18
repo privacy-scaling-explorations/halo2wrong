@@ -85,7 +85,7 @@ pub struct MainGateConfig {
 }
 
 /// MainGate implements instructions with [`MainGateConfig`]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MainGate<F: FieldExt> {
     config: MainGateConfig,
     _marker: PhantomData<F>,

@@ -173,6 +173,7 @@ mod tests {
     use crate::transcript::LimbRepresentation;
     use ecc::halo2::arithmetic::CurveAffine;
     use ecc::halo2::circuit::Value;
+    use ecc::integer::rns::Rns;
     use ecc::maingate::RangeChip;
     use ecc::maingate::RangeConfig;
     use ecc::maingate::RangeInstructions;
@@ -199,7 +200,7 @@ mod tests {
         }
 
         fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
-            let rns = BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
+            let rns = Rns::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct();
 
             let main_gate_config = MainGate::<C::Scalar>::configure(meta);
             let overflow_bit_lens = rns.overflow_lengths();

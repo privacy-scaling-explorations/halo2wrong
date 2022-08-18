@@ -22,10 +22,8 @@ mod mul;
 #[allow(clippy::type_complexity)]
 pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
-    /// Chip configuration
-    config: EccConfig,
-    /// Rns for EC base field
-    pub(crate) rns: Rc<Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+    /// `IntegerChip` for the base field of the EC
+    integer_chip: IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     /// Auxiliary point for optimized multiplication algorithm
     aux_generator: Option<(
         AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -42,10 +40,8 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
     /// Return `BaseEccChip` from `EccConfig`
     pub fn new(config: EccConfig) -> Self {
-        let rns = Self::rns();
         Self {
-            config,
-            rns: Rc::new(rns),
+            integer_chip: IntegerChip::new(config.integer_chip_config(), Rc::new(Rns::construct())),
             aux_generator: None,
             aux_registry: BTreeMap::new(),
         }
@@ -53,22 +49,18 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 
     /// Residue numeral system
     /// Used to emulate `C::Base` (wrong field) over `C::Scalar` (native field)
-    pub fn rns() -> Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        Rns::construct()
+    pub fn rns(&self) -> Rc<Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+        self.integer_chip.rns()
     }
 
     /// Returns `IntegerChip` for the base field of the emulated EC
-    pub fn integer_chip(&self) -> IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let integer_chip_config = self.config.integer_chip_config();
-        IntegerChip::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
-            integer_chip_config,
-            Rc::clone(&self.rns),
-        )
+    pub fn integer_chip(&self) -> &IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.integer_chip
     }
 
     /// Return `Maingate` of the `GeneralEccChip`
-    pub fn main_gate(&self) -> MainGate<C::Scalar> {
-        MainGate::<_>::new(self.config.main_gate_config())
+    pub fn main_gate(&self) -> &MainGate<C::Scalar> {
+        self.integer_chip.main_gate()
     }
 
     /// Returns a `Point` (Rns representation) from a point in the emulated EC
@@ -81,14 +73,14 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         // it will not pass assing point enforcement
         let coords = coords.unwrap();
 
-        let x = Integer::from_fe(*coords.x(), Rc::clone(&self.rns));
-        let y = Integer::from_fe(*coords.y(), Rc::clone(&self.rns));
+        let x = Integer::from_fe(*coords.x(), self.rns());
+        let y = Integer::from_fe(*coords.y(), self.rns());
         Point { x, y }
     }
 
     /// Returns emulated EC constant $b$
     fn parameter_b(&self) -> Integer<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        Integer::from_fe(C::b(), Rc::clone(&self.rns))
+        Integer::from_fe(C::b(), self.rns())
     }
 
     /// Auxilary point for optimized multiplication algorithm
@@ -409,7 +401,7 @@ mod tests {
 
     impl TestCircuitConfig {
         fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
-            let rns = BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
+            let rns = Rns::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct();
 
             let main_gate_config = MainGate::<C::Scalar>::configure(meta);
             let overflow_bit_lens = rns.overflow_lengths();

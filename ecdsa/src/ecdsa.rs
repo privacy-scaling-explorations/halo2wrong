@@ -77,7 +77,9 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         Self(ecc_chip)
     }
 
-    pub fn scalar_field_chip(&self) -> IntegerChip<E::ScalarExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn scalar_field_chip(
+        &self,
+    ) -> &IntegerChip<E::ScalarExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self.0.scalar_field_chip()
     }
 
@@ -236,7 +238,6 @@ mod tests {
             let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
                 config.ecc_chip_config(),
             );
-            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "assign aux values",
@@ -251,6 +252,7 @@ mod tests {
             )?;
 
             let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
+            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "region 0",

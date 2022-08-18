@@ -41,15 +41,17 @@ impl IntegerConfig {
 }
 
 /// Chip for integer instructions
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct IntegerChip<
     W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    /// Chip configuration
-    config: IntegerConfig,
+    /// RangeChip
+    range_chip: RangeChip<N>,
+    /// MainGate
+    main_gate: MainGate<N>,
     /// Residue number system used to represent the integers
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
@@ -522,18 +524,26 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     /// Create new ['IntegerChip'] with the configuration and a shared [`Rns`]
     pub fn new(config: IntegerConfig, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
-        IntegerChip { config, rns }
+        IntegerChip {
+            range_chip: RangeChip::new(config.range_config),
+            main_gate: MainGate::new(config.main_gate_config),
+            rns,
+        }
     }
 
     /// Getter for [`RangeChip`]
-    pub fn range_chip(&self) -> RangeChip<N> {
-        RangeChip::<N>::new(self.config.range_config.clone())
+    pub fn range_chip(&self) -> &RangeChip<N> {
+        &self.range_chip
     }
 
     /// Getter for [`MainGate`]
-    pub fn main_gate(&self) -> MainGate<N> {
-        let main_gate_config = self.config.main_gate_config.clone();
-        MainGate::<N>::new(main_gate_config)
+    pub fn main_gate(&self) -> &MainGate<N> {
+        &self.main_gate
+    }
+
+    /// Getter for [`Rns`]
+    pub fn rns(&self) -> Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+        Rc::clone(&self.rns)
     }
 }
 

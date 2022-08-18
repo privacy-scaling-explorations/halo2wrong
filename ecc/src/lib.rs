@@ -143,11 +143,6 @@ impl EccConfig {
     pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
-
-    /// Returns new `MainGateConfig`
-    pub(crate) fn main_gate_config(&self) -> MainGateConfig {
-        self.main_gate_config.clone()
-    }
 }
 
 /// Finds a point we need to subtract from the end result in the efficient batch
