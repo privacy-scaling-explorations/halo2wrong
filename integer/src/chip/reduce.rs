@@ -17,9 +17,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ctx: &mut RegionCtx<'_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let exceeds_max_limb_value = a.limbs.iter().fold(false, |must_reduce, limb| {
-            must_reduce | (limb.max_val() > self.rns.max_unreduced_limb)
-        });
+        let exceeds_max_limb_value = a
+            .limbs
+            .iter()
+            .any(|limb| limb.max_val() > self.rns.max_unreduced_limb);
         {
             // Sanity check for completeness
 
@@ -27,9 +28,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             // to make it more than a single limb. However even single limb will
             // support quite amount of lazy additions and make reduction process
             // much easier.
-            let max_reduction_quotient = &self.rns.max_reduced_limb;
-            let max_reducible_value = max_reduction_quotient * self.rns.wrong_modulus.clone()
-                + self.rns.max_remainder.clone();
+            let max_reduction_quotient = self.rns.max_reduced_limb.clone();
+            let max_reducible_value =
+                max_reduction_quotient * &self.rns.wrong_modulus + &self.rns.max_remainder;
             assert!(a.max_val() < max_reducible_value);
         }
         if exceeds_max_limb_value {
@@ -46,9 +47,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         ctx: &mut RegionCtx<'_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let exceeds_max_limb_value = a.limbs.iter().fold(false, |must_reduce, limb| {
-            must_reduce | (limb.max_val() > self.rns.max_reduced_limb)
-        });
+        let exceeds_max_limb_value = a
+            .limbs
+            .iter()
+            .any(|limb| limb.max_val() > self.rns.max_reduced_limb);
         if exceeds_max_limb_value {
             self.reduce(ctx, a)
         } else {

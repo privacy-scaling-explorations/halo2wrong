@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-use std::marker::PhantomData;
-
 use super::main_gate::{MainGate, MainGateConfig};
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
@@ -14,6 +11,7 @@ use crate::AssignedValue;
 use halo2wrong::utils::decompose;
 use halo2wrong::RegionCtx;
 use num_integer::Integer;
+use std::collections::BTreeMap;
 
 /// Maximum number of cells in one line enabled with composition selector
 pub const NUMBER_OF_LOOKUP_LIMBS: usize = 4;
@@ -38,16 +36,13 @@ pub struct RangeConfig {
 #[derive(Clone, Debug)]
 pub struct RangeChip<F: FieldExt> {
     config: RangeConfig,
-    _marker: PhantomData<F>,
+    main_gate: MainGate<F>,
+    bases: BTreeMap<usize, Vec<F>>,
 }
 
 impl<F: FieldExt> RangeChip<F> {
-    fn main_gate_config(&self) -> MainGateConfig {
-        self.config.main_gate_config.clone()
-    }
-
-    fn main_gate(&self) -> MainGate<F> {
-        MainGate::<F>::new(self.main_gate_config())
+    fn main_gate(&self) -> &MainGate<F> {
+        &self.main_gate
     }
 }
 
@@ -107,21 +102,17 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
         limb_bit_len: usize,
         bit_len: usize,
     ) -> Result<(AssignedValue<F>, Vec<AssignedValue<F>>), Error> {
-        // let number_of_limbs = bit_len % base_bit_len;
         let (number_of_limbs, overflow_bit_len) = bit_len.div_rem(&limb_bit_len);
 
         let number_of_limbs = number_of_limbs + if overflow_bit_len > 0 { 1 } else { 0 };
-        let bases = Self::bases(number_of_limbs, limb_bit_len);
-        let decomposed =
-            unassigned.map(|unassigned| decompose(unassigned, number_of_limbs, limb_bit_len));
+        let decomposed = unassigned
+            .map(|unassigned| decompose(unassigned, number_of_limbs, limb_bit_len))
+            .transpose_vec(number_of_limbs);
 
-        let terms: Vec<Term<F>> = bases
+        let terms: Vec<Term<F>> = decomposed
             .into_iter()
-            .enumerate()
-            .map(|(i, base)| {
-                let limb = decomposed.as_ref().map(|limb| limb[i]);
-                Term::Unassigned(limb, base)
-            })
+            .zip(self.bases(limb_bit_len))
+            .map(|(limb, base)| Term::Unassigned(limb, *base))
             .collect();
 
         let composition_table = self
@@ -131,24 +122,24 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             .unwrap_or_else(|| {
                 panic!("composition table is not set, bit lenght: {}", limb_bit_len)
             });
-        let main_gate = self.main_gate();
-        main_gate.decompose(ctx, &terms[..], F::zero(), |is_last| {
-            if is_last && overflow_bit_len != 0 {
-                let overflow_table = self
-                    .config
-                    .overflow_tables
-                    .get(&overflow_bit_len)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "overflow table is not set, bit lenght: {}",
-                            overflow_bit_len
-                        )
-                    });
-                vec![composition_table.selector, overflow_table.selector]
-            } else {
-                vec![composition_table.selector]
-            }
-        })
+        self.main_gate()
+            .decompose(ctx, &terms[..], F::zero(), |is_last| {
+                if is_last && overflow_bit_len != 0 {
+                    let overflow_table = self
+                        .config
+                        .overflow_tables
+                        .get(&overflow_bit_len)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "overflow table is not set, bit lenght: {}",
+                                overflow_bit_len
+                            )
+                        });
+                    vec![composition_table.selector, overflow_table.selector]
+                } else {
+                    vec![composition_table.selector]
+                }
+            })
     }
 
     fn load_composition_tables(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
@@ -197,18 +188,23 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
 }
 
 impl<F: FieldExt> RangeChip<F> {
-    fn bases(number_of_limbs: usize, bit_len: usize) -> Vec<F> {
-        assert!(number_of_limbs * bit_len > 0);
-        (0..number_of_limbs)
-            .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
-            .collect()
-    }
-
     /// Given config creates new chip that implements ranging
     pub fn new(config: RangeConfig) -> Self {
+        let main_gate = MainGate::new(config.main_gate_config.clone());
+        let bases = config
+            .composition_tables
+            .keys()
+            .map(|&bit_len| {
+                let bases = (0..F::NUM_BITS as usize / bit_len)
+                    .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
+                    .collect();
+                (bit_len, bases)
+            })
+            .collect();
         Self {
             config,
-            _marker: PhantomData,
+            main_gate,
+            bases,
         }
     }
 
@@ -281,6 +277,13 @@ impl<F: FieldExt> RangeChip<F> {
             composition_tables,
             overflow_tables,
         }
+    }
+
+    fn bases(&self, limb_bit_len: usize) -> &[F] {
+        self.bases
+            .get(&limb_bit_len)
+            .unwrap_or_else(|| panic!("composition table is not set, bit lenght: {}", limb_bit_len))
+            .as_slice()
     }
 }
 
@@ -393,18 +396,10 @@ mod tests {
 
                         main_gate.assert_equal(ctx, &a_0, &a_1)?;
 
-                        use num_integer::Integer;
-                        let (number_of_limbs, overflow_bit_len) = bit_len.div_rem(&limb_bit_len);
-                        let number_of_limbs =
-                            number_of_limbs + if overflow_bit_len != 0 { 1 } else { 0 };
-
-                        let bases = RangeChip::<F>::bases(number_of_limbs, limb_bit_len);
-                        assert_eq!(bases.len(), decomposed.len());
-
-                        let terms: Vec<Term<F>> = bases
+                        let terms: Vec<Term<F>> = decomposed
                             .iter()
-                            .zip(decomposed.iter())
-                            .map(|(base, limb)| Term::Assigned(limb, *base))
+                            .zip(range_chip.bases(limb_bit_len))
+                            .map(|(limb, base)| Term::Assigned(limb, *base))
                             .collect();
                         let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;
                         main_gate.assert_equal(ctx, &a_0, &a_1)?;

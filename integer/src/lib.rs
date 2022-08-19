@@ -85,19 +85,19 @@ impl<F: FieldExt> AssignedLimb<F> {
     }
 
     fn add(&self, other: &Self) -> big_uint {
-        self.max_val.clone() + other.max_val.clone()
+        self.max_val.clone() + &other.max_val
     }
 
     fn add_add(&self, other_0: &Self, other_1: &Self) -> big_uint {
-        self.max_val.clone() + other_0.max_val.clone() + other_1.max_val.clone()
+        self.max_val.clone() + &other_0.max_val + &other_1.max_val
     }
 
     fn mul2(&self) -> big_uint {
-        self.max_val.clone() + self.max_val.clone()
+        self.max_val.clone() + &self.max_val
     }
 
     fn mul3(&self) -> big_uint {
-        self.max_val.clone() + self.max_val.clone() + self.max_val.clone()
+        self.max_val.clone() + &self.max_val + &self.max_val
     }
 
     fn add_big(&self, other: big_uint) -> big_uint {
@@ -118,21 +118,12 @@ pub struct UnassignedInteger<
     const BIT_LEN_LIMB: usize,
 >(Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
-impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     From<Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
     for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn from(integer: Value<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
         UnassignedInteger(integer)
-    }
-}
-
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-    UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
-{
-    /// Returns indexed limb as `Value`
-    fn limb(&self, idx: usize) -> Value<N> {
-        self.0.as_ref().map(|e| e.limb(idx).fe())
     }
 }
 
@@ -152,7 +143,7 @@ pub struct AssignedInteger<
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<'a, W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Creates a new [`AssignedInteger`].

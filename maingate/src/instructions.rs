@@ -1013,11 +1013,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
         // Remove zero iterms
-        let terms: Vec<Term<F>> = terms
-            .to_vec()
-            .into_iter()
-            .filter(|e| !e.is_zero())
-            .collect();
+        let terms: Vec<Term<F>> = terms.iter().filter(|e| !e.is_zero()).cloned().collect();
 
         // Last cell will be allocated for result or intermediate sums.
         let chunk_width: usize = WIDTH - 1;
@@ -1119,11 +1115,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
         // Remove zero iterms
-        let terms: Vec<Term<F>> = terms
-            .to_vec()
-            .into_iter()
-            .filter(|e| !e.is_zero())
-            .collect();
+        let terms: Vec<Term<F>> = terms.iter().filter(|e| !e.is_zero()).cloned().collect();
 
         let one_liner = terms.len() <= WIDTH;
 

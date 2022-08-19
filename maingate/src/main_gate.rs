@@ -122,7 +122,7 @@ impl<F: FieldExt> From<CombinationOptionCommon<F>> for CombinationOption<F> {
     }
 }
 
-impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
+impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     type CombinationOption = CombinationOption<F>;
     type MainGateColumn = MainGateColumn;
 
