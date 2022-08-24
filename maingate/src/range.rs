@@ -119,22 +119,21 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             .config
             .composition_tables
             .get(&limb_bit_len)
-            .unwrap_or_else(|| {
-                panic!("composition table is not set, bit lenght: {}", limb_bit_len)
-            });
+            .expect(&format!(
+                "composition table is not set, bit lenght: {}",
+                limb_bit_len,
+            ));
         self.main_gate()
             .decompose(ctx, &terms[..], F::zero(), |is_last| {
                 if is_last && overflow_bit_len != 0 {
-                    let overflow_table = self
-                        .config
-                        .overflow_tables
-                        .get(&overflow_bit_len)
-                        .unwrap_or_else(|| {
-                            panic!(
+                    let overflow_table =
+                        self.config
+                            .overflow_tables
+                            .get(&overflow_bit_len)
+                            .expect(&format!(
                                 "overflow table is not set, bit lenght: {}",
                                 overflow_bit_len
-                            )
-                        });
+                            ));
                     vec![composition_table.selector, overflow_table.selector]
                 } else {
                     vec![composition_table.selector]

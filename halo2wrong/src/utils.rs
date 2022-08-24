@@ -86,7 +86,7 @@ impl Dimension {
             - ([self.instance, self.advice, self.fixed]
                 .into_iter()
                 .max_by(Ord::cmp)
-                .unwrap()
+                .expect("Unexpected empty column iterator")
                 + self.blinding_factor)
                 .next_power_of_two()
                 .leading_zeros()

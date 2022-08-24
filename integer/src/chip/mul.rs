@@ -168,7 +168,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
 
         // Constrain binary part of crt
-        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), &result, residues)?;
+        self.constrain_binary_crt(
+            ctx,
+            &t.try_into()
+                .expect("Unexpected failure in AssignedCell -> AssignedValue conversion"),
+            &result,
+            residues,
+        )?;
 
         // Constrain native part of crt
         main_gate.apply(
@@ -235,7 +241,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         // Constrain binary part of crt
-        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), &result, residues)?;
+        self.constrain_binary_crt(
+            ctx,
+            &t.try_into()
+                .expect("Unexpected failure in AssignedCell -> AssignedValue conversion"),
+            &result,
+            residues,
+        )?;
 
         // Update native value
         main_gate.apply(

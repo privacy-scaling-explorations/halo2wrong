@@ -126,7 +126,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         // 6. reduce q_x in E::ScalarExt
         // assuming E::Base/E::ScalarExt have the same number of limbs
-        let q_x = q.get_x();
+        let q_x = q.x();
         let q_x_reduced_in_q = base_chip.reduce(ctx, q_x)?;
         let q_x_reduced_in_r = scalar_chip.reduce_external(ctx, &q_x_reduced_in_q)?;
 

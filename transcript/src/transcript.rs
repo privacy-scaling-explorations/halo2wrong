@@ -32,12 +32,8 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         ecc_chip: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
-        let mut encoded: Vec<AssignedValue<C::Scalar>> = point
-            .get_x()
-            .limbs()
-            .iter()
-            .map(|limb| limb.into())
-            .collect();
+        let mut encoded: Vec<AssignedValue<C::Scalar>> =
+            point.x().limbs().iter().map(|limb| limb.into()).collect();
         encoded.push(ecc_chip.sign(ctx, point)?);
         Ok(encoded)
     }
@@ -71,10 +67,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
-        Ok(vec![
-            point.get_x().native().clone(),
-            point.get_y().native().clone(),
-        ])
+        Ok(vec![point.x().native().clone(), point.y().native().clone()])
     }
 }
 

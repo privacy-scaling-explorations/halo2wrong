@@ -38,7 +38,7 @@ pub enum Term<'a, F: FieldExt> {
 }
 
 impl<'a, F: FieldExt> Term<'a, F> {
-    pub(crate) fn is_zero(&self) -> bool {
+    pub(crate) const fn is_zero(&self) -> bool {
         matches!(self, Term::Zero)
     }
 }

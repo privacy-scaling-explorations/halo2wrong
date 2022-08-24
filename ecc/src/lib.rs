@@ -65,12 +65,12 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Returns $x$ coordinate
-    pub fn get_x(&self) -> &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn x(&self) -> &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         &self.x
     }
 
     /// Returns $y$ coordinate
-    pub fn get_y(&self) -> &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn y(&self) -> &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         &self.y
     }
 }
@@ -112,12 +112,12 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Returns $x$ coordinate
-    pub fn get_x(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn x(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         &self.x
     }
 
     /// Returns $y$ coordinate
-    pub fn get_y(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn y(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         &self.y
     }
 }
