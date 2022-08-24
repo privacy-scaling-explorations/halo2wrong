@@ -12,7 +12,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     pub(super) fn div_generic(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<
@@ -31,7 +31,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     #[allow(clippy::needless_range_loop)]
     pub(crate) fn div_incomplete_generic(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         b: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -54,7 +54,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let quotient = witness.long();
 
         let range_chip = self.range_chip();
-        let result = &self.assign_integer(ctx, result.into(), Range::Remainder)?;
+        let result = self.assign_integer(ctx, result.into(), Range::Remainder)?;
 
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
         let residues = witness
@@ -79,19 +79,20 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 }
                 .into();
 
-                let t_i = (&main_gate.apply(
-                    ctx,
-                    &[
-                        Term::Assigned(result.limb(j), zero),
-                        Term::Assigned(b.limb(k), zero),
-                        Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
-                        Term::Zero,
-                        Term::Unassigned(intermediate_value, -one),
-                    ],
-                    zero,
-                    combination_option,
-                )?[4])
-                    .clone();
+                let t_i = main_gate
+                    .apply(
+                        ctx,
+                        [
+                            Term::Assigned(result.limb(j), zero),
+                            Term::Assigned(b.limb(k), zero),
+                            Term::Assigned(quotient.limb(k), negative_wrong_modulus[j]),
+                            Term::Zero,
+                            Term::Unassigned(intermediate_value, -one),
+                        ],
+                        zero,
+                        combination_option,
+                    )?
+                    .swap_remove(4);
 
                 if j == 0 {
                     // first time we see t_j assignment
@@ -123,7 +124,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // Constrain native part of crt
         main_gate.apply(
             ctx,
-            &[
+            [
                 Term::Assigned(result.native(), zero),
                 Term::Assigned(b.native(), zero),
                 Term::Assigned(quotient.native(), -self.rns.wrong_modulus_in_native_modulus),
@@ -134,6 +135,6 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
-        Ok(result.clone())
+        Ok(result)
     }
 }

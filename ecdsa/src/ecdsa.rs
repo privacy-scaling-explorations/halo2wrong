@@ -77,7 +77,9 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
         Self(ecc_chip)
     }
 
-    pub fn scalar_field_chip(&self) -> IntegerChip<E::ScalarExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn scalar_field_chip(
+        &self,
+    ) -> &IntegerChip<E::ScalarExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self.0.scalar_field_chip()
     }
 
@@ -91,7 +93,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 {
     pub fn verify(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         sig: &AssignedEcdsaSig<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         pk: &AssignedPublicKey<E::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         msg_hash: &AssignedInteger<E::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -124,8 +126,8 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         // 6. reduce q_x in E::ScalarExt
         // assuming E::Base/E::ScalarExt have the same number of limbs
-        let q_x = q.get_x();
-        let q_x_reduced_in_q = base_chip.reduce(ctx, &q_x)?;
+        let q_x = q.x();
+        let q_x_reduced_in_q = base_chip.reduce(ctx, q_x)?;
         let q_x_reduced_in_r = scalar_chip.reduce_external(ctx, &q_x_reduced_in_q)?;
 
         // 7. check if Q.x == r (mod n)
@@ -151,9 +153,9 @@ mod tests {
     use halo2::arithmetic::CurveAffine;
     use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
-    use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::IntegerInstructions;
+    use maingate::mock_prover_verify;
     use maingate::{MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions};
     use rand_core::OsRng;
     use std::marker::PhantomData;
@@ -236,13 +238,12 @@ mod tests {
             let mut ecc_chip = GeneralEccChip::<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
                 config.ecc_chip_config(),
             );
-            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "assign aux values",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
@@ -251,12 +252,13 @@ mod tests {
             )?;
 
             let ecdsa_chip = EcdsaChip::new(ecc_chip.clone());
+            let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let r = self.signature.map(|signature| signature.0);
                     let s = self.signature.map(|signature| signature.1);
@@ -332,24 +334,17 @@ mod tests {
                 assert_eq!(r, r_candidate);
             }
 
-            let k = 20;
             let aux_generator = C::CurveExt::random(OsRng).to_affine();
             let circuit = TestCircuitEcdsaVerify::<C, N> {
                 public_key: Value::known(public_key),
                 signature: Value::known((r, s)),
                 msg_hash: Value::known(msg_hash),
-
                 aux_generator,
                 window_size: 2,
-                _marker: PhantomData,
+                ..Default::default()
             };
-
-            let public_inputs = vec![vec![]];
-            let prover = match MockProver::run(k, &circuit, public_inputs) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-            assert_eq!(prover.verify(), Ok(()));
+            let instance = vec![vec![]];
+            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
 
         use crate::curves::bn256::Fr as BnScalar;

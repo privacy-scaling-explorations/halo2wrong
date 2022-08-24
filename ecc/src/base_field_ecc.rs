@@ -22,10 +22,8 @@ mod mul;
 #[allow(clippy::type_complexity)]
 pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
-    /// Chip configuration
-    config: EccConfig,
-    /// Rns for EC base field
-    pub(crate) rns: Rc<Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+    /// `IntegerChip` for the base field of the EC
+    integer_chip: IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     /// Auxiliary point for optimized multiplication algorithm
     aux_generator: Option<(
         AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -42,10 +40,8 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 {
     /// Return `BaseEccChip` from `EccConfig`
     pub fn new(config: EccConfig) -> Self {
-        let rns = Self::rns();
         Self {
-            config,
-            rns: Rc::new(rns),
+            integer_chip: IntegerChip::new(config.integer_chip_config(), Rc::new(Rns::construct())),
             aux_generator: None,
             aux_registry: BTreeMap::new(),
         }
@@ -53,22 +49,18 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 
     /// Residue numeral system
     /// Used to emulate `C::Base` (wrong field) over `C::Scalar` (native field)
-    pub fn rns() -> Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        Rns::construct()
+    pub fn rns(&self) -> Rc<Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+        self.integer_chip.rns()
     }
 
     /// Returns `IntegerChip` for the base field of the emulated EC
-    pub fn integer_chip(&self) -> IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let integer_chip_config = self.config.integer_chip_config();
-        IntegerChip::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(
-            integer_chip_config,
-            Rc::clone(&self.rns),
-        )
+    pub fn integer_chip(&self) -> &IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.integer_chip
     }
 
     /// Return `Maingate` of the `GeneralEccChip`
-    pub fn main_gate(&self) -> MainGate<C::Scalar> {
-        MainGate::<_>::new(self.config.main_gate_config())
+    pub fn main_gate(&self) -> &MainGate<C::Scalar> {
+        self.integer_chip.main_gate()
     }
 
     /// Returns a `Point` (Rns representation) from a point in the emulated EC
@@ -81,14 +73,14 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         // it will not pass assing point enforcement
         let coords = coords.unwrap();
 
-        let x = Integer::from_fe(*coords.x(), Rc::clone(&self.rns));
-        let y = Integer::from_fe(*coords.y(), Rc::clone(&self.rns));
+        let x = Integer::from_fe(*coords.x(), self.rns());
+        let y = Integer::from_fe(*coords.y(), self.rns());
         Point { x, y }
     }
 
     /// Returns emulated EC constant $b$
     fn parameter_b(&self) -> Integer<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        Integer::from_fe(C::b(), Rc::clone(&self.rns))
+        Integer::from_fe(C::b(), self.rns())
     }
 
     /// Auxilary point for optimized multiplication algorithm
@@ -124,11 +116,11 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let main_gate = self.main_gate();
 
         let mut offset = offset;
-        for limb in point.get_x().limbs().iter() {
+        for limb in point.x().limbs().iter() {
             main_gate.expose_public(layouter.namespace(|| "x coords"), limb.into(), offset)?;
             offset += 1;
         }
-        for limb in point.get_y().limbs().iter() {
+        for limb in point.y().limbs().iter() {
             main_gate.expose_public(layouter.namespace(|| "y coords"), limb.into(), offset)?;
             offset += 1;
         }
@@ -139,7 +131,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Returned as `AssignedPoint`
     pub fn assign_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: C,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let coords = point.coordinates();
@@ -154,13 +146,15 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Takes `Point` of the EC and returns it as `AssignedPoint`
     pub fn assign_point(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: Value<C>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
 
         let point = point.map(|point| self.to_rns_point(point));
-        let (x, y) = point.map(|point| (point.get_x(), point.get_y())).unzip();
+        let (x, y) = point
+            .map(|point| (point.x().clone(), point.y().clone()))
+            .unzip();
 
         let x = integer_chip.assign_integer(ctx, x.into(), Range::Remainder)?;
         let y = integer_chip.assign_integer(ctx, y.into(), Range::Remainder)?;
@@ -173,7 +167,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Assigns the auxiliary generator point
     pub fn assign_aux_generator(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         aux_generator: Value<C>,
     ) -> Result<(), Error> {
         let aux_generator_assigned = self.assign_point(ctx, aux_generator)?;
@@ -185,7 +179,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// n_pairs)
     pub fn assign_aux(
         &mut self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         window_size: usize,
         number_of_pairs: usize,
     ) -> Result<(), Error> {
@@ -205,14 +199,14 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Constraints to ensure `AssignedPoint` is on curve
     pub fn assert_is_on_curve(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
 
-        let y_square = &integer_chip.square(ctx, &point.get_y())?;
-        let x_square = &integer_chip.square(ctx, &point.get_x())?;
-        let x_cube = &integer_chip.mul(ctx, &point.get_x(), x_square)?;
+        let y_square = &integer_chip.square(ctx, point.y())?;
+        let x_square = &integer_chip.square(ctx, point.x())?;
+        let x_cube = &integer_chip.mul(ctx, point.x(), x_square)?;
         let x_cube_b = &integer_chip.add_constant(ctx, x_cube, &self.parameter_b())?;
         integer_chip.assert_equal(ctx, x_cube_b, y_square)?;
         Ok(())
@@ -221,26 +215,26 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Constraints assert two `AssignedPoint`s are equal
     pub fn assert_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         p0: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let integer_chip = self.integer_chip();
-        integer_chip.assert_equal(ctx, &p0.get_x(), &p1.get_x())?;
-        integer_chip.assert_equal(ctx, &p0.get_y(), &p1.get_y())
+        integer_chip.assert_equal(ctx, p0.x(), p1.x())?;
+        integer_chip.assert_equal(ctx, p0.y(), p1.y())
     }
 
     /// Selects between 2 `AssignedPoint` determined by an `AssignedCondition`
     pub fn select(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         c: &AssignedCondition<C::Scalar>,
         p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p2: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
-        let x = integer_chip.select(ctx, &p1.get_x(), &p2.get_x(), c)?;
-        let y = integer_chip.select(ctx, &p1.get_y(), &p2.get_y(), c)?;
+        let x = integer_chip.select(ctx, p1.x(), p2.x(), c)?;
+        let y = integer_chip.select(ctx, p1.y(), p2.y(), c)?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -248,34 +242,34 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// determined by an `AssignedCondition`
     pub fn select_or_assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         c: &AssignedCondition<C::Scalar>,
         p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p2: C,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
         let p2 = self.to_rns_point(p2);
-        let x = integer_chip.select_or_assign(ctx, &p1.get_x(), &p2.get_x(), c)?;
-        let y = integer_chip.select_or_assign(ctx, &p1.get_y(), &p2.get_y(), c)?;
+        let x = integer_chip.select_or_assign(ctx, p1.x(), p2.x(), c)?;
+        let y = integer_chip.select_or_assign(ctx, p1.y(), p2.y(), c)?;
         Ok(AssignedPoint::new(x, y))
     }
 
     /// Normalizes an `AssignedPoint` by reducing each of its coordinates
     pub fn normalize(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
-        let x = integer_chip.reduce(ctx, &point.get_x())?;
-        let y = integer_chip.reduce(ctx, &point.get_y())?;
+        let x = integer_chip.reduce(ctx, point.x())?;
+        let y = integer_chip.reduce(ctx, point.y())?;
         Ok(AssignedPoint::new(x, y))
     }
 
     /// Adds 2 distinct `AssignedPoints`
     pub fn add(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         p0: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         p1: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -283,8 +277,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         // so that we can use unsafe addition formula which assumes operands are not
         // equal addition to that we strictly disallow addition result to be
         // point of infinity
-        self.integer_chip()
-            .assert_not_equal(ctx, &p0.get_x(), &p1.get_x())?;
+        self.integer_chip().assert_not_equal(ctx, p0.x(), p1.x())?;
 
         self._add_incomplete_unsafe(ctx, p0, p1)
     }
@@ -292,7 +285,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Doubles an `AssignedPoint`
     pub fn double(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         // point must be asserted to be in curve and not infinity
@@ -302,7 +295,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Given an `AssignedPoint` $P$ computes P * 2^logn
     pub fn double_n(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         logn: usize,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -317,7 +310,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Given 2 `AssignedPoint` $P$ and $Q$ efficiently computes $2*P + Q$
     pub fn ladder(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         to_double: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         to_add: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -327,21 +320,21 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Returns the negative or inverse of an `AssignedPoint`
     pub fn neg(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
-        let y_neg = integer_chip.neg(ctx, &p.get_y())?;
-        Ok(AssignedPoint::new(p.get_x(), y_neg))
+        let y_neg = integer_chip.neg(ctx, p.y())?;
+        Ok(AssignedPoint::new(p.x().clone(), y_neg))
     }
 
     /// Returns sign of the assigned point
     pub fn sign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         p: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedCondition<C::Scalar>, Error> {
-        self.integer_chip().sign(ctx, &p.get_y())
+        self.integer_chip().sign(ctx, p.y())
     }
 }
 
@@ -361,13 +354,14 @@ mod tests {
     use group::{Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
-    use halo2::dev::MockProver;
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::maingate::RegionCtx;
+    use maingate::mock_prover_verify;
     use maingate::{
         AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig,
         RangeInstructions,
     };
+    use paste::paste;
     use rand_core::OsRng;
 
     const NUMBER_OF_LIMBS: usize = 4;
@@ -406,7 +400,7 @@ mod tests {
 
     impl TestCircuitConfig {
         fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
-            let rns = BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
+            let rns = Rns::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct();
 
             let main_gate_config = MainGate::<C::Scalar>::configure(meta);
             let overflow_bit_lens = rns.overflow_lengths();
@@ -434,8 +428,8 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Debug)]
-    struct TestEccAddition<C: CurveAffine> {
+    #[derive(Clone, Debug, Default)]
+    struct TestEccAddition<C> {
         _marker: PhantomData<C>,
     }
 
@@ -461,9 +455,9 @@ mod tests {
                 BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = C::CurveExt::random(OsRng);
                     let b = C::CurveExt::random(OsRng);
@@ -513,19 +507,9 @@ mod tests {
     #[test]
     fn test_base_field_ecc_addition_circuit() {
         fn run<C: CurveAffine>() {
-            let (_, k) = setup::<C>(0);
-
-            let circuit = TestEccAddition::<C> {
-                _marker: PhantomData,
-            };
-
-            let public_inputs = vec![vec![]];
-            let prover = match MockProver::run(k, &circuit, public_inputs) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-
-            assert_eq!(prover.verify(), Ok(()));
+            let circuit = TestEccAddition::<C>::default();
+            let instance = vec![vec![]];
+            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
         run::<Bn256>();
         run::<Pallas>();
@@ -561,9 +545,9 @@ mod tests {
 
             let sum = layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = self.a;
                     let b = self.b;
@@ -577,9 +561,9 @@ mod tests {
 
             let sum = layouter.assign_region(
                 || "region 1",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = self.a;
                     let a = ecc_chip.assign_point(ctx, a)?;
@@ -598,7 +582,7 @@ mod tests {
     #[test]
     fn test_base_field_ecc_public_input() {
         fn run<C: CurveAffine>() {
-            let (rns, k) = setup::<C>(20);
+            let (rns, _) = setup::<C>(20);
             let rns = Rc::new(rns);
 
             let a = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
@@ -615,13 +599,8 @@ mod tests {
                 a: Value::known(a),
                 b: Value::known(b),
             };
-
-            let prover = match MockProver::run(k, &circuit, vec![public_data]) {
-                Ok(prover) => prover,
-                Err(e) => panic!("{:#?}", e),
-            };
-
-            assert_eq!(prover.verify(), Ok(()));
+            let instance = vec![public_data];
+            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
 
         run::<Bn256>();
@@ -659,9 +638,9 @@ mod tests {
 
             layouter.assign_region(
                 || "assign aux values",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, 1)?;
                     ecc_chip.get_mul_aux(self.window_size, 1)?;
@@ -671,10 +650,10 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
+                |region| {
                     use group::ff::Field;
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let base = C::CurveExt::random(OsRng);
                     let s = C::Scalar::random(OsRng);
@@ -700,7 +679,6 @@ mod tests {
     #[test]
     fn test_base_field_ecc_mul_circuit() {
         fn run<C: CurveAffine>() {
-            let (_, k) = setup::<C>(20);
             for window_size in 1..5 {
                 let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
@@ -708,13 +686,8 @@ mod tests {
                     aux_generator,
                     window_size,
                 };
-
-                let public_inputs = vec![vec![]];
-                let prover = match MockProver::run(k, &circuit, public_inputs) {
-                    Ok(prover) => prover,
-                    Err(e) => panic!("{:#?}", e),
-                };
-                assert_eq!(prover.verify(), Ok(()));
+                let instance = vec![vec![]];
+                assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
             }
         }
         run::<Bn256>();
@@ -754,9 +727,9 @@ mod tests {
 
             layouter.assign_region(
                 || "assign aux values",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
                     ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
                     ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
@@ -766,10 +739,10 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
+                |region| {
                     use group::ff::Field;
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let mut acc = C::CurveExt::identity();
                     let pairs: Vec<(
@@ -801,33 +774,30 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_base_field_ecc_mul_batch_circuit() {
-        fn run<C: CurveAffine>() {
-            let (_, k) = setup::<C>(20);
+    macro_rules! test_base_field_ecc_mul_batch_circuit {
+        ($C:ty) => {
+            paste! {
+                #[test]
+                fn [<test_base_field_ecc_mul_batch_circuit_ $C:lower>]() {
+                    for number_of_pairs in 5..7 {
+                        for window_size in 1..3 {
+                            let aux_generator = <$C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-            for number_of_pairs in 5..7 {
-                for window_size in 1..3 {
-                    let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
-
-                    let circuit = TestEccBatchMul {
-                        aux_generator,
-                        window_size,
-                        number_of_pairs,
-                    };
-
-                    let public_inputs = vec![vec![]];
-                    let prover = match MockProver::run(k, &circuit, public_inputs) {
-                        Ok(prover) => prover,
-                        Err(e) => panic!("{:#?}", e),
-                    };
-                    assert_eq!(prover.verify(), Ok(()));
+                            let circuit = TestEccBatchMul {
+                                aux_generator,
+                                window_size,
+                                number_of_pairs,
+                            };
+                            let instance = vec![vec![]];
+                            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                        }
+                    }
                 }
             }
-        }
-
-        run::<Bn256>();
-        run::<Pallas>();
-        run::<Vesta>();
+        };
     }
+
+    test_base_field_ecc_mul_batch_circuit!(Bn256);
+    test_base_field_ecc_mul_batch_circuit!(Pallas);
+    test_base_field_ecc_mul_batch_circuit!(Vesta);
 }

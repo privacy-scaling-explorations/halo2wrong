@@ -13,7 +13,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     pub(super) fn assign_integer_generic(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         integer: UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         range: Range,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -30,25 +30,32 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let max_val_msb = (big_uint::one() << bit_len_limb_msb) - 1usize;
         let max_val = (big_uint::one() << BIT_LEN_LIMB) - 1usize;
 
+        let limbs = integer
+            .0
+            .map(|integer| integer.limbs())
+            .transpose_vec(NUMBER_OF_LIMBS);
         let limbs = match range {
-            Range::Unreduced => (0..NUMBER_OF_LIMBS)
-                .map(|i| {
+            Range::Unreduced => limbs
+                .into_iter()
+                .map(|limb| {
                     Ok(AssignedLimb::from(
-                        main_gate.assign_value(ctx, integer.limb(i))?,
+                        main_gate.assign_value(ctx, limb)?,
                         self.rns.max_unreduced_limb.clone(),
                     ))
                 })
                 .collect::<Result<Vec<AssignedLimb<N>>, Error>>(),
             _ => {
-                (0..NUMBER_OF_LIMBS)
-                    .map(|i| {
+                limbs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, limb)| {
                         Ok(
                             // Most significant limb
                             if i == NUMBER_OF_LIMBS - 1 {
                                 AssignedLimb::from(
                                     range_chip.assign(
                                         ctx,
-                                        integer.limb(i),
+                                        limb,
                                         Self::sublimb_bit_len(),
                                         bit_len_limb_msb,
                                     )?,
@@ -60,7 +67,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                                 AssignedLimb::from(
                                     range_chip.assign(
                                         ctx,
-                                        integer.limb(i),
+                                        limb,
                                         Self::sublimb_bit_len(),
                                         BIT_LEN_LIMB,
                                     )?,
@@ -76,18 +83,16 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let limbs_to_compose: Vec<Term<N>> = limbs
             .iter()
             .zip(self.rns.left_shifters.iter())
-            .map(|(limb, sh)| Term::Assigned(limb.into(), *sh))
+            .map(|(limb, sh)| Term::Assigned(limb.as_ref(), *sh))
             .collect();
+        let native = main_gate.compose(ctx, &limbs_to_compose, N::zero())?;
 
-        Ok(self.new_assigned_integer(
-            &limbs.try_into().unwrap(),
-            main_gate.compose(ctx, &limbs_to_compose[..], N::zero())?,
-        ))
+        Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native))
     }
 
     pub(super) fn assign_constant_generic(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         integer: W,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer = Integer::from_fe(integer, Rc::clone(&self.rns));

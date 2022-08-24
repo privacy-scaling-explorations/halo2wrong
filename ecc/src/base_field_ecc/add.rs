@@ -16,7 +16,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Otherwise the function returns an erroneous point.
     pub(crate) fn _add_incomplete_unsafe(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         a: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         b: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -46,7 +46,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// The point provided must not be the point at infinity
     pub(crate) fn _double_incomplete(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let integer_chip = self.integer_chip();
@@ -74,7 +74,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// see: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
     pub(crate) fn _ladder_incomplete(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         to_double: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         to_add: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {

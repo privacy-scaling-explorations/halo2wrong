@@ -20,7 +20,7 @@ impl<
     /// Otherwise the function returns an erroneous point.
     pub(crate) fn _add_incomplete_unsafe(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         a: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         b: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -40,7 +40,7 @@ impl<
         let t = &ch.mul(ctx, t, lambda)?;
         let y = ch.sub(ctx, t, &a.y)?;
 
-        let p_0 = AssignedPoint::new(x.clone(), y);
+        let p_0 = AssignedPoint::new(x, y);
 
         Ok(p_0)
     }
@@ -50,7 +50,7 @@ impl<
     /// The point provided must not be the point at infinity
     pub(crate) fn _double_incomplete(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let ch = self.base_field_chip();
@@ -78,7 +78,7 @@ impl<
     /// see: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
     pub(crate) fn _ladder_incomplete(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         to_double: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         to_add: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {

@@ -12,7 +12,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Pads scalar up to the next window_size mul
     fn pad(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         bits: &mut Vec<AssignedCondition<C::Scalar>>,
         window_size: usize,
     ) -> Result<(), Error> {
@@ -53,7 +53,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// additions for selections
     fn make_incremental_table(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         aux: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
@@ -69,7 +69,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Selects a point in > 2 sized table using a selector
     fn select_multi(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         selector: &Selector<C::Scalar>,
         table: &Table<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
@@ -92,7 +92,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Performed with the sliding-window algorithm
     pub fn mul(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         scalar: &AssignedValue<C::Scalar>,
         window_size: usize,
@@ -131,7 +131,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     #[allow(clippy::type_complexity)]
     pub fn mul_batch_1d_horizontal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         pairs: Vec<(
             AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
             AssignedValue<C::Scalar>,

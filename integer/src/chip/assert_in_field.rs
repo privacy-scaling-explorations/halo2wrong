@@ -10,7 +10,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     pub(super) fn assert_in_field_generic(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         input: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         // Constraints for `NUMBER_OF_LIMBS = 4`
@@ -52,10 +52,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
         main_gate.apply(
             ctx,
-            &[
+            [
                 Term::Assigned(result.limb(0), -one),
                 Term::Assigned(input.limb(0), -one),
-                Term::Assigned(borrow[0].clone(), left_shifter),
+                Term::Assigned(&borrow[0], left_shifter),
                 Term::Zero,
                 Term::Zero,
             ],
@@ -66,11 +66,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         for i in 1..NUMBER_OF_LIMBS - 1 {
             main_gate.apply(
                 ctx,
-                &[
+                [
                     Term::Assigned(result.limb(i), -one),
                     Term::Assigned(input.limb(i), -one),
-                    Term::Assigned(borrow[i].clone(), left_shifter),
-                    Term::Assigned(borrow[i - 1].clone(), -one),
+                    Term::Assigned(&borrow[i], left_shifter),
+                    Term::Assigned(&borrow[i - 1], -one),
                     Term::Zero,
                 ],
                 modulus_minus_one[i],
@@ -81,11 +81,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let last = NUMBER_OF_LIMBS - 1;
         main_gate.apply(
             ctx,
-            &[
+            [
                 Term::Assigned(result.limb(last), -one),
                 Term::Assigned(input.limb(last), -one),
                 Term::Zero,
-                Term::Assigned(borrow[last - 1].clone(), -one),
+                Term::Assigned(&borrow[last - 1], -one),
                 Term::Zero,
             ],
             modulus_minus_one[last],

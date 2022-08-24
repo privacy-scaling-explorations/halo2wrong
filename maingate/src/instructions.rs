@@ -2,22 +2,20 @@
 //! gate. While many of implmentations takes place here they can be overriden
 //! for optimisation purposes.
 
-use halo2wrong::{
-    halo2::plonk::Selector,
-    utils::{big_to_fe, decompose, fe_to_big, power_of_two},
-    RegionCtx,
-};
-
 use crate::{
     halo2::{
         arithmetic::{Field, FieldExt},
         circuit::{Chip, Layouter, Value},
         plonk::Error,
     },
-    ColumnTags, MainGateColumn,
+    AssignedCondition, AssignedValue, ColumnTags, MainGateColumn,
 };
-
-use crate::{AssignedCondition, AssignedValue};
+use halo2wrong::{
+    halo2::plonk::Selector,
+    utils::{big_to_fe, decompose, fe_to_big, power_of_two},
+    RegionCtx,
+};
+use std::iter;
 
 /// `Term`s are input arguments for the current rows that is about to be
 /// constrained in the main gate equation. Three types or terms can be expected.
@@ -30,69 +28,22 @@ use crate::{AssignedCondition, AssignedValue};
 /// `... + assigned_or_unassigned_witness_0 * fixed_0 +
 /// assigned_or_unassigned_witness_1 * fixed_1 + ... `
 #[derive(Clone)]
-pub enum Term<F: FieldExt> {
+pub enum Term<'a, F: FieldExt> {
     /// Assigned value and fixed scalar
-    Assigned(AssignedValue<F>, F),
+    Assigned(&'a AssignedValue<F>, F),
     /// Unassigned witness and fixed scalar
     Unassigned(Value<F>, F),
     /// Empty term
     Zero,
 }
 
-impl<F: FieldExt> Term<F> {
-    /// Given constant `WIDTH` returns all zero terms
-    pub(crate) fn empty<const WIDTH: usize>() -> [Self; WIDTH] {
-        vec![Self::Zero; WIDTH].try_into().unwrap()
-    }
-
-    pub(crate) fn is_zero(&self) -> bool {
+impl<'a, F: FieldExt> Term<'a, F> {
+    pub(crate) const fn is_zero(&self) -> bool {
         matches!(self, Term::Zero)
     }
 }
 
-/// This macro converts an array of terms sized less than `WIDTH` to the `WIDTH`
-/// sized array
-macro_rules! terms {
-    ($arr:expr) => {{
-        assert!($arr.len() < WIDTH + 1);
-        let mut terms = Term::empty();
-        for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
-            *term = e
-        }
-        &terms.clone()
-    }};
-}
-
-/// This macro converts an array of -unchecked sized- terms to the `WIDTH`
-/// sized array
-macro_rules! terms_unsafe {
-    ($arr:expr) => {{
-        let mut terms = Term::empty();
-        for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
-            *term = e.clone()
-        }
-        &terms.clone()
-    }};
-}
-
-/// This macro converts an array of terms sized less than `WIDTH - 1` to the
-/// `WIDTH` sized array as well as it assigns $acc value as the last term of the
-/// result
-macro_rules! terms_with_acc {
-    // TODO/FIX: for other implementations of a standart like gate aggregation cell might be
-    // different than last one
-    ($arr:expr, $acc:expr) => {{
-        assert!($arr.len() < WIDTH);
-        let mut terms = Term::empty();
-        for (term, e) in terms.iter_mut().zip($arr.into_iter()) {
-            *term = e.clone()
-        }
-        terms[WIDTH - 1] = $acc;
-        &terms.clone()
-    }};
-}
-
-impl<'a, F: FieldExt> std::fmt::Debug for Term<F> {
+impl<'a, F: FieldExt> std::fmt::Debug for Term<'a, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Assigned(coeff, base) => f
@@ -111,21 +62,21 @@ impl<'a, F: FieldExt> std::fmt::Debug for Term<F> {
     }
 }
 
-impl<'a, F: FieldExt> Term<F> {
+impl<'a, F: FieldExt> Term<'a, F> {
     /// Wrap an assigned value that is about to be multiplied by other term
-    pub fn assigned_to_mul(e: &AssignedValue<F>) -> Self {
-        Term::Assigned(e.clone(), F::zero())
+    pub fn assigned_to_mul(e: &'a AssignedValue<F>) -> Self {
+        Term::Assigned(e, F::zero())
     }
 
     /// Wrap an assigned value that is about to be added to the other terms
-    pub fn assigned_to_add(e: &AssignedValue<F>) -> Self {
-        Term::Assigned(e.clone(), F::one())
+    pub fn assigned_to_add(e: &'a AssignedValue<F>) -> Self {
+        Term::Assigned(e, F::one())
     }
 
     /// Wrap an assigned value that is about to be subtracted from the other
     /// terms
-    pub fn assigned_to_sub(e: &AssignedValue<F>) -> Self {
-        Term::Assigned(e.clone(), -F::one())
+    pub fn assigned_to_sub(e: &'a AssignedValue<F>) -> Self {
+        Term::Assigned(e, -F::one())
     }
 
     /// Wrap an unassigned value that is about to be multiplied by other term
@@ -216,23 +167,25 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// to move a fixed value around
     fn assign_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
-        let e = &self.apply(
-            ctx,
-            terms!([Term::unassigned_to_sub(Value::known(constant))]),
-            constant,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[0];
+        let e = self
+            .apply(
+                ctx,
+                [Term::unassigned_to_sub(Value::known(constant))],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(0);
 
-        Ok(e.clone())
+        Ok(e)
     }
 
     /// Assigns a value at the current row
     fn assign_value(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
     ) -> Result<AssignedValue<F>, Error> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::first())
@@ -241,7 +194,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Assigns a value to the column that is allocated for accumulation purpose
     fn assign_to_acc(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
     ) -> Result<AssignedValue<F>, Error> {
         self.assign_to_column(ctx, unassigned, Self::MainGateColumn::next())
@@ -250,7 +203,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Assigns new witness to the specified column
     fn assign_to_column(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         value: Value<F>,
         column: Self::MainGateColumn,
     ) -> Result<AssignedValue<F>, Error>;
@@ -259,16 +212,16 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `val * val - val  = 0`
     fn assign_bit(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         bit: Value<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        let assigned = &self.apply(
+        let mut assigned = self.apply(
             ctx,
-            terms!([
+            [
                 Term::unassigned_to_mul(bit),
                 Term::unassigned_to_mul(bit),
                 Term::unassigned_to_sub(bit),
-            ]),
+            ],
             F::zero(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -276,23 +229,23 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx.constrain_equal(assigned[0].cell(), assigned[1].cell())?;
         ctx.constrain_equal(assigned[1].cell(), assigned[2].cell())?;
 
-        Ok(assigned[2].clone())
+        Ok(assigned.swap_remove(2))
     }
 
     /// Enforces given witness value is `0` or `1`
     /// `val * val - val  = 0`
     fn assert_bit(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         bit: &AssignedCondition<F>,
     ) -> Result<(), Error> {
         let assigned = self.apply(
             ctx,
-            terms!([
+            [
                 Term::assigned_to_mul(bit),
                 Term::assigned_to_mul(bit),
                 Term::assigned_to_sub(bit),
-            ]),
+            ],
             F::zero(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -307,13 +260,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `(a-1) * (b-1)  = 0`
     fn one_or_one(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedCondition<F>,
         b: &AssignedCondition<F>,
     ) -> Result<(), Error> {
         self.apply(
             ctx,
-            terms!([Term::assigned_to_sub(a), Term::assigned_to_sub(b),]),
+            [Term::assigned_to_sub(a), Term::assigned_to_sub(b)],
             F::one(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -326,7 +279,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     // `new_assigned_value + c1 * c2 - c1 - c2 = 0`.
     fn or(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         c1: &AssignedCondition<F>,
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
@@ -336,67 +289,71 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .zip(c2.value())
             .map(|(c1, c2)| *c1 + *c2 - *c1 * *c2);
 
-        let ret = &self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_sub(c1),
-                Term::assigned_to_sub(c2),
-                Term::unassigned_to_add(c),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[2];
+        let ret = self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_sub(c1),
+                    Term::assigned_to_sub(c2),
+                    Term::unassigned_to_add(c),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2);
 
-        Ok(ret.clone())
+        Ok(ret)
     }
 
     /// Assigns new value equal to `1` if `c1 && c0 = 1`,
     /// equal to `0` if `c1 && c0 = 0`
     fn and(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         c1: &AssignedCondition<F>,
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
         let c = c1.value().zip(c2.value()).map(|(c1, c2)| *c1 * *c2);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(c1),
-                Term::assigned_to_mul(c2),
-                Term::unassigned_to_sub(c),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[2])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(c1),
+                    Term::assigned_to_mul(c2),
+                    Term::unassigned_to_sub(c),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2))
     }
 
     /// Assigns new value that is logic inverse of the given assigned value.
     fn not(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         c: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
         let not_c = c.value().map(|c| F::one() - c);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([Term::assigned_to_add(c), Term::unassigned_to_add(not_c),]),
-            -F::one(),
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [Term::assigned_to_add(c), Term::unassigned_to_add(not_c)],
+                -F::one(),
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(1))
     }
 
     /// Assigns new witness that should be equal to `a/b`. This function is
     /// unsafe because if witenss `b` is zero it cannot find a valid witness.
     fn div_unsafe(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -408,24 +365,25 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 .unwrap_or_else(F::zero)
         });
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(b),
-                Term::unassigned_to_mul(c),
-                Term::assigned_to_add(a),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[1])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(b),
+                    Term::unassigned_to_mul(c),
+                    Term::assigned_to_add(a),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(1))
     }
 
     /// Assigns new witness that should be equal to `a/b`. if `b` is non
     /// invertible expect `cond` flag is assigned to `0` otherwise `1`.
     fn div(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
@@ -439,7 +397,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// found.
     fn invert_unsafe(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let inverse = a.value().map(|a| {
@@ -447,20 +405,21 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             a.invert().unwrap_or_else(F::zero)
         });
 
-        Ok((&self.apply(
-            ctx,
-            terms!([Term::assigned_to_mul(a), Term::unassigned_to_mul(inverse)]),
-            -F::one(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[1])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [Term::assigned_to_mul(a), Term::unassigned_to_mul(inverse)],
+                -F::one(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(1))
     }
 
     /// Assigns new witness that should be equal to `1/a`. if `a` is non
     /// invertible expect `cond` flag is assigned to `0` otherwise `1`.
     fn invert(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
         let (one, zero) = (F::one(), F::zero());
@@ -494,17 +453,18 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // | - | -- | - |
         // | a | a' | r |
 
-        let a_inv = (&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(a),
-                Term::unassigned_to_mul(a_inv),
-                Term::assigned_to_add(&r),
-            ]),
-            -one,
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[1])
-            .clone();
+        let a_inv = self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(a),
+                    Term::unassigned_to_mul(a_inv),
+                    Term::assigned_to_add(&r),
+                ],
+                -one,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(1);
 
         // r * a' - r = 0
         // | A | B  | C |
@@ -513,11 +473,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         self.apply(
             ctx,
-            terms!([
+            [
                 Term::assigned_to_mul(&r),
                 Term::assigned_to_mul(&a_inv),
                 Term::assigned_to_sub(&r),
-            ]),
+            ],
             zero,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -528,13 +488,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Enforces an assinged value to be equal to a fixed value.
     fn assert_equal_to_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: F,
     ) -> Result<(), Error> {
         self.apply(
             ctx,
-            terms!([Term::assigned_to_add(a)]),
+            [Term::assigned_to_add(a)],
             -b,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -545,13 +505,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Enforces two witnesses are equal.
     fn assert_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<(), Error> {
         self.apply(
             ctx,
-            terms!([Term::assigned_to_add(a), Term::assigned_to_sub(b)]),
+            [Term::assigned_to_add(a), Term::assigned_to_sub(b)],
             F::zero(),
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -562,7 +522,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Enforces two witness is not equal
     fn assert_not_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<(), Error> {
@@ -574,7 +534,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Assigns new value that flags if two value is equal
     fn is_equal(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
@@ -612,17 +572,18 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         let u = x.zip(r.value()).map(|(x, r)| *r - *r * x + x);
 
-        let u = (&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_sub(&r),
-                Term::unassigned_to_sub(x),
-                Term::unassigned_to_add(u),
-            ]),
-            zero,
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[2])
-            .clone();
+        let u = self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_sub(&r),
+                    Term::unassigned_to_sub(x),
+                    Term::unassigned_to_add(u),
+                ],
+                zero,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2);
 
         // 0 = u * dif + r - 1
         // | A   | B | C |
@@ -631,11 +592,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         self.apply(
             ctx,
-            terms!([
+            [
                 Term::assigned_to_mul(&dif),
                 Term::assigned_to_mul(&u),
                 Term::assigned_to_add(&r),
-            ]),
+            ],
             -one,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -644,18 +605,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     }
 
     /// Enforces that assigned value is zero % w
-    fn assert_zero(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        a: &AssignedValue<F>,
-    ) -> Result<(), Error> {
+    fn assert_zero(&self, ctx: &mut RegionCtx<'_, F>, a: &AssignedValue<F>) -> Result<(), Error> {
         self.assert_equal_to_constant(ctx, a, F::zero())
     }
 
     /// Enforces that assigned value is not zero.
     fn assert_not_zero(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<(), Error> {
         // Non-zero element must have an inverse
@@ -668,7 +625,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         self.apply(
             ctx,
-            terms!([Term::assigned_to_mul(a), Term::unassigned_to_mul(w)]),
+            [Term::assigned_to_mul(a), Term::unassigned_to_mul(w)],
             -F::one(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -680,7 +637,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `0`
     fn is_zero(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         let (_, is_zero) = self.invert(ctx, a)?;
@@ -689,11 +646,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
     /// Assigns new bit flag `1` if given value eqauls to `1` otherwise assigns
     /// `0`
-    fn assert_one(
-        &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        a: &AssignedValue<F>,
-    ) -> Result<(), Error> {
+    fn assert_one(&self, ctx: &mut RegionCtx<'_, F>, a: &AssignedValue<F>) -> Result<(), Error> {
         self.assert_equal_to_constant(ctx, a, F::one())
     }
 
@@ -701,25 +654,26 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `r = a + constant`
     fn add_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| *a + constant);
-        Ok((&self.apply(
-            ctx,
-            terms!([Term::assigned_to_add(a), Term::unassigned_to_sub(c)]),
-            constant,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [Term::assigned_to_add(a), Term::unassigned_to_sub(c)],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(1))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a - b`
     fn sub(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -730,116 +684,121 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `r = a - b + constant`
     fn sub_with_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().zip(b.value()).map(|(a, b)| *a - b + constant);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_add(a),
-                Term::assigned_to_sub(b),
-                Term::unassigned_to_sub(c),
-            ]),
-            constant,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[2])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_add(a),
+                    Term::assigned_to_sub(b),
+                    Term::unassigned_to_sub(c),
+                ],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(2))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = -a + constant`
     fn neg_with_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| -*a + constant);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([Term::assigned_to_sub(a), Term::unassigned_to_sub(c)]),
-            constant,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [Term::assigned_to_sub(a), Term::unassigned_to_sub(c)],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(1))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a + a`
     fn mul2(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| *a + a);
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_add(a),
-                Term::assigned_to_add(a),
-                Term::unassigned_to_sub(c),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[2])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_add(a),
+                    Term::assigned_to_add(a),
+                    Term::unassigned_to_sub(c),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(2))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a + a + a`
     fn mul3(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().map(|a| *a + a + a);
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_add(a),
-                Term::assigned_to_add(a),
-                Term::assigned_to_add(a),
-                Term::unassigned_to_sub(c),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[3])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_add(a),
+                    Term::assigned_to_add(a),
+                    Term::assigned_to_add(a),
+                    Term::unassigned_to_sub(c),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(3))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a * b`
     fn mul(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().zip(b.value()).map(|(a, b)| *a * b);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(a),
-                Term::assigned_to_mul(b),
-                Term::unassigned_to_sub(c),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[2])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(a),
+                    Term::assigned_to_mul(b),
+                    Term::unassigned_to_sub(c),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a * b + to_add`
     fn mul_add(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         to_add: &AssignedValue<F>,
@@ -850,55 +809,57 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .zip(to_add.value())
             .map(|((a, b), to_add)| *a * b + to_add);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(a),
-                Term::assigned_to_mul(b),
-                Term::assigned_to_add(to_add),
-                Term::unassigned_to_sub(c),
-            ]),
-            F::zero(),
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[3])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(a),
+                    Term::assigned_to_mul(b),
+                    Term::assigned_to_add(to_add),
+                    Term::unassigned_to_sub(c),
+                ],
+                F::zero(),
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(3))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a * b + constant`
     fn mul_add_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         to_add: F,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().zip(b.value()).map(|(a, b)| *a * b + to_add);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(a),
-                Term::assigned_to_mul(b),
-                Term::unassigned_to_sub(c),
-            ]),
-            to_add,
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[2])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(a),
+                    Term::assigned_to_mul(b),
+                    Term::unassigned_to_sub(c),
+                ],
+                to_add,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2))
     }
 
     /// Assigns a new bit witness `r` to `0` if both given witneeses are not `0`
     /// otherwise `1`
     fn nand(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedCondition<F>,
         b: &AssignedCondition<F>,
     ) -> Result<(), Error> {
         self.apply(
             ctx,
-            terms!([Term::assigned_to_mul(a), Term::assigned_to_mul(b),]),
+            [Term::assigned_to_mul(a), Term::assigned_to_mul(b)],
             F::zero(),
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -909,7 +870,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `r = a * b`
     fn add(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
@@ -920,31 +881,32 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `r = a * b + constant`
     fn add_with_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
         let c = a.value().zip(b.value()).map(|(a, b)| *a + b + constant);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_add(a),
-                Term::assigned_to_add(b),
-                Term::unassigned_to_sub(c),
-            ]),
-            constant,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[2])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_add(a),
+                    Term::assigned_to_add(b),
+                    Term::unassigned_to_sub(c),
+                ],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(2))
     }
 
     /// Assigns a new witness `r` as:
     /// `r = a - b_0 - b_1 + constant`
     fn sub_sub_with_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b_0: &AssignedValue<F>,
         b_1: &AssignedValue<F>,
@@ -955,7 +917,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `b` if `cond is false
     fn select(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         cond: &AssignedCondition<F>,
@@ -965,7 +927,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// assigned to `to_be_assigned` which is a constat if `cond is false
     fn select_or_assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         to_be_selected: &AssignedValue<F>,
         to_be_assigned: F,
         cond: &AssignedCondition<F>,
@@ -975,7 +937,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// `0` if first bit of `a` is `0`
     fn sign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         let w: Value<(F, F)> = a.value().map(|value| {
@@ -991,11 +953,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         self.apply(
             ctx,
-            terms!([
+            [
                 Term::Unassigned(w.map(|w| w.1), F::from(2)),
-                Term::Assigned(sign.clone(), F::one()),
-                Term::Assigned(a.clone(), -F::one()),
-            ]),
+                Term::Assigned(&sign, F::one()),
+                Term::Assigned(a, -F::one()),
+            ],
             F::zero(),
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
@@ -1007,7 +969,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// given assigned value
     fn to_bits(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         composed: &AssignedValue<F>,
         number_of_bits: usize,
     ) -> Result<Vec<AssignedCondition<F>>, Error> {
@@ -1017,19 +979,23 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .value()
             .map(|value| decompose(*value, number_of_bits, 1));
 
-        let (terms, bits): (Vec<Term<F>>, Vec<AssignedCondition<F>>) = (0..number_of_bits)
+        let (bits, bases): (Vec<_>, Vec<_>) = (0..number_of_bits)
             .map(|i| {
                 let bit = decomposed_value.as_ref().map(|bits| bits[i]);
                 let bit = self.assign_bit(ctx, bit)?;
-                let base = power_of_two(i);
-                Ok((Term::Assigned(bit.clone(), base), bit))
+                let base = power_of_two::<F>(i);
+                Ok((bit, base))
             })
-            .collect::<Result<Vec<(Term<F>, AssignedCondition<F>)>, Error>>()?
-            .iter()
-            .cloned()
+            .collect::<Result<Vec<_>, Error>>()?
+            .into_iter()
             .unzip();
 
-        let result = self.compose(ctx, &terms[..], F::zero())?;
+        let terms = bits
+            .iter()
+            .zip(bases.into_iter())
+            .map(|(bit, base)| Term::Assigned(bit, base))
+            .collect::<Vec<_>>();
+        let result = self.compose(ctx, &terms, F::zero())?;
         self.assert_equal(ctx, &result, composed)?;
         Ok(bits)
     }
@@ -1039,7 +1005,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// where `term_i = a_i * q_i`
     fn decompose<T: FnMut(bool) -> Vec<Selector>>(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         terms: &[Term<F>],
         constant: F,
         mut fetch_tables: T,
@@ -1047,11 +1013,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
         // Remove zero iterms
-        let terms: Vec<Term<F>> = terms
-            .to_vec()
-            .into_iter()
-            .filter(|e| !e.is_zero())
-            .collect();
+        let terms: Vec<Term<F>> = terms.iter().filter(|e| !e.is_zero()).cloned().collect();
 
         // Last cell will be allocated for result or intermediate sums.
         let chunk_width: usize = WIDTH - 1;
@@ -1099,16 +1061,20 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             }
 
             let chunk_len = chunk.len();
-            let combined = self.apply(
+            let mut combined = self.apply(
                 ctx,
-                terms_with_acc!(chunk, intermediate),
+                chunk
+                    .iter()
+                    .cloned()
+                    .chain(iter::repeat(Term::Zero).take(WIDTH - chunk.len() - 1))
+                    .chain(iter::once(intermediate)),
                 constant,
                 combination_option.into(),
             )?;
 
             // Set the result at the first iter
             if i == 0 {
-                result = Some(combined[WIDTH - 1].clone());
+                result = combined.pop();
             }
 
             let mut combined = combined[..chunk_len].to_vec();
@@ -1127,7 +1093,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// where `term_i = a_i * q_i`
     fn compose(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         terms: &[Term<F>],
         constant: F,
     ) -> Result<AssignedValue<F>, Error> {
@@ -1142,25 +1108,21 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// where `term_i = a_i * q_i`
     fn assert_zero_sum(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         terms: &[Term<F>],
         constant: F,
     ) -> Result<(), Error> {
         assert!(!terms.is_empty(), "At least one term is expected");
 
         // Remove zero iterms
-        let terms: Vec<Term<F>> = terms
-            .to_vec()
-            .into_iter()
-            .filter(|e| !e.is_zero())
-            .collect();
+        let terms: Vec<Term<F>> = terms.iter().filter(|e| !e.is_zero()).cloned().collect();
 
         let one_liner = terms.len() <= WIDTH;
 
         // Apply the first chunk
         self.apply(
             ctx,
-            terms_unsafe!(*terms),
+            terms[..WIDTH.min(terms.len())].iter().cloned(),
             constant,
             if one_liner {
                 CombinationOptionCommon::OneLinerAdd
@@ -1180,7 +1142,11 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             for (i, chunk) in terms.chunks(chunk_width).enumerate() {
                 self.apply(
                     ctx,
-                    terms_with_acc!(chunk, Term::Unassigned(intermediate_sum, F::one())),
+                    chunk
+                        .iter()
+                        .cloned()
+                        .chain(iter::repeat(Term::Zero).take(WIDTH - chunk.len() - 1))
+                        .chain(iter::once(Term::Unassigned(intermediate_sum, F::one()))),
                     F::zero(),
                     if i == number_of_chunks - 1 {
                         CombinationOptionCommon::OneLinerAdd
@@ -1206,24 +1172,24 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     }
 
     /// Increments the offset with all zero selectors
-    fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error>;
+    fn no_operation(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error>;
 
     /// Given specific option combines `WIDTH` sized terms and assigns new
     /// value.
-    fn apply(
+    fn apply<'t>(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        terms: &[Term<F>; WIDTH],
+        ctx: &mut RegionCtx<'_, F>,
+        terms: impl IntoIterator<Item = Term<'t, F>> + 't,
         constant: F,
         options: Self::CombinationOption,
-    ) -> Result<[AssignedValue<F>; WIDTH], Error>;
+    ) -> Result<Vec<AssignedValue<F>>, Error>;
 
     /// Intentionally introduce not to be satisfied witnesses. Use only for
     /// debug purposes.
-    fn break_here(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
+    fn break_here(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         self.apply(
             ctx,
-            &Term::empty(),
+            [],
             F::one(),
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;

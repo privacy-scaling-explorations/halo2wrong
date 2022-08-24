@@ -16,7 +16,7 @@ use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedCondition, AssignedValue};
 use halo2wrong::halo2::circuit::Value;
 use halo2wrong::RegionCtx;
-use std::marker::PhantomData;
+use std::{iter, marker::PhantomData};
 
 const WIDTH: usize = 5;
 
@@ -85,7 +85,7 @@ pub struct MainGateConfig {
 }
 
 /// MainGate implements instructions with [`MainGateConfig`]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MainGate<F: FieldExt> {
     config: MainGateConfig,
     _marker: PhantomData<F>,
@@ -122,7 +122,7 @@ impl<F: FieldExt> From<CombinationOptionCommon<F>> for CombinationOption<F> {
     }
 }
 
-impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
+impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     type CombinationOption = CombinationOption<F>;
     type MainGateColumn = MainGateColumn;
 
@@ -138,7 +138,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn assign_to_column(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
         column: MainGateColumn,
     ) -> Result<AssignedValue<F>, Error> {
@@ -149,7 +149,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             MainGateColumn::D => self.config.d,
             MainGateColumn::E => self.config.e,
         };
-        let cell = ctx.assign_advice("assign value", column, unassigned)?;
+        let cell = ctx.assign_advice(|| "assign value", column, unassigned)?;
         // proceed to the next row
         self.no_operation(ctx)?;
         Ok(cell)
@@ -157,7 +157,7 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     fn sub_sub_with_constant(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b_0: &AssignedValue<F>,
         b_1: &AssignedValue<F>,
@@ -169,23 +169,24 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             .zip(b_1.value())
             .map(|((a, b_0), b_1)| *a - *b_0 - *b_1 + constant);
 
-        Ok((&self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_add(a),
-                Term::assigned_to_sub(b_0),
-                Term::assigned_to_sub(b_1),
-                Term::unassigned_to_sub(c),
-            ]),
-            constant,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[3])
-            .clone())
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_add(a),
+                    Term::assigned_to_sub(b_0),
+                    Term::assigned_to_sub(b_1),
+                    Term::unassigned_to_sub(c),
+                ],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(3))
     }
 
     fn select(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
         cond: &AssignedCondition<F>,
@@ -212,9 +213,9 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 }
             });
 
-        let assigned = self.apply(
+        let mut assigned = self.apply(
             ctx,
-            &[
+            [
                 Term::assigned_to_mul(cond),
                 Term::assigned_to_mul(a),
                 Term::assigned_to_mul(cond),
@@ -225,12 +226,12 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             CombinationOption::OneLinerDoubleMul(-F::one()),
         )?;
         ctx.constrain_equal(assigned[0].cell(), assigned[2].cell())?;
-        Ok(assigned[4].clone())
+        Ok(assigned.swap_remove(4))
     }
 
     fn select_or_assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
         b: F,
         cond: &AssignedCondition<F>,
@@ -263,55 +264,63 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         // a - b - dif = 0
         let dif = &self.apply(
             ctx,
-            terms!([Term::assigned_to_add(a), Term::unassigned_to_sub(dif)]),
+            [Term::assigned_to_add(a), Term::unassigned_to_sub(dif)],
             -b,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?[1];
 
         // cond * dif + b + a_or_b  = 0
-        let res = &self.apply(
-            ctx,
-            terms!([
-                Term::assigned_to_mul(dif),
-                Term::assigned_to_mul(cond),
-                Term::unassigned_to_sub(res),
-            ]),
-            b,
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?[2];
+        let res = self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(dif),
+                    Term::assigned_to_mul(cond),
+                    Term::unassigned_to_sub(res),
+                ],
+                b,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2);
 
-        Ok(res.clone())
+        Ok(res)
     }
 
-    fn apply(
+    fn apply<'t>(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
-        terms: &[Term<F>; WIDTH],
+        ctx: &mut RegionCtx<'_, F>,
+        terms: impl IntoIterator<Item = Term<'t, F>> + 't,
         constant: F,
         option: CombinationOption<F>,
-    ) -> Result<[AssignedValue<F>; WIDTH], Error> {
-        // Break witness and fixed value
-        let (c_0, u_0) = (terms[0].coeff(), terms[0].base());
-        let (c_1, u_1) = (terms[1].coeff(), terms[1].base());
-        let (c_2, u_2) = (terms[2].coeff(), terms[2].base());
-        let (c_3, u_3) = (terms[3].coeff(), terms[3].base());
-        let (c_4, u_4) = (terms[4].coeff(), terms[4].base());
+    ) -> Result<Vec<AssignedValue<F>>, Error> {
+        let terms = terms.into_iter().collect::<Vec<_>>();
+        debug_assert!(terms.len() <= WIDTH);
 
-        // Assign witnesses
-        let assigned_0 = ctx.assign_advice("coeff_0", self.config.a, c_0)?;
-        let assigned_1 = ctx.assign_advice("coeff_1", self.config.b, c_1)?;
-        let assigned_2 = ctx.assign_advice("coeff_2", self.config.c, c_2)?;
-        let assigned_3 = ctx.assign_advice("coeff_3", self.config.d, c_3)?;
-        let assigned_4 = ctx.assign_advice("coeff_4", self.config.e, c_4)?;
+        let assigned = [
+            self.config.a,
+            self.config.b,
+            self.config.c,
+            self.config.d,
+            self.config.e,
+        ]
+        .into_iter()
+        .zip([
+            self.config.sa,
+            self.config.sb,
+            self.config.sc,
+            self.config.sd,
+            self.config.se,
+        ])
+        .zip(terms.iter().chain(iter::repeat(&Term::Zero)))
+        .enumerate()
+        .map(|(idx, ((coeff, base), term))| {
+            let assigned = ctx.assign_advice(|| format!("coeff_{idx}"), coeff, term.coeff())?;
+            ctx.assign_fixed(|| format!("base_{idx}"), base, term.base())?;
+            Ok(assigned)
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
 
-        // All combination options allows addition gates to be configured
-        ctx.assign_fixed("base_0", self.config.sa, u_0)?;
-        ctx.assign_fixed("base_1", self.config.sb, u_1)?;
-        ctx.assign_fixed("base_2", self.config.sc, u_2)?;
-        ctx.assign_fixed("base_3", self.config.sd, u_3)?;
-        ctx.assign_fixed("base_4", self.config.se, u_4)?;
-
-        ctx.assign_fixed("s_constant", self.config.s_constant, constant)?;
+        ctx.assign_fixed(|| "s_constant", self.config.s_constant, constant)?;
 
         // Given specific option configure multiplication and rotation gates
         match option {
@@ -321,9 +330,9 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 // q_e_next * e +
                 // q_constant = 0
                 CombinationOptionCommon::CombineToNextMul(next) => {
-                    ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
-                    ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
-                    ctx.assign_fixed("se_next", self.config.se_next, next)?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
                 }
 
                 // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
@@ -331,35 +340,35 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 // q_e_next * e +
                 // q_constant = 0
                 CombinationOptionCommon::CombineToNextScaleMul(next, n) => {
-                    ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, n)?;
-                    ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
-                    ctx.assign_fixed("se_next", self.config.se_next, next)?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, n)?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
                 }
 
                 // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
                 // q_e_next * e +
                 // q_constant = 0
                 CombinationOptionCommon::CombineToNextAdd(next) => {
-                    ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::zero())?;
-                    ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
-                    ctx.assign_fixed("se_next", self.config.se_next, next)?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
                 }
 
                 // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
                 // q_mul_ab * a * b +
                 // q_constant = 0
                 CombinationOptionCommon::OneLinerMul => {
-                    ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
-                    ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
-                    ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
                 }
 
                 // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
                 // q_constant = 0
                 CombinationOptionCommon::OneLinerAdd => {
-                    ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
-                    ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::zero())?;
-                    ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
                 }
             },
 
@@ -369,9 +378,9 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             // q_e_next * e +
             // q_constant = 0
             CombinationOption::CombineToNextDoubleMul(next) => {
-                ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
-                ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::one())?;
-                ctx.assign_fixed("se_next", self.config.se_next, next)?;
+                ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
+                ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::one())?;
+                ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
             }
 
             // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
@@ -379,58 +388,35 @@ impl<'a, F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             // q_mul_cd * c * d +
             // q_constant = 0
             CombinationOption::OneLinerDoubleMul(e) => {
-                ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::one())?;
-                ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, e)?;
-                ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
+                ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
+                ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, e)?;
+                ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
             }
         };
 
         // If given witness is already assigned apply copy constains
-        match &terms[0] {
-            Term::Assigned(assigned, _) => ctx.constrain_equal(assigned.cell(), assigned_0.cell()),
-            _ => Ok(()),
-        }?;
+        for (term, rhs) in terms.iter().zip(assigned.iter()) {
+            if let Term::Assigned(lhs, _) = term {
+                ctx.constrain_equal(lhs.cell(), rhs.cell())?;
+            }
+        }
 
-        match &terms[1] {
-            Term::Assigned(assigned, _) => ctx.constrain_equal(assigned.cell(), assigned_1.cell()),
-            _ => Ok(()),
-        }?;
-
-        match &terms[2] {
-            Term::Assigned(assigned, _) => ctx.constrain_equal(assigned.cell(), assigned_2.cell()),
-            _ => Ok(()),
-        }?;
-
-        match &terms[3] {
-            Term::Assigned(assigned, _) => ctx.constrain_equal(assigned.cell(), assigned_3.cell()),
-            _ => Ok(()),
-        }?;
-
-        match &terms[4] {
-            Term::Assigned(assigned, _) => ctx.constrain_equal(assigned.cell(), assigned_4.cell()),
-            _ => Ok(()),
-        }?;
-
-        // Proceed to next row
         ctx.next();
 
-        // Return new assigned values at this level os that they can be used for further
-        // constaints
-
-        Ok([assigned_0, assigned_1, assigned_2, assigned_3, assigned_4])
+        Ok(assigned)
     }
 
     /// Skip this row without any operation
-    fn no_operation(&self, ctx: &mut RegionCtx<'_, '_, F>) -> Result<(), Error> {
-        ctx.assign_fixed("s_mul_ab", self.config.s_mul_ab, F::zero())?;
-        ctx.assign_fixed("s_mul_cd", self.config.s_mul_cd, F::zero())?;
-        ctx.assign_fixed("sc", self.config.sc, F::zero())?;
-        ctx.assign_fixed("sa", self.config.sa, F::zero())?;
-        ctx.assign_fixed("sb", self.config.sb, F::zero())?;
-        ctx.assign_fixed("sd", self.config.sd, F::zero())?;
-        ctx.assign_fixed("se", self.config.se, F::zero())?;
-        ctx.assign_fixed("se_next", self.config.se_next, F::zero())?;
-        ctx.assign_fixed("s_constant", self.config.s_constant, F::zero())?;
+    fn no_operation(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
+        ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
+        ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+        ctx.assign_fixed(|| "sc", self.config.sc, F::zero())?;
+        ctx.assign_fixed(|| "sa", self.config.sa, F::zero())?;
+        ctx.assign_fixed(|| "sb", self.config.sb, F::zero())?;
+        ctx.assign_fixed(|| "sd", self.config.sd, F::zero())?;
+        ctx.assign_fixed(|| "se", self.config.se, F::zero())?;
+        ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
+        ctx.assign_fixed(|| "s_constant", self.config.s_constant, F::zero())?;
         ctx.next();
         Ok(())
     }
@@ -587,9 +573,9 @@ mod tests {
 
             let value = layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
                     let value = main_gate.assign_value(ctx, Value::known(self.public_input))?;
                     Ok(value)
                 },
@@ -646,9 +632,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     // OneLinerAdd
                     {
@@ -667,20 +653,20 @@ mod tests {
 
                         let assigned = main_gate.apply(
                             ctx,
-                            &terms,
+                            terms,
                             constant,
                             CombinationOptionCommon::OneLinerAdd.into(),
                         )?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
-                            .zip(vec![r_0, r_1, r_2, r_3, r_4].iter())
-                            .map(|(u, r)| Term::Assigned(u.clone(), *r))
+                            .zip([r_0, r_1, r_2, r_3, r_4])
+                            .map(|(u, r)| Term::Assigned(u, r))
                             .collect();
 
                         main_gate.apply(
                             ctx,
-                            &terms.try_into().unwrap(),
+                            terms,
                             constant,
                             CombinationOptionCommon::OneLinerAdd.into(),
                         )?;
@@ -708,20 +694,20 @@ mod tests {
 
                         let assigned = main_gate.apply(
                             ctx,
-                            &terms,
+                            terms,
                             constant,
                             CombinationOptionCommon::OneLinerMul.into(),
                         )?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
-                            .zip(vec![r_0, r_1, r_2, r_3, r_4].iter())
-                            .map(|(u, r)| Term::Assigned(u.clone(), *r))
+                            .zip([r_0, r_1, r_2, r_3, r_4])
+                            .map(|(u, r)| Term::Assigned(u, r))
                             .collect();
 
                         main_gate.apply(
                             ctx,
-                            &terms.try_into().unwrap(),
+                            terms,
                             constant,
                             CombinationOptionCommon::OneLinerMul.into(),
                         )?;
@@ -752,7 +738,7 @@ mod tests {
 
                         let assigned = main_gate.apply(
                             ctx,
-                            &terms,
+                            terms,
                             constant,
                             CombinationOptionCommon::CombineToNextMul(r_next).into(),
                         )?;
@@ -761,13 +747,13 @@ mod tests {
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
-                            .zip(vec![r_0, r_1, r_2, r_3, r_4].iter())
-                            .map(|(u, r)| Term::Assigned(u.clone(), *r))
+                            .zip([r_0, r_1, r_2, r_3, r_4])
+                            .map(|(u, r)| Term::Assigned(u, r))
                             .collect();
 
                         main_gate.apply(
                             ctx,
-                            &terms.try_into().unwrap(),
+                            terms,
                             constant,
                             CombinationOptionCommon::CombineToNextMul(r_next).into(),
                         )?;
@@ -800,7 +786,7 @@ mod tests {
 
                         let assigned = main_gate.apply(
                             ctx,
-                            &terms,
+                            terms,
                             constant,
                             CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
                         )?;
@@ -809,13 +795,13 @@ mod tests {
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
-                            .zip(vec![r_0, r_1, r_2, r_3, r_4].iter())
-                            .map(|(u, r)| Term::Assigned(u.clone(), *r))
+                            .zip([r_0, r_1, r_2, r_3, r_4])
+                            .map(|(u, r)| Term::Assigned(u, r))
                             .collect();
 
                         main_gate.apply(
                             ctx,
-                            &terms.try_into().unwrap(),
+                            terms,
                             constant,
                             CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
                         )?;
@@ -847,7 +833,7 @@ mod tests {
 
                         let assigned = main_gate.apply(
                             ctx,
-                            &terms,
+                            terms,
                             constant,
                             CombinationOptionCommon::CombineToNextAdd(r_next).into(),
                         )?;
@@ -856,13 +842,13 @@ mod tests {
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
-                            .zip(vec![r_0, r_1, r_2, r_3, r_4].iter())
-                            .map(|(u, r)| Term::Assigned(u.clone(), *r))
+                            .zip([r_0, r_1, r_2, r_3, r_4])
+                            .map(|(u, r)| Term::Assigned(u, r))
                             .collect();
 
                         main_gate.apply(
                             ctx,
-                            &terms.try_into().unwrap(),
+                            terms,
                             constant,
                             CombinationOptionCommon::CombineToNextAdd(r_next).into(),
                         )?;
@@ -920,9 +906,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     if self.neg_path {
                         let minus_one = -F::one();
@@ -1000,9 +986,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let rand = || -> F { F::random(OsRng) };
 
@@ -1120,9 +1106,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = rand();
                     let b = rand();
@@ -1271,9 +1257,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = rand();
                     let b = rand();
@@ -1386,9 +1372,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = rand();
                     let number_of_bits = F::NUM_BITS as usize;
@@ -1478,9 +1464,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     for number_of_terms in 1..50 {
                         let constant = rand();
@@ -1545,9 +1531,9 @@ mod tests {
 
             layouter.assign_region(
                 || "region 0",
-                |mut region| {
-                    let offset = &mut 0;
-                    let ctx = &mut RegionCtx::new(&mut region, offset);
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
 
                     let a = F::from(20u64);
                     let assigned = main_gate.assign_value(ctx, Value::known(a))?;

@@ -10,7 +10,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 {
     pub(super) fn assert_not_zero_generic(
         &self,
-        ctx: &mut RegionCtx<'_, '_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
@@ -34,8 +34,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // r = 0 <-> r % 2 ^ 64 = 0 /\ r % native_modulus = 0
         // r <> 0 <-> r % 2 ^ 64 <> 0 \/ r % native_modulus <> 0
         // r <> 0 <-> invert(r.limb(0)) \/ invert(r.native())
-        let cond_zero_0 = main_gate.is_zero(ctx, &r.limb(0))?;
-        let cond_zero_1 = main_gate.is_zero(ctx, &r.native())?;
+        let cond_zero_0 = main_gate.is_zero(ctx, r.limb(0))?;
+        let cond_zero_1 = main_gate.is_zero(ctx, r.native())?;
 
         // one of them might be succeeded, i.e. cond_zero_0 * cond_zero_1 = 0
         main_gate.nand(ctx, &cond_zero_0, &cond_zero_1)?;
@@ -47,37 +47,39 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         // wrong_modulus.native())
         let wrong_modulus = self.rns.wrong_modulus_decomposed;
         let limb_diff = r.limbs[0].value().map(|value| value - wrong_modulus[0]);
-        let limb_diff = (&main_gate.apply(
-            ctx,
-            &[
-                Term::Assigned(r.limb(0), one),
-                Term::Unassigned(limb_diff, -one),
-                Term::Zero,
-                Term::Zero,
-                Term::Zero,
-            ],
-            -wrong_modulus[0],
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1])
-            .clone();
+        let limb_diff = main_gate
+            .apply(
+                ctx,
+                [
+                    Term::Assigned(r.limb(0), one),
+                    Term::Unassigned(limb_diff, -one),
+                    Term::Zero,
+                    Term::Zero,
+                    Term::Zero,
+                ],
+                -wrong_modulus[0],
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(1);
 
         let native_diff = r
             .native()
             .value()
             .map(|value| *value - self.rns.wrong_modulus_in_native_modulus);
-        let native_diff = (&main_gate.apply(
-            ctx,
-            &[
-                Term::Assigned(r.native(), one),
-                Term::Unassigned(native_diff, -one),
-                Term::Zero,
-                Term::Zero,
-                Term::Zero,
-            ],
-            -self.rns.wrong_modulus_in_native_modulus,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?[1])
-            .clone();
+        let native_diff = main_gate
+            .apply(
+                ctx,
+                [
+                    Term::Assigned(r.native(), one),
+                    Term::Unassigned(native_diff, -one),
+                    Term::Zero,
+                    Term::Zero,
+                    Term::Zero,
+                ],
+                -self.rns.wrong_modulus_in_native_modulus,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(1);
 
         let cond_wrong_0 = main_gate.is_zero(ctx, &limb_diff)?;
         let cond_wrong_1 = main_gate.is_zero(ctx, &native_diff)?;

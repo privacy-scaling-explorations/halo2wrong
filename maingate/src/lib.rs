@@ -19,6 +19,8 @@ pub use range::*;
 
 #[cfg(test)]
 use halo2wrong::curves;
+#[cfg(test)]
+pub use halo2wrong::utils::mock_prover_verify;
 
 /// AssignedValue
 pub type AssignedValue<F> = AssignedCell<F, F>;

@@ -65,13 +65,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Returns $x$ coordinate
-    pub fn get_x(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        self.x.clone()
+    pub fn x(&self) -> &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.x
     }
 
     /// Returns $y$ coordinate
-    pub fn get_y(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        self.y.clone()
+    pub fn y(&self) -> &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.y
     }
 }
 
@@ -112,13 +112,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 
     /// Returns $x$ coordinate
-    pub fn get_x(&self) -> AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        self.x.clone()
+    pub fn x(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.x
     }
 
     /// Returns $y$ coordinate
-    pub fn get_y(&self) -> AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        self.y.clone()
+    pub fn y(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        &self.y
     }
 }
 
@@ -142,11 +142,6 @@ impl EccConfig {
     /// `MainGateConfig`
     pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
         IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-    }
-
-    /// Returns new `MainGateConfig`
-    pub(crate) fn main_gate_config(&self) -> MainGateConfig {
-        self.main_gate_config.clone()
     }
 }
 
