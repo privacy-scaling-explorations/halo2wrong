@@ -15,7 +15,6 @@ use group::ff::PrimeField;
 use poseidon::Spec;
 
 /// `PointRepresentation` will encode point with an implemented strategy
-/// TODO: Generalize `ecc_chip` with `EccInstrucitons`
 pub trait PointRepresentation<
     C: CurveAffine<ScalarExt = N>,
     N: FieldExt,

@@ -8,6 +8,7 @@ use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{MainGateInstructions, Term};
 use crate::AssignedValue;
+use halo2wrong::halo2::plonk::Advice;
 use halo2wrong::halo2::plonk::Column;
 use halo2wrong::halo2::plonk::Fixed;
 use halo2wrong::utils::decompose;
@@ -241,7 +242,6 @@ impl<F: FieldExt> RangeChip<F> {
                 bit_lens
             });
 
-        let has_overflow_limb = !overflow_bit_lens.is_empty();
         let bit_len_tag = BTreeMap::from_iter(
             BTreeSet::from_iter(composition_bit_lens.iter().chain(overflow_bit_lens.iter()))
                 .into_iter()
@@ -252,55 +252,75 @@ impl<F: FieldExt> RangeChip<F> {
         let t_tag = meta.lookup_table_column();
         let t_value = meta.lookup_table_column();
 
-        macro_rules! lookup {
-            ($prefix:literal, $selector:ident, $tag:ident, $bit_lens:ident, [$($value:ident),*]) => {
-                $(
-                    meta.lookup(concat!($prefix, stringify!($value)), |meta| {
-                        let selector = meta.query_selector($selector);
-                        let tag = match $tag {
-                            Some(tag) =>  meta.query_fixed(tag, Rotation::cur()),
-                            None => {
-                                let tag = F::from(bit_len_tag[&$bit_lens[0]] as u64);
-                                selector.clone() * Expression::Constant(tag)
-                            },
-                        };
-                        let value = meta.query_advice($value, Rotation::cur());
-                        vec![(tag, t_tag), (selector * value, t_value)]
-                    });
-                )*
-            };
-        }
-
         // TODO: consider for a generic MainGateConfig
-        let (a, b, c, d) = (
-            main_gate_config.a,
-            main_gate_config.b,
-            main_gate_config.c,
-            main_gate_config.d,
-        );
+        let &MainGateConfig { a, b, c, d, .. } = main_gate_config;
 
         let s_composition = meta.complex_selector();
         let tag_composition = if composition_bit_lens.len() > 1 {
-            Some(meta.fixed_column())
+            let tag = meta.fixed_column();
+            for (name, value) in [
+                ("composition_a", a),
+                ("composition_b", b),
+                ("composition_c", c),
+                ("composition_d", d),
+            ] {
+                Self::configure_lookup_with_column_tag(
+                    meta,
+                    name,
+                    s_composition,
+                    tag,
+                    value,
+                    t_tag,
+                    t_value,
+                )
+            }
+            Some(tag)
         } else {
+            for (name, value) in [
+                ("composition_a", a),
+                ("composition_b", b),
+                ("composition_c", c),
+                ("composition_d", d),
+            ] {
+                Self::configure_lookup_with_constant_tag(
+                    meta,
+                    name,
+                    s_composition,
+                    bit_len_tag[&composition_bit_lens[0]],
+                    value,
+                    t_tag,
+                    t_value,
+                )
+            }
             None
         };
-        lookup!(
-            "composition",
-            s_composition,
-            tag_composition,
-            composition_bit_lens,
-            [a, b, c, d]
-        );
 
-        let (s_overflow, tag_overflow) = if has_overflow_limb {
+        let (s_overflow, tag_overflow) = if !overflow_bit_lens.is_empty() {
             let s_overflow = meta.complex_selector();
             let tag_overflow = if overflow_bit_lens.len() > 1 {
-                Some(meta.fixed_column())
+                let tag = meta.fixed_column();
+                Self::configure_lookup_with_column_tag(
+                    meta,
+                    "overflow_a",
+                    s_overflow,
+                    tag,
+                    a,
+                    t_tag,
+                    t_value,
+                );
+                Some(tag)
             } else {
+                Self::configure_lookup_with_constant_tag(
+                    meta,
+                    "overflow_a",
+                    s_overflow,
+                    bit_len_tag[&overflow_bit_lens[0]],
+                    a,
+                    t_tag,
+                    t_value,
+                );
                 None
             };
-            lookup!("overflow", s_overflow, tag_overflow, overflow_bit_lens, [a]);
 
             (Some(s_overflow), tag_overflow)
         } else {
@@ -317,6 +337,40 @@ impl<F: FieldExt> RangeChip<F> {
             s_overflow,
             tag_overflow,
         }
+    }
+
+    fn configure_lookup_with_column_tag(
+        meta: &mut ConstraintSystem<F>,
+        name: &'static str,
+        selector: Selector,
+        tag: Column<Fixed>,
+        value: Column<Advice>,
+        t_tag: TableColumn,
+        t_value: TableColumn,
+    ) {
+        meta.lookup(name, |meta| {
+            let selector = meta.query_selector(selector);
+            let tag = meta.query_fixed(tag, Rotation::cur());
+            let value = meta.query_advice(value, Rotation::cur());
+            vec![(tag, t_tag), (selector * value, t_value)]
+        });
+    }
+
+    fn configure_lookup_with_constant_tag(
+        meta: &mut ConstraintSystem<F>,
+        name: &'static str,
+        selector: Selector,
+        tag: usize,
+        value: Column<Advice>,
+        t_tag: TableColumn,
+        t_value: TableColumn,
+    ) {
+        meta.lookup(name, |meta| {
+            let selector = meta.query_selector(selector);
+            let tag = selector.clone() * Expression::Constant(F::from(tag as u64));
+            let value = meta.query_advice(value, Rotation::cur());
+            vec![(tag, t_tag), (selector * value, t_value)]
+        });
     }
 
     fn bases(&self, limb_bit_len: usize) -> &[F] {
