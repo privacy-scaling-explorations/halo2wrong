@@ -7,6 +7,7 @@ use crate::halo2::{
         FloorPlanner, Instance, Selector,
     },
 };
+use halo2::plonk::Challenge;
 use num_bigint::BigUint as big_uint;
 use num_traits::{Num, One, Zero};
 use std::{
@@ -109,7 +110,7 @@ impl DimensionMeasurement {
     fn update<C: Into<Any>>(&self, column: C, offset: usize) {
         let mut target = match column.into() {
             Any::Instance => self.instance.borrow_mut(),
-            Any::Advice => self.advice.borrow_mut(),
+            Any::Advice(_advice) => self.advice.borrow_mut(),
             Any::Fixed => self.fixed.borrow_mut(),
         };
         if offset as u64 > *target {
@@ -141,6 +142,10 @@ impl<F: FieldExt> Assignment<F> for DimensionMeasurement {
 
     fn exit_region(&mut self) {}
 
+    fn get_challenge(&self, _challenge: Challenge) -> Value<F> {
+        Value::unknown()
+    }
+
     fn enable_selector<A, AR>(&mut self, _: A, _: &Selector, offset: usize) -> Result<(), Error>
     where
         A: FnOnce() -> AR,
@@ -168,7 +173,7 @@ impl<F: FieldExt> Assignment<F> for DimensionMeasurement {
         A: FnOnce() -> AR,
         AR: Into<String>,
     {
-        self.update(Advice, offset);
+        self.update(Any::advice(), offset);
         Ok(())
     }
 
