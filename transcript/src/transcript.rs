@@ -1,121 +1,136 @@
 use crate::{
-    halo2::{arithmetic::CurveAffine, plonk::Error},
+    halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        plonk::Error,
+    },
     hasher::HasherChip,
     maingate::{AssignedValue, RegionCtx},
 };
-use ecc::{halo2::circuit::Chip, AssignedPoint, BaseFieldEccChip};
+use ecc::{
+    halo2::circuit::Chip,
+    maingate::{big_to_fe, decompose, fe_to_big},
+    AssignedPoint, BaseFieldEccChip,
+};
+use group::ff::PrimeField;
 use poseidon::Spec;
-use std::marker::PhantomData;
 
 /// `PointRepresentation` will encode point with an implemented strategy
 pub trait PointRepresentation<
-    C: CurveAffine,
+    C: CurveAffine<ScalarExt = N>,
+    N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
->
+>: Default
 {
-    fn encode(
-        ctx: &mut RegionCtx<'_, C::Scalar>,
+    fn encode_assigned(
+        ctx: &mut RegionCtx<'_, N>,
         ecc_chip: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<Vec<AssignedValue<C::Scalar>>, Error>;
+        point: &AssignedPoint<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<Vec<AssignedValue<N>>, Error>;
+
+    /// Returns `None` if `point` is identity
+    fn encode(point: C) -> Option<Vec<N>>;
 }
 
 /// `LimbRepresentation` encodes point as `[[limbs_of(x)],  sign_of(y)]`
+#[derive(Default)]
 pub struct LimbRepresentation;
 
-impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-    PointRepresentation<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB> for LimbRepresentation
+impl<
+        C: CurveAffine<ScalarExt = N>,
+        N: FieldExt,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > PointRepresentation<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> for LimbRepresentation
 {
-    fn encode(
-        ctx: &mut RegionCtx<'_, C::Scalar>,
+    fn encode_assigned(
+        ctx: &mut RegionCtx<'_, N>,
         ecc_chip: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
-        let mut encoded: Vec<AssignedValue<C::Scalar>> =
+        point: &AssignedPoint<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<Vec<AssignedValue<N>>, Error> {
+        let mut encoded: Vec<AssignedValue<N>> =
             point.x().limbs().iter().map(|limb| limb.into()).collect();
         encoded.push(ecc_chip.sign(ctx, point)?);
         Ok(encoded)
     }
-}
 
-impl LimbRepresentation {
-    // Construct new `TranscriptChip` with `LimbRepresentation` encoding strategy
-    pub fn new<
-        C: CurveAffine,
-        const NUMBER_OF_LIMBS: usize,
-        const BIT_LEN_LIMB: usize,
-        const T: usize,
-        const RATE: usize,
-    >(
-        ctx: &mut RegionCtx<'_, C::Scalar>,
-        spec: &Spec<C::Scalar, T, RATE>,
-        ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<TranscriptChip<Self, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>, Error> {
-        TranscriptChip::new(ctx, spec, ecc_chip)
+    fn encode(point: C) -> Option<Vec<N>> {
+        point
+            .coordinates()
+            .map(|coords| {
+                decompose(*coords.x(), NUMBER_OF_LIMBS, BIT_LEN_LIMB)
+                    .into_iter()
+                    .map(|limb| big_to_fe(fe_to_big(limb)))
+                    .chain(Some(N::from(bool::from(coords.y().is_odd()) as u64)))
+                    .collect()
+            })
+            .into()
     }
 }
 
 /// `NativeRepresentation` encodes point as `[native(x),  native(y)]`
+#[derive(Default)]
 pub struct NativeRepresentation;
 
-impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-    PointRepresentation<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB> for NativeRepresentation
-{
-    fn encode(
-        _: &mut RegionCtx<'_, C::Scalar>,
-        _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<Vec<AssignedValue<C::Scalar>>, Error> {
-        Ok(vec![point.x().native().clone(), point.y().native().clone()])
-    }
-}
-
-impl NativeRepresentation {
-    // Construct new `TranscriptChip` with `NativeRepresentation` encoding strategy
-    pub fn new<
-        C: CurveAffine,
+impl<
+        C: CurveAffine<ScalarExt = N>,
+        N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
-        const T: usize,
-        const RATE: usize,
-    >(
-        ctx: &mut RegionCtx<'_, C::Scalar>,
-        spec: &Spec<C::Scalar, T, RATE>,
-        ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<TranscriptChip<Self, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>, Error> {
-        TranscriptChip::new(ctx, spec, ecc_chip)
+    > PointRepresentation<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> for NativeRepresentation
+{
+    fn encode_assigned(
+        _: &mut RegionCtx<'_, N>,
+        _: &BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        point: &AssignedPoint<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<Vec<AssignedValue<N>>, Error> {
+        Ok(vec![point.x().native().clone(), point.y().native().clone()])
+    }
+
+    fn encode(point: C) -> Option<Vec<N>> {
+        point
+            .coordinates()
+            .map(|coords| {
+                [coords.x(), coords.y()]
+                    .into_iter()
+                    .map(|fe| big_to_fe(fe_to_big(*fe)))
+                    .collect()
+            })
+            .into()
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct TranscriptChip<
-    E: PointRepresentation<C, NUMBER_OF_LIMBS, BIT_LEN>,
-    C: CurveAffine,
+    C: CurveAffine<ScalarExt = N>,
+    N: FieldExt,
+    E: PointRepresentation<C, N, NUMBER_OF_LIMBS, BIT_LEN>,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN: usize,
     const T: usize,
     const RATE: usize,
 > {
     ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN>,
-    hasher_chip: HasherChip<C::Scalar, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>,
-    _marker: PhantomData<E>,
+    hasher_chip: HasherChip<N, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>,
+    _point_repr: E,
 }
 
 impl<
-        E: PointRepresentation<C, NUMBER_OF_LIMBS, BIT_LEN>,
-        C: CurveAffine,
+        C: CurveAffine<ScalarExt = N>,
+        N: FieldExt,
+        E: PointRepresentation<C, N, NUMBER_OF_LIMBS, BIT_LEN>,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN: usize,
         const T: usize,
         const RATE: usize,
-    > TranscriptChip<E, C, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>
+    > TranscriptChip<C, N, E, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>
 {
     /// Constructs the transcript chip
     pub fn new(
-        ctx: &mut RegionCtx<'_, C::Scalar>,
-        spec: &Spec<C::Scalar, T, RATE>,
+        ctx: &mut RegionCtx<'_, N>,
+        spec: &Spec<N, T, RATE>,
         ecc_chip: BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN>,
+        _point_repr: E,
     ) -> Result<Self, Error> {
         let main_gate = ecc_chip.main_gate();
         let main_gate_config = main_gate.config();
@@ -123,31 +138,28 @@ impl<
         Ok(Self {
             ecc_chip,
             hasher_chip,
-            _marker: PhantomData,
+            _point_repr,
         })
     }
 
     /// Write scalar to the transcript
-    pub fn write_scalar(&mut self, scalar: &AssignedValue<C::Scalar>) {
+    pub fn write_scalar(&mut self, scalar: &AssignedValue<N>) {
         self.hasher_chip.update(&[scalar.clone()]);
     }
 
     /// Write point to the transcript
     pub fn write_point(
         &mut self,
-        ctx: &mut RegionCtx<'_, C::Scalar>,
-        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN>,
+        ctx: &mut RegionCtx<'_, N>,
+        point: &AssignedPoint<C::Base, N, NUMBER_OF_LIMBS, BIT_LEN>,
     ) -> Result<(), Error> {
-        let encoded = E::encode(ctx, &self.ecc_chip, point)?;
+        let encoded = E::encode_assigned(ctx, &self.ecc_chip, point)?;
         self.hasher_chip.update(&encoded[..]);
         Ok(())
     }
 
     // Constrain squeezing new challenge
-    pub fn squeeze(
-        &mut self,
-        ctx: &mut RegionCtx<'_, C::Scalar>,
-    ) -> Result<AssignedValue<C::Scalar>, Error> {
+    pub fn squeeze(&mut self, ctx: &mut RegionCtx<'_, N>) -> Result<AssignedValue<N>, Error> {
         self.hasher_chip.hash(ctx)
     }
 }
@@ -164,6 +176,7 @@ mod tests {
     use crate::maingate::MainGateConfig;
     use crate::maingate::{MainGateInstructions, RegionCtx};
     use crate::transcript::LimbRepresentation;
+    use crate::TranscriptChip;
     use ecc::halo2::arithmetic::CurveAffine;
     use ecc::halo2::circuit::Value;
     use ecc::integer::rns::Rns;
@@ -213,8 +226,7 @@ mod tests {
 
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
             let range_chip = RangeChip::<N>::new(self.range_config.clone());
-            range_chip.load_composition_tables(layouter)?;
-            range_chip.load_overflow_tables(layouter)?;
+            range_chip.load_table(layouter)?;
 
             Ok(())
         }
@@ -260,10 +272,11 @@ mod tests {
                     let ctx = &mut RegionCtx::new(region, offset);
 
                     let mut transcript_chip =
-                        LimbRepresentation::new::<_, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>(
+                        TranscriptChip::<_, _, _, NUMBER_OF_LIMBS, BIT_LEN_LIMB, T, RATE>::new(
                             ctx,
                             &self.spec,
                             ecc_chip.clone(),
+                            LimbRepresentation::default(),
                         )?;
 
                     for e in self.inputs.as_ref().transpose_vec(self.n) {

@@ -8,6 +8,7 @@ pub mod utils;
 pub use halo2;
 pub use halo2::halo2curves as curves;
 
+#[derive(Debug)]
 pub struct RegionCtx<'a, F: FieldExt> {
     region: Region<'a, F>,
     offset: usize,
