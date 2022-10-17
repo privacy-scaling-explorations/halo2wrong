@@ -14,8 +14,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         &self,
         ctx: &mut RegionCtx<'_, N>,
         t: &[AssignedValue<N>; NUMBER_OF_LIMBS],
-        result: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         residues: Vec<AssignedValue<N>>,
+        result: Option<&AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     ) -> Result<(), Error> {
         let main_gate = self.main_gate();
         let (zero, one) = (N::zero(), N::one());
@@ -25,23 +25,37 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let lsh_two = self.rns.left_shifter(2);
         let mut carry = Term::Zero;
 
-        for ((t_chunk, r_chunk), v) in t
-            .chunks(2)
-            .zip(result.limbs().chunks(2))
-            .zip(residues.iter())
-        {
+        let result: Vec<Option<AssignedValue<N>>> = match result {
+            Some(result) => result
+                .limbs()
+                .iter()
+                .map(|limb| Some(limb.value.clone()))
+                .collect(),
+            None => {
+                vec![None; NUMBER_OF_LIMBS]
+            }
+        };
+
+        for ((t_chunk, r_chunk), v) in t.chunks(2).zip(result.chunks(2)).zip(residues.iter()) {
+            let r_lo = match r_chunk[0].as_ref() {
+                Some(r_lo) => Term::Assigned(r_lo, -one),
+                None => Term::Zero,
+            };
             if t_chunk.len() == 2 {
                 let (t_lo, t_hi) = (&t_chunk[0], &t_chunk[1]);
-                let (r_lo, r_hi) = (r_chunk[0].as_ref(), r_chunk[1].as_ref());
+                let r_hi = match r_chunk[1].as_ref() {
+                    Some(r_hi) => Term::Assigned(r_hi, -lsh_one),
+                    None => Term::Zero,
+                };
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
                         // v * R^2 = t_lo + R * t_hi  + r_lo + R * r_hi + carry
                         Term::Assigned(t_lo, one),
                         Term::Assigned(t_hi, lsh_one),
-                        Term::Assigned(r_lo, -one),
-                        Term::Assigned(r_hi, -lsh_one),
                         Term::Assigned(v, -lsh_two),
+                        r_lo,
+                        r_hi,
                         carry.clone(),
                     ],
                     zero,
@@ -51,9 +65,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
-                        // R * v = t + carry
+                        // v * R = r_lo + t + carry
                         Term::Assigned(&t_chunk[0], one),
-                        Term::Assigned(r_chunk[0].as_ref(), one),
+                        r_lo,
                         Term::Assigned(v, -lsh_one),
                         carry.clone(),
                     ],
@@ -94,23 +108,6 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .iter()
             .map(|v| range_chip.assign(ctx, *v, Self::sublimb_bit_len(), self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
-
-        // Witness layout for `NUMBER_OF_LIMBS = 4`:
-        // | A   | B   | C   | D     |
-        // | --- | --- | --- | ----- |
-        // | a_0 | b_0 | q_0 | t_0   |
-
-        // | a_0 | b_1 | q_1 | t_1   |
-        // | a_1 | b_0 | q_0 | tmp   |
-
-        // | a_0 | b_2 | q_2 | t_2   |
-        // | a_1 | b_1 | q_1 | tmp_a |
-        // | a_2 | b_0 | q_0 | tmp_b |
-
-        // | a_0 | b_3 | q_3 | t_3   |
-        // | a_1 | b_2 | q_2 | tmp_b |
-        // | a_2 | b_1 | q_1 | tmp_a |
-        // | a_3 | b_0 | q_0 | tmp_c |
 
         let mut t: Vec<AssignedValue<N>> = vec![];
 
@@ -172,8 +169,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ctx,
             &t.try_into()
                 .expect("Unexpected failure in AssignedCell -> AssignedValue conversion"),
-            &result,
             residues,
+            Some(&result),
         )?;
 
         // Constrain native part of crt
@@ -245,8 +242,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ctx,
             &t.try_into()
                 .expect("Unexpected failure in AssignedCell -> AssignedValue conversion"),
-            &result,
             residues,
+            Some(&result),
         )?;
 
         // Update native value
@@ -371,12 +368,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 )?;
                 carry = Term::Assigned(v, one);
             } else {
-                let t = &t[0];
                 main_gate.assert_zero_sum(
                     ctx,
                     &[
-                        // R * v = t + carry
-                        Term::Assigned(t, one),
+                        Term::Assigned(&t_chunk[0], one),
                         Term::Assigned(v, -lsh_one),
                         carry.clone(),
                     ],

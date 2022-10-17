@@ -119,7 +119,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
 
         // Constrain binary part of crt
-        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), a, residues)?;
+        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), residues, Some(a))?;
 
         // Constrain native part of crt
         main_gate.apply(

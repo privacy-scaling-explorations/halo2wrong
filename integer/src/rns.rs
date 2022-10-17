@@ -888,7 +888,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 let j = 2 * i;
                 let v = if (i == u_len - 1) && is_odd {
                     let r = self.limb(j).0;
-                    let u = t[j] - r;
+                    let u = t[j] - r + carry;
                     u * rsh1
                 } else {
                     let (r_0, r_1) = (self.limb(j).0, self.limb(j + 1).0);

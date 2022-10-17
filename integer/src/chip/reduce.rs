@@ -118,8 +118,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             ctx,
             &t.try_into()
                 .expect("Unexpected failure in AssignedCell -> AssignedValue conversion"),
-            &result,
             residues,
+            Some(&result),
         )?;
 
         // Constrain native part of crt

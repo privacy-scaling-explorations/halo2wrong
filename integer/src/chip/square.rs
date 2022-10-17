@@ -31,28 +31,12 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let range_chip = self.range_chip();
         let result = self.assign_integer(ctx, result.into(), Range::Remainder)?;
         let quotient = &self.assign_integer(ctx, quotient.into(), Range::MulQuotient)?;
+
         let residues = witness
             .residues()
             .iter()
             .map(|v| range_chip.assign(ctx, *v, Self::sublimb_bit_len(), self.rns.mul_v_bit_len))
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
-
-        // Follow same witness layout with mul:
-        // | A   | B   | C   | D     |
-        // | --- | --- | --- | ----- |
-        // | a_0 | a_0 | q_0 | t_0   |
-
-        // | a_0 | a_1 | q_1 | t_1   |
-        // | a_1 | a_0 | q_0 | tmp   |
-
-        // | a_0 | a_2 | q_2 | t_2   |
-        // | a_1 | a_1 | q_1 | tmp_a |
-        // | a_2 | a_0 | q_0 | tmp_b |
-
-        // | a_0 | a_3 | q_3 | t_3   |
-        // | a_1 | a_2 | q_2 | tmp_b |
-        // | a_2 | a_1 | q_1 | tmp_a |
-        // | a_3 | a_0 | q_0 | tmp_c |
 
         let mut t: Vec<AssignedValue<N>> = vec![];
 
@@ -110,7 +94,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         }
 
         // Constrain binary part of crt
-        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), &result, residues)?;
+        self.constrain_binary_crt(ctx, &t.try_into().unwrap(), residues, Some(&result))?;
 
         // Constrain native part of crt
         let native = a.native();

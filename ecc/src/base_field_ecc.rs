@@ -349,7 +349,6 @@ mod tests {
     use crate::curves::pasta::{EpAffine as Pallas, EqAffine as Vesta};
     use crate::halo2;
     use crate::integer::rns::Rns;
-    use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
     use crate::maingate;
     use group::{Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
@@ -364,18 +363,18 @@ mod tests {
     use paste::paste;
     use rand_core::OsRng;
 
-    const NUMBER_OF_LIMBS: usize = 4;
-    const BIT_LEN_LIMB: usize = 68;
+    const NUMBER_OF_SUBLIMBS: usize = 4;
 
-    fn rns<C: CurveAffine>() -> Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    fn rns<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+    ) -> Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         Rns::construct()
     }
 
-    fn setup<C: CurveAffine>(
+    fn setup<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
         k_override: u32,
     ) -> (Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, u32) {
-        let rns = rns::<C>();
-        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+        let rns = rns::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS;
         let mut k: u32 = (bit_len_lookup + 1) as u32;
         if k_override != 0 {
             k = k_override;
@@ -399,12 +398,14 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
+        fn new<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+            meta: &mut ConstraintSystem<C::Scalar>,
+        ) -> Self {
             let rns = Rns::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct();
 
             let main_gate_config = MainGate::<C::Scalar>::configure(meta);
             let overflow_bit_lens = rns.overflow_lengths();
-            let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS];
+            let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS];
 
             let range_config = RangeChip::<C::Scalar>::configure(
                 meta,
@@ -428,11 +429,13 @@ mod tests {
     }
 
     #[derive(Clone, Debug, Default)]
-    struct TestEccAddition<C> {
+    struct TestEccAddition<C, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
         _marker: PhantomData<C>,
     }
 
-    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccAddition<C> {
+    impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<C::Scalar>
+        for TestEccAddition<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -441,7 +444,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
-            TestCircuitConfig::new::<C>(meta)
+            TestCircuitConfig::new::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
         }
 
         fn synthesize(
@@ -505,23 +508,32 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_addition_circuit() {
-        fn run<C: CurveAffine>() {
-            let circuit = TestEccAddition::<C>::default();
+        fn run<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>() {
+            let circuit = TestEccAddition::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::default();
             let instance = vec![vec![]];
             assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
-        run::<Bn256>();
-        run::<Pallas>();
-        run::<Vesta>();
+        run::<Bn256, 4, 68>();
+        run::<Bn256, 3, 88>();
+        run::<Pallas, 4, 68>();
+        run::<Pallas, 3, 88>();
+        run::<Vesta, 4, 68>();
+        run::<Vesta, 3, 88>();
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestEccPublicInput<C: CurveAffine> {
+    struct TestEccPublicInput<
+        C: CurveAffine,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > {
         a: Value<C>,
         b: Value<C>,
     }
 
-    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccPublicInput<C> {
+    impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<C::Scalar>
+        for TestEccPublicInput<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -530,7 +542,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
-            TestCircuitConfig::new::<C>(meta)
+            TestCircuitConfig::new::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
         }
 
         fn synthesize(
@@ -570,7 +582,7 @@ mod tests {
                     ecc_chip.normalize(ctx, &c)
                 },
             )?;
-            ecc_chip.expose_public(layouter.namespace(|| "sum"), sum, 8)?;
+            ecc_chip.expose_public(layouter.namespace(|| "sum"), sum, NUMBER_OF_LIMBS * 2)?;
 
             config.config_range(&mut layouter)?;
 
@@ -580,8 +592,8 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_public_input() {
-        fn run<C: CurveAffine>() {
-            let (rns, _) = setup::<C>(20);
+        fn run<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>() {
+            let (rns, _) = setup::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(20);
             let rns = Rc::new(rns);
 
             let a = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
@@ -594,26 +606,30 @@ mod tests {
             let c1 = Point::new(Rc::clone(&rns), c1);
             public_data.extend(c1.public());
 
-            let circuit = TestEccPublicInput {
+            let circuit = TestEccPublicInput::<_, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                 a: Value::known(a),
                 b: Value::known(b),
             };
             let instance = vec![public_data];
             assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
-
-        run::<Bn256>();
-        run::<Pallas>();
-        run::<Vesta>();
+        run::<Bn256, 4, 68>();
+        run::<Bn256, 3, 88>();
+        run::<Pallas, 4, 68>();
+        run::<Pallas, 3, 88>();
+        run::<Vesta, 4, 68>();
+        run::<Vesta, 3, 88>();
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestEccMul<C: CurveAffine> {
+    struct TestEccMul<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
         window_size: usize,
         aux_generator: C,
     }
 
-    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccMul<C> {
+    impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<C::Scalar>
+        for TestEccMul<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -622,7 +638,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
-            TestCircuitConfig::new::<C>(meta)
+            TestCircuitConfig::new::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
         }
 
         fn synthesize(
@@ -677,11 +693,11 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_mul_circuit() {
-        fn run<C: CurveAffine>() {
+        fn run<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>() {
             for window_size in 1..5 {
                 let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-                let circuit = TestEccMul {
+                let circuit = TestEccMul::<_, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     aux_generator,
                     window_size,
                 };
@@ -689,19 +705,24 @@ mod tests {
                 assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
             }
         }
-        run::<Bn256>();
-        run::<Pallas>();
-        run::<Vesta>();
+        run::<Bn256, 4, 68>();
+        run::<Bn256, 3, 88>();
+        run::<Pallas, 4, 68>();
+        run::<Pallas, 3, 88>();
+        run::<Vesta, 4, 68>();
+        run::<Vesta, 3, 88>();
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestEccBatchMul<C: CurveAffine> {
+    struct TestEccBatchMul<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
         window_size: usize,
         number_of_pairs: usize,
         aux_generator: C,
     }
 
-    impl<C: CurveAffine> Circuit<C::Scalar> for TestEccBatchMul<C> {
+    impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<C::Scalar>
+        for TestEccBatchMul<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -710,7 +731,7 @@ mod tests {
         }
 
         fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
-            TestCircuitConfig::new::<C>(meta)
+            TestCircuitConfig::new::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
         }
 
         #[allow(clippy::type_complexity)]
@@ -774,15 +795,15 @@ mod tests {
     }
 
     macro_rules! test_base_field_ecc_mul_batch_circuit {
-        ($C:ty) => {
+        ($C:ty, $number_of_limbs:expr, $bit_len:expr) => {
             paste! {
                 #[test]
-                fn [<test_base_field_ecc_mul_batch_circuit_ $C:lower>]() {
+                fn [<test_base_field_ecc_mul_batch_circuit_$C:lower _$number_of_limbs _$bit_len>]() {
                     for number_of_pairs in 5..7 {
                         for window_size in 1..3 {
                             let aux_generator = <$C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
-                            let circuit = TestEccBatchMul {
+                            let circuit = TestEccBatchMul::<_, $number_of_limbs, $bit_len> {
                                 aux_generator,
                                 window_size,
                                 number_of_pairs,
@@ -796,7 +817,10 @@ mod tests {
         };
     }
 
-    test_base_field_ecc_mul_batch_circuit!(Bn256);
-    test_base_field_ecc_mul_batch_circuit!(Pallas);
-    test_base_field_ecc_mul_batch_circuit!(Vesta);
+    test_base_field_ecc_mul_batch_circuit!(Bn256, 4, 68);
+    test_base_field_ecc_mul_batch_circuit!(Bn256, 3, 88);
+    test_base_field_ecc_mul_batch_circuit!(Pallas, 4, 68);
+    test_base_field_ecc_mul_batch_circuit!(Pallas, 3, 88);
+    test_base_field_ecc_mul_batch_circuit!(Vesta, 4, 68);
+    test_base_field_ecc_mul_batch_circuit!(Vesta, 3, 88);
 }

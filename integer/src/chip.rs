@@ -564,21 +564,19 @@ mod tests {
     use rand_core::OsRng;
     use std::rc::Rc;
 
-    const NUMBER_OF_LIMBS: usize = 4;
-
-    fn rns<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+    fn rns<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
     ) -> Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         Rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct()
     }
 
-    fn setup<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+    fn setup<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
     ) -> (Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, u32) {
         let rns = rns();
         let k: u32 = (rns.bit_len_lookup + 1) as u32;
         (rns, k)
     }
 
-    impl<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>
+    impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         From<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>
         for UnassignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
@@ -587,11 +585,18 @@ mod tests {
         }
     }
 
-    pub(crate) struct TestRNS<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+    pub(crate) struct TestRNS<
+        W: FieldExt,
+        N: FieldExt,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > {
         rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
     }
 
-    impl<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> TestRNS<W, N, BIT_LEN_LIMB> {
+    impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+        TestRNS<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    {
         pub(crate) fn rand_in_field(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             Integer::from_fe(W::random(OsRng), Rc::clone(&self.rns))
         }
@@ -654,13 +659,6 @@ mod tests {
             self.new_from_big(self.rns.max_operand.clone())
         }
 
-        // pub(crate) fn max_in_unreduced_range(
-        //     &self,
-        // ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        //     let limbs = [big_to_fe(self.rns.max_unreduced_limb.clone());
-        // NUMBER_OF_LIMBS];     Integer::from_limbs(&limbs,
-        // Rc::clone(&self.rns)) }
-
         pub fn zero(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
             Integer::from_big(big_uint::zero(), Rc::clone(&self.rns))
         }
@@ -673,12 +671,17 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize>(
+        fn new<
+            W: FieldExt,
+            N: FieldExt,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        >(
             meta: &mut ConstraintSystem<N>,
         ) -> Self {
             let main_gate_config = MainGate::<N>::configure(meta);
 
-            let overflow_bit_lens = rns::<W, N, BIT_LEN_LIMB>().overflow_lengths();
+            let overflow_bit_lens = rns::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>().overflow_lengths();
             let composition_bit_len =
                 IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::sublimb_bit_len();
             let range_config = RangeChip::<N>::configure(
@@ -714,22 +717,22 @@ mod tests {
 
 
             #[derive(Clone, Debug)]
-            struct $circuit_name<W: FieldExt, N: FieldExt, const BIT_LEN_LIMB: usize> {
+            struct $circuit_name<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize,const BIT_LEN_LIMB: usize> {
                 rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
             }
 
-            impl<W: FieldExt, N: FieldExt,  const BIT_LEN_LIMB: usize> $circuit_name<W, N, BIT_LEN_LIMB> {
-                fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS,BIT_LEN_LIMB>{
+            impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+                fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>{
                     IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(config.integer_chip_config(), Rc::clone(&self.rns))
                 }
 
-                fn tester(&self) -> TestRNS<W, N, BIT_LEN_LIMB> {
+                fn tester(&self) -> TestRNS<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     TestRNS {rns:Rc::clone(&self.rns)}
                 }
 
             }
 
-            impl<W: FieldExt, N: FieldExt,  const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
+            impl<W: FieldExt, N: FieldExt,  const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                 type Config = TestCircuitConfig;
                 type FloorPlanner = SimpleFloorPlanner;
 
@@ -738,7 +741,7 @@ mod tests {
                 }
 
                 fn configure(meta: &mut ConstraintSystem<N>) -> Self::Config {
-                    TestCircuitConfig::new::<W, N, BIT_LEN_LIMB>(meta)
+                    TestCircuitConfig::new::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(meta)
                 }
 
                 $( $synth )*
@@ -1511,12 +1514,12 @@ mod tests {
 
     macro_rules! test_circuit_runner {
         (
-            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $bit_len_limb:expr]),*
+            $circuit:ident, $([$wrong_field:ident, $native_field:ident, $number_of_limbs:expr, $bit_len_limb:expr]),*
         ) => {
             $(
-                let (rns, _):(Rns<$wrong_field, $native_field, NUMBER_OF_LIMBS, $bit_len_limb>, u32) = setup();
+                let (rns, _):(Rns<$wrong_field, $native_field, $number_of_limbs, $bit_len_limb>, u32) = setup();
 
-                let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns: Rc::new(rns) };
+                let circuit = $circuit::<$wrong_field, $native_field, $number_of_limbs, $bit_len_limb> { rns: Rc::new(rns) };
             let instance = vec![vec![]];
             assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
             )*
@@ -1532,16 +1535,26 @@ mod tests {
             use crate::curves::secp256k1::{Fp as Secp256k1Base, Fq as Secp256k1Scalar};
             test_circuit_runner!(
                 $circuit,
-                [PastaFp, PastaFq, 68],
-                [PastaFq, PastaFp, 68],
-                [BnBase, BnScalar, 68],
-                [BnScalar, BnScalar, 68],
-                [Secp256k1Base, BnScalar, 68],
-                [Secp256k1Base, PastaFp, 68],
-                [Secp256k1Base, PastaFq, 68],
-                [Secp256k1Scalar, BnScalar, 68],
-                [Secp256k1Scalar, PastaFp, 68],
-                [Secp256k1Scalar, PastaFq, 68]
+                [PastaFp, PastaFq, 4, 68],
+                [PastaFp, PastaFq, 3, 88],
+                [PastaFq, PastaFp, 4, 68],
+                [PastaFq, PastaFp, 3, 88],
+                [BnBase, BnScalar, 4, 68],
+                [BnBase, BnScalar, 3, 88],
+                [BnScalar, BnScalar, 4, 68],
+                [BnScalar, BnScalar, 3, 88],
+                [Secp256k1Base, BnScalar, 4, 68],
+                [Secp256k1Base, BnScalar, 3, 88],
+                [Secp256k1Base, PastaFp, 4, 68],
+                [Secp256k1Base, PastaFp, 3, 88],
+                [Secp256k1Base, PastaFq, 4, 68],
+                [Secp256k1Base, PastaFq, 3, 88],
+                [Secp256k1Scalar, BnScalar, 4, 68],
+                [Secp256k1Scalar, BnScalar, 3, 88],
+                [Secp256k1Scalar, PastaFp, 4, 68],
+                [Secp256k1Scalar, PastaFp, 3, 88],
+                [Secp256k1Scalar, PastaFq, 4, 68],
+                [Secp256k1Scalar, PastaFq, 3, 88]
             );
         };
     }

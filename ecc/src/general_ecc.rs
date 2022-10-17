@@ -397,7 +397,6 @@ mod tests {
     use super::{AssignedPoint, EccConfig, GeneralEccChip, Point};
     use crate::halo2;
     use crate::integer::rns::Rns;
-    use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
     use crate::integer::{AssignedInteger, IntegerInstructions};
     use crate::maingate;
     use group::{prime::PrimeCurveAffine, Curve as _, Group};
@@ -419,8 +418,7 @@ mod tests {
     };
     use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
 
-    const NUMBER_OF_LIMBS: usize = 4;
-    const BIT_LEN_LIMB: usize = 68;
+    const NUMBER_OF_SUBLIMBS: usize = 4;
 
     #[allow(clippy::type_complexity)]
     fn setup<
@@ -436,7 +434,7 @@ mod tests {
         u32,
     ) {
         let (rns_base, rns_scalar) = GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
-        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_LOOKUP_LIMBS;
+        let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS;
         let mut k: u32 = (bit_len_lookup + 1) as u32;
         if k_override != 0 {
             k = k_override;
@@ -475,7 +473,7 @@ mod tests {
             let mut overflow_bit_lens: Vec<usize> = vec![];
             overflow_bit_lens.extend(rns_base.overflow_lengths());
             overflow_bit_lens.extend(rns_scalar.overflow_lengths());
-            let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_LIMBS];
+            let composition_bit_lens = vec![BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS];
 
             let range_config = RangeChip::<N>::configure(
                 meta,
@@ -594,21 +592,33 @@ mod tests {
             assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
 
-        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, BnScalar, 4, 68>();
+        run::<Pallas, BnScalar, 3, 88>();
+        run::<Pallas, PastaFp, 4, 68>();
+        run::<Pallas, PastaFp, 3, 88>();
+        run::<Pallas, PastaFq, 4, 68>();
+        run::<Pallas, PastaFq, 3, 88>();
 
-        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, BnScalar, 4, 68>();
+        run::<Vesta, BnScalar, 3, 88>();
+        run::<Vesta, PastaFp, 4, 68>();
+        run::<Vesta, PastaFp, 3, 88>();
+        run::<Vesta, PastaFq, 4, 68>();
+        run::<Vesta, PastaFq, 3, 88>();
 
-        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, BnScalar, 4, 68>();
+        run::<Bn256, BnScalar, 3, 88>();
+        run::<Bn256, PastaFp, 4, 68>();
+        run::<Bn256, PastaFp, 3, 88>();
+        run::<Bn256, PastaFq, 4, 68>();
+        run::<Bn256, PastaFq, 3, 88>();
 
-        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, BnScalar, 4, 68>();
+        run::<Secp256k1, BnScalar, 3, 88>();
+        run::<Secp256k1, PastaFp, 4, 68>();
+        run::<Secp256k1, PastaFp, 3, 88>();
+        run::<Secp256k1, PastaFq, 4, 68>();
+        run::<Secp256k1, PastaFq, 3, 88>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -674,7 +684,7 @@ mod tests {
                     ecc_chip.normalize(ctx, &c)
                 },
             )?;
-            ecc_chip.expose_public(layouter.namespace(|| "sum"), sum, 8)?;
+            ecc_chip.expose_public(layouter.namespace(|| "sum"), sum, NUMBER_OF_LIMBS * 2)?;
 
             config.config_range(&mut layouter)?;
 
@@ -711,21 +721,33 @@ mod tests {
             assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
         }
 
-        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, BnScalar, 4, 68>();
+        run::<Pallas, BnScalar, 3, 88>();
+        run::<Pallas, PastaFp, 4, 68>();
+        run::<Pallas, PastaFp, 3, 88>();
+        run::<Pallas, PastaFq, 4, 68>();
+        run::<Pallas, PastaFq, 3, 88>();
 
-        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, BnScalar, 4, 68>();
+        run::<Vesta, BnScalar, 3, 88>();
+        run::<Vesta, PastaFp, 4, 68>();
+        run::<Vesta, PastaFp, 3, 88>();
+        run::<Vesta, PastaFq, 4, 68>();
+        run::<Vesta, PastaFq, 3, 88>();
 
-        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, BnScalar, 4, 68>();
+        run::<Bn256, BnScalar, 3, 88>();
+        run::<Bn256, PastaFp, 4, 68>();
+        run::<Bn256, PastaFp, 3, 88>();
+        run::<Bn256, PastaFq, 4, 68>();
+        run::<Bn256, PastaFq, 3, 88>();
 
-        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, BnScalar, 4, 68>();
+        run::<Secp256k1, BnScalar, 3, 88>();
+        run::<Secp256k1, PastaFp, 4, 68>();
+        run::<Secp256k1, PastaFp, 3, 88>();
+        run::<Secp256k1, PastaFq, 4, 68>();
+        run::<Secp256k1, PastaFq, 3, 88>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -831,21 +853,33 @@ mod tests {
             }
         }
 
-        run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Pallas, BnScalar, 4, 68>();
+        run::<Pallas, BnScalar, 3, 88>();
+        run::<Pallas, PastaFp, 4, 68>();
+        run::<Pallas, PastaFp, 3, 88>();
+        run::<Pallas, PastaFq, 4, 68>();
+        run::<Pallas, PastaFq, 3, 88>();
 
-        run::<Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Vesta, BnScalar, 4, 68>();
+        run::<Vesta, BnScalar, 3, 88>();
+        run::<Vesta, PastaFp, 4, 68>();
+        run::<Vesta, PastaFp, 3, 88>();
+        run::<Vesta, PastaFq, 4, 68>();
+        run::<Vesta, PastaFq, 3, 88>();
 
-        run::<Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Bn256, BnScalar, 4, 68>();
+        run::<Bn256, BnScalar, 3, 88>();
+        run::<Bn256, PastaFp, 4, 68>();
+        run::<Bn256, PastaFp, 3, 88>();
+        run::<Bn256, PastaFq, 4, 68>();
+        run::<Bn256, PastaFq, 3, 88>();
 
-        run::<Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
-        run::<Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
+        run::<Secp256k1, BnScalar, 4, 68>();
+        run::<Secp256k1, BnScalar, 3, 88>();
+        run::<Secp256k1, PastaFp, 4, 68>();
+        run::<Secp256k1, PastaFp, 3, 88>();
+        run::<Secp256k1, PastaFq, 4, 68>();
+        run::<Secp256k1, PastaFq, 3, 88>();
     }
 
     #[derive(Default, Clone, Debug)]
@@ -942,15 +976,15 @@ mod tests {
     }
 
     macro_rules! test_general_ecc_mul_batch_circuit {
-        ($C:ty, $N:ty, $NUMBER_OF_LIMBS:expr, $BIT_LEN_LIMB:expr) => {
+        ($C:ty, $N:ty, $number_of_limbs:expr, $bit_len:expr) => {
             paste! {
                 #[test]
-                fn [<test_general_ecc_mul_batch_circuit_ $C:lower _ $N:lower>]() {
+                fn [<test_general_ecc_mul_batch_circuit_ $C:lower _ $N:lower _ $number_of_limbs _ $bit_len>]() {
                     for number_of_pairs in 5..7 {
                         for window_size in 1..3 {
                             let aux_generator = <$C as PrimeCurveAffine>::Curve::random(OsRng).to_affine();
 
-                            let circuit = TestEccBatchMul::<$C, $N, $NUMBER_OF_LIMBS, $BIT_LEN_LIMB> {
+                            let circuit = TestEccBatchMul::<$C, $N, $number_of_limbs, $bit_len> {
                                 aux_generator,
                                 window_size,
                                 number_of_pairs,
@@ -965,19 +999,31 @@ mod tests {
         }
     }
 
-    test_general_ecc_mul_batch_circuit!(Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Pallas, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Pallas, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Pallas, BnScalar, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Pallas, BnScalar, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Pallas, PastaFp, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Pallas, PastaFp, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Pallas, PastaFq, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Pallas, PastaFq, 3, 88);
 
-    test_general_ecc_mul_batch_circuit!(Vesta, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Vesta, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Vesta, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Vesta, BnScalar, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Vesta, BnScalar, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Vesta, PastaFp, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Vesta, PastaFp, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Vesta, PastaFq, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Vesta, PastaFq, 3, 88);
 
-    test_general_ecc_mul_batch_circuit!(Bn256, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Bn256, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Bn256, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Bn256, BnScalar, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Bn256, BnScalar, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Bn256, PastaFp, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Bn256, PastaFp, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Bn256, PastaFq, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Bn256, PastaFq, 3, 88);
 
-    test_general_ecc_mul_batch_circuit!(Secp256k1, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFp, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
-    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFq, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, BnScalar, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, BnScalar, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFp, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFp, 3, 88);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFq, 4, 68);
+    test_general_ecc_mul_batch_circuit!(Secp256k1, PastaFq, 3, 88);
 }

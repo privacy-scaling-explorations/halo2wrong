@@ -51,40 +51,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             })
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
-        // Constrain residues
-        let lsh_one = self.rns.left_shifter(1);
-        let lsh_two = self.rns.left_shifter(2);
-        let mut carry = Term::Zero;
-        for (t_chunk, v) in t.chunks(2).zip(residues.iter()) {
-            if t_chunk.len() == 2 {
-                let (t_lo, t_hi) = (&t_chunk[0], &t_chunk[1]);
-                main_gate.assert_zero_sum(
-                    ctx,
-                    &[
-                        // R^2 * v = t_lo + R * t_hi + carry
-                        Term::Assigned(t_lo, one),
-                        Term::Assigned(t_hi, lsh_one),
-                        Term::Assigned(v, -lsh_two),
-                        carry.clone(),
-                    ],
-                    zero,
-                )?;
-                carry = Term::Assigned(v, one);
-            } else {
-                let t = &t[0];
-                main_gate.assert_zero_sum(
-                    ctx,
-                    &[
-                        // R * v = t + carry
-                        Term::Assigned(t, one),
-                        Term::Assigned(v, -lsh_one),
-                        carry.clone(),
-                    ],
-                    zero,
-                )?;
-            }
-        }
-
-        Ok(())
+        // Constrain binary part of crt
+        self.constrain_binary_crt(
+            ctx,
+            &t.try_into()
+                .expect("Unexpected failure in AssignedCell -> AssignedValue conversion"),
+            residues,
+            None,
+        )
     }
 }
