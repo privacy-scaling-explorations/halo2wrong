@@ -12,7 +12,7 @@ use num_bigint::BigUint as big_uint;
 use rns::Rns;
 use std::rc::Rc;
 
-pub use chip::{IntegerChip, IntegerConfig};
+pub use chip::IntegerChip;
 pub use instructions::{IntegerInstructions, Range};
 pub use maingate;
 pub use maingate::halo2;

@@ -1,4 +1,4 @@
-use super::{make_mul_aux, AssignedPoint, EccConfig, MulAux, Point};
+use super::{make_mul_aux, AssignedPoint, MulAux, Point};
 use crate::halo2;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::{IntegerChip, IntegerInstructions, Range, UnassignedInteger};
@@ -6,8 +6,9 @@ use crate::maingate;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 use halo2::circuit::{Layouter, Value};
 use halo2::plonk::Error;
+use integer::maingate::MainGateInstructions;
 use integer::maingate::RegionCtx;
-use maingate::{AssignedCondition, MainGate};
+use maingate::AssignedCondition;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -29,14 +30,10 @@ pub struct GeneralEccChip<
     /// `IntegerChip` for the scalar field of the EC
     scalar_field_chip: IntegerChip<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     /// Auxiliary point for optimized multiplication algorithm
-    aux_generator: Option<(
-        AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        Value<Emulated>,
-    )>,
+    aux_generator: Emulated,
     /// Auxiliary points for optimized multiplication for each (window_size,
     /// n_pairs) pairs
-    aux_registry:
-        BTreeMap<(usize, usize), AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+    aux_registry: BTreeMap<(usize, usize), Emulated>,
 }
 
 impl<
@@ -46,26 +43,62 @@ impl<
         const BIT_LEN_LIMB: usize,
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    /// Residue numeral system
     /// Used to emulate the base field `Emulated::Base` and the scalar
     /// field `Emulated::Scalar` over the native field `N`
-    pub fn rns() -> (
+    pub fn construct_rns() -> (
         Rns<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         Rns<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) {
         (Rns::construct(), Rns::construct())
     }
 
-    /// Return `GeneralEccChip` from `EccConfig`
-    pub fn new(config: EccConfig) -> Self {
-        let (rns_base_field, rns_scalar_field) = Self::rns();
-        let integer_config = config.integer_chip_config();
-        Self {
-            base_field_chip: IntegerChip::new(integer_config.clone(), Rc::new(rns_base_field)),
-            scalar_field_chip: IntegerChip::new(integer_config, Rc::new(rns_scalar_field)),
-            aux_generator: None,
+    /// Creates new `GeneralEccChip`
+    pub fn new(
+        layouter: &mut impl Layouter<N>,
+        base_field_chip: &mut IntegerChip<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        scalar_field_chip: &mut IntegerChip<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        aux_generator: Emulated,
+    ) -> Result<Self, Error> {
+        scalar_field_chip
+            .main_gate_mut()
+            .register_constants(layouter, vec![N::from(0)])?;
+        let mut ecc_chip = Self {
+            base_field_chip: base_field_chip.clone(),
+            scalar_field_chip: scalar_field_chip.clone(),
+            aux_generator,
             aux_registry: BTreeMap::new(),
-        }
+        };
+        ecc_chip.register_constants(layouter, vec![aux_generator])?;
+        Ok(ecc_chip)
+    }
+
+    /// Given multiplication specification assigns auxillary constants
+    pub fn configure_multiplication(
+        &mut self,
+        layouter: &mut impl Layouter<N>,
+        window_size: usize,
+        number_of_pairs: usize,
+    ) -> Result<(), Error> {
+        let aux = make_mul_aux(self.aux_generator, window_size, number_of_pairs);
+        self.register_constants(layouter, vec![aux])?;
+        self.aux_registry
+            .insert((window_size, number_of_pairs), aux);
+        Ok(())
+    }
+
+    fn get_mul_aux(
+        &self,
+        window_size: usize,
+        number_of_pairs: usize,
+    ) -> Result<MulAux<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let to_add = self.get_constant_point(self.aux_generator)?;
+        let to_sub = match self.aux_registry.get(&(window_size, number_of_pairs)) {
+            Some(aux) => Ok(self.get_constant_point(*aux)?),
+            None => Err(Error::NotEnoughColumnsForConstants),
+        }?;
+        // to_add the equivalent of AuxInit and to_sub AuxFin
+        // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
+        Ok(MulAux::new(to_add, to_sub))
     }
 
     /// Residue numeral system for the base field of the curve
@@ -78,22 +111,6 @@ impl<
     /// Return new refence for chips' rns scalar field
     pub fn rns_scalar(&self) -> Rc<Rns<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         self.scalar_field_chip.rns()
-    }
-
-    /// Assign Rns base for chip
-    pub fn new_unassigned_base(
-        &self,
-        e: Value<Emulated::Base>,
-    ) -> UnassignedInteger<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        e.map(|e| Integer::from_fe(e, self.rns_base())).into()
-    }
-
-    /// Assign Rns Scalar for chip
-    pub fn new_unassigned_scalar(
-        &self,
-        e: Value<Emulated::Scalar>,
-    ) -> UnassignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        e.map(|e| Integer::from_fe(e, self.rns_scalar())).into()
     }
 
     /// Return `IntegerChip` for the base field of the EC
@@ -110,9 +127,20 @@ impl<
         &self.scalar_field_chip
     }
 
-    /// Return `Maingate` of the `GeneralEccChip`
-    pub fn main_gate(&self) -> &MainGate<N> {
-        self.base_field_chip.main_gate()
+    /// Assign Rns base for chip
+    pub fn new_unassigned_base(
+        &self,
+        e: Value<Emulated::Base>,
+    ) -> UnassignedInteger<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        e.map(|e| Integer::from_fe(e, self.rns_base())).into()
+    }
+
+    /// Assign Rns Scalar for chip
+    pub fn new_unassigned_scalar(
+        &self,
+        e: Value<Emulated::Scalar>,
+    ) -> UnassignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        e.map(|e| Integer::from_fe(e, self.rns_scalar())).into()
     }
 
     /// Returns a `Point` (Rns representation) from a point in the emulated EC
@@ -134,26 +162,6 @@ impl<
     fn parameter_b(&self) -> Integer<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         Integer::from_fe(Emulated::b(), self.rns_base())
     }
-
-    /// Auxilary point for optimized multiplication algorithm
-    fn get_mul_aux(
-        &self,
-        window_size: usize,
-        number_of_pairs: usize,
-    ) -> Result<MulAux<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        // Gets chips' aux generator
-        let to_add = match self.aux_generator.clone() {
-            Some((assigned, _)) => Ok(assigned),
-            None => Err(Error::Synthesis),
-        }?;
-        let to_sub = match self.aux_registry.get(&(window_size, number_of_pairs)) {
-            Some(aux) => Ok(aux.clone()),
-            None => Err(Error::Synthesis),
-        }?;
-        // to_add the equivalent of AuxInit and to_sub AuxFin
-        // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
-        Ok(MulAux::new(to_add, to_sub))
-    }
 }
 
 impl<
@@ -170,9 +178,7 @@ impl<
         point: AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         offset: usize,
     ) -> Result<(), Error> {
-        use integer::maingate::MainGateInstructions;
-        let main_gate = self.main_gate();
-
+        let main_gate = self.scalar_field_chip().main_gate();
         let mut offset = offset;
         for limb in point.x().limbs().iter() {
             main_gate.expose_public(layouter.namespace(|| "x coords"), limb.into(), offset)?;
@@ -187,18 +193,30 @@ impl<
 
     /// Takes `Point` and assign its coordiantes as constant
     /// Returned as `AssignedPoint`
-    pub fn assign_constant(
+    pub fn register_constants(
+        &mut self,
+        layouter: &mut impl Layouter<N>,
+        points: Vec<Emulated>,
+    ) -> Result<(), Error> {
+        let mut integers = vec![];
+        for point in points {
+            // disallow point of infinity in synthesis time
+            let coords = point.coordinates().unwrap();
+            integers.push(*coords.x());
+            integers.push(*coords.y());
+        }
+        self.base_field_chip.register_constants(layouter, integers)
+    }
+
+    /// Returns already assigned constant point
+    pub fn get_constant_point(
         &self,
-        ctx: &mut RegionCtx<'_, N>,
         point: Emulated,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let coords = point.coordinates();
-        // disallow point of infinity
-        let coords = coords.unwrap();
-        let base_field_chip = self.base_field_chip();
-        let x = base_field_chip.assign_constant(ctx, *coords.x())?;
-        let y = base_field_chip.assign_constant(ctx, *coords.y())?;
-
+        let integer_chip = self.base_field_chip();
+        let coords = point.coordinates().unwrap();
+        let x = integer_chip.get_constant(*coords.x())?;
+        let y = integer_chip.get_constant(*coords.y())?;
         Ok(AssignedPoint::new(x, y))
     }
 
@@ -221,38 +239,6 @@ impl<
         let point = AssignedPoint::new(x, y);
         self.assert_is_on_curve(ctx, &point)?;
         Ok(point)
-    }
-
-    /// Assigns the auxiliary generator point
-    pub fn assign_aux_generator(
-        &mut self,
-        ctx: &mut RegionCtx<'_, N>,
-        aux_generator: Value<Emulated>,
-    ) -> Result<(), Error> {
-        let aux_generator_assigned = self.assign_point(ctx, aux_generator)?;
-        self.aux_generator = Some((aux_generator_assigned, aux_generator));
-        Ok(())
-    }
-
-    /// Assigns multiplication auxiliary point for a pair of (window_size,
-    /// n_pairs)
-    pub fn assign_aux(
-        &mut self,
-        ctx: &mut RegionCtx<'_, N>,
-        window_size: usize,
-        number_of_pairs: usize,
-    ) -> Result<(), Error> {
-        match self.aux_generator {
-            Some((_, point)) => {
-                let aux = point.map(|point| make_mul_aux(point, window_size, number_of_pairs));
-                let aux = self.assign_point(ctx, aux)?;
-                self.aux_registry
-                    .insert((window_size, number_of_pairs), aux);
-                Ok(())
-            }
-            // aux generator is not assigned yet
-            None => Err(Error::Synthesis),
-        }
     }
 
     /// Constraints to ensure `AssignedPoint` is on curve
@@ -394,17 +380,18 @@ mod tests {
     use std::marker::PhantomData;
     use std::rc::Rc;
 
-    use super::{AssignedPoint, EccConfig, GeneralEccChip, Point};
+    use super::{AssignedPoint, GeneralEccChip, Point};
     use crate::halo2;
     use crate::integer::rns::Rns;
     use crate::integer::{AssignedInteger, IntegerInstructions};
     use crate::maingate;
+    use group::ff::Field;
     use group::{prime::PrimeCurveAffine, Curve as _, Group};
     use halo2::arithmetic::{CurveAffine, FieldExt};
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::rns::Integer;
-    use integer::Range;
+    use integer::{IntegerChip, Range};
     use maingate::mock_prover_verify;
     use maingate::{
         MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
@@ -433,7 +420,8 @@ mod tests {
         Rns<C::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         u32,
     ) {
-        let (rns_base, rns_scalar) = GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
+        let (rns_base, rns_scalar) =
+            GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct_rns();
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS;
         let mut k: u32 = (bit_len_lookup + 1) as u32;
         if k_override != 0 {
@@ -449,15 +437,6 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn ecc_chip_config(&self) -> EccConfig {
-            EccConfig {
-                range_config: self.range_config.clone(),
-                main_gate_config: self.main_gate_config.clone(),
-            }
-        }
-    }
-
-    impl TestCircuitConfig {
         fn new<
             C: CurveAffine,
             N: FieldExt,
@@ -467,8 +446,7 @@ mod tests {
             meta: &mut ConstraintSystem<N>,
         ) -> Self {
             let (rns_base, rns_scalar) =
-                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
-
+                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct_rns();
             let main_gate_config = MainGate::<N>::configure(meta);
             let mut overflow_bit_lens: Vec<usize> = vec![];
             overflow_bit_lens.extend(rns_base.overflow_lengths());
@@ -486,6 +464,33 @@ mod tests {
                 main_gate_config,
                 range_config,
             }
+        }
+
+        fn ecc_chip<
+            Emulated: CurveAffine,
+            N: FieldExt,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        >(
+            &self,
+            layouter: &mut impl Layouter<N>,
+        ) -> Result<GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+            let (rns_base, rns_scalar) =
+                GeneralEccChip::<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct_rns();
+            GeneralEccChip::new(
+                layouter,
+                &mut IntegerChip::new(
+                    MainGate::new(self.main_gate_config.clone()),
+                    RangeChip::new(self.range_config.clone()),
+                    Rc::new(rns_base),
+                ),
+                &mut IntegerChip::new(
+                    MainGate::new(self.main_gate_config.clone()),
+                    RangeChip::new(self.range_config.clone()),
+                    Rc::new(rns_scalar),
+                ),
+                <Emulated as PrimeCurveAffine>::Curve::random(OsRng).to_affine(),
+            )
         }
 
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
@@ -525,9 +530,9 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip =
-                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
+            let ecc_chip: GeneralEccChip<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+                config.ecc_chip(&mut layouter)?;
+
             layouter.assign_region(
                 || "region 0",
                 |region| {
@@ -652,9 +657,8 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip =
-                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
+            let ecc_chip: GeneralEccChip<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+                config.ecc_chip(&mut layouter)?;
 
             let sum = layouter.assign_region(
                 || "region 0",
@@ -758,8 +762,7 @@ mod tests {
         const BIT_LEN_LIMB: usize,
     > {
         window_size: usize,
-        aux_generator: C,
-        _marker: PhantomData<N>,
+        _marker: PhantomData<(N, C)>,
     }
 
     impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
@@ -781,28 +784,14 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let ecc_chip_config = config.ecc_chip_config();
-            let mut ecc_chip =
-                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
-
-            layouter.assign_region(
-                || "assign aux values",
-                |region| {
-                    let offset = 0;
-                    let ctx = &mut RegionCtx::new(region, offset);
-                    ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
-                    ecc_chip.get_mul_aux(self.window_size, 1)?;
-                    Ok(())
-                },
-            )?;
-
+            let mut ecc_chip: GeneralEccChip<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+                config.ecc_chip(&mut layouter)?;
+            ecc_chip.configure_multiplication(&mut layouter, self.window_size, 1)?;
             let scalar_chip = ecc_chip.scalar_field_chip();
 
             layouter.assign_region(
                 || "region mul",
                 |region| {
-                    use group::ff::Field;
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
@@ -818,7 +807,6 @@ mod tests {
                         Range::Remainder,
                     )?;
                     let result_0 = ecc_chip.assign_point(ctx, Value::known(result.into()))?;
-
                     let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
                     ecc_chip.assert_equal(ctx, &result_0, &result_1)?;
 
@@ -841,10 +829,7 @@ mod tests {
             const BIT_LEN_LIMB: usize,
         >() {
             for window_size in 1..5 {
-                let aux_generator = C::Curve::random(OsRng).to_affine();
-
                 let circuit = TestEccMul::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-                    aux_generator,
                     window_size,
                     ..Default::default()
                 };
@@ -890,9 +875,8 @@ mod tests {
         const BIT_LEN_LIMB: usize,
     > {
         window_size: usize,
-        aux_generator: C,
         number_of_pairs: usize,
-        _marker: PhantomData<N>,
+        _marker: PhantomData<(C, N)>,
     }
 
     impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
@@ -915,20 +899,12 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<N>,
         ) -> Result<(), Error> {
-            let ecc_chip_config = config.ecc_chip_config();
-            let mut ecc_chip =
-                GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
-
-            layouter.assign_region(
-                || "assign aux values",
-                |region| {
-                    let offset = 0;
-                    let ctx = &mut RegionCtx::new(region, offset);
-                    ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
-                    ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
-                    Ok(())
-                },
+            let mut ecc_chip: GeneralEccChip<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> =
+                config.ecc_chip(&mut layouter)?;
+            ecc_chip.configure_multiplication(
+                &mut layouter,
+                self.window_size,
+                self.number_of_pairs,
             )?;
 
             let scalar_chip = ecc_chip.scalar_field_chip();
@@ -936,7 +912,6 @@ mod tests {
             layouter.assign_region(
                 || "region mul",
                 |region| {
-                    use group::ff::Field;
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
@@ -982,10 +957,9 @@ mod tests {
                 fn [<test_general_ecc_mul_batch_circuit_ $C:lower _ $N:lower _ $number_of_limbs _ $bit_len>]() {
                     for number_of_pairs in 5..7 {
                         for window_size in 1..3 {
-                            let aux_generator = <$C as PrimeCurveAffine>::Curve::random(OsRng).to_affine();
+
 
                             let circuit = TestEccBatchMul::<$C, $N, $number_of_limbs, $bit_len> {
-                                aux_generator,
                                 window_size,
                                 number_of_pairs,
                                 ..Default::default()

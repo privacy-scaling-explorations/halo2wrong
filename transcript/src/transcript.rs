@@ -166,6 +166,8 @@ impl<
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::Layouter;
     use crate::halo2::circuit::SimpleFloorPlanner;
@@ -179,13 +181,16 @@ mod tests {
     use crate::TranscriptChip;
     use ecc::halo2::arithmetic::CurveAffine;
     use ecc::halo2::circuit::Value;
+    use ecc::integer::IntegerChip;
     use ecc::integer::rns::Rns;
     use ecc::maingate::RangeChip;
     use ecc::maingate::RangeConfig;
     use ecc::maingate::RangeInstructions;
     use ecc::BaseFieldEccChip;
-    use ecc::EccConfig;
     use group::ff::Field;
+    use group::prime::PrimeCurveAffine;
+    use group::Curve;
+    use group::Group;
     use paste::paste;
     use poseidon::Poseidon;
     use poseidon::Spec;
@@ -201,10 +206,6 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn ecc_chip_config(&self) -> EccConfig {
-            EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
-        }
-
         fn new<C: CurveAffine>(meta: &mut ConstraintSystem<C::Scalar>) -> Self {
             let rns = Rns::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct();
 
@@ -222,6 +223,21 @@ mod tests {
                 main_gate_config,
                 range_config,
             }
+        }
+
+        fn ecc_chip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>(
+            &self,
+            layouter: &mut impl Layouter<C::Scalar>,
+        ) -> Result<BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+            BaseFieldEccChip::new(
+                layouter,
+                &mut IntegerChip::new(
+                    MainGate::new(self.main_gate_config.clone()),
+                    RangeChip::new(self.range_config.clone()),
+                    Rc::new(Rns::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::construct()),
+                ),
+                <C as PrimeCurveAffine>::Curve::random(OsRng).to_affine(),
+            )
         }
 
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
@@ -258,10 +274,8 @@ mod tests {
             config: Self::Config,
             mut layouter: impl Layouter<C::Scalar>,
         ) -> Result<(), Error> {
-            let main_gate = MainGate::<C::Scalar>::new(config.main_gate_config.clone());
-            let ecc_chip_config = config.ecc_chip_config();
-            let ecc_chip =
-                BaseFieldEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(ecc_chip_config);
+            let ecc_chip = config.ecc_chip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>(&mut layouter)?;
+            let main_gate = ecc_chip.main_gate();
 
             // Run test against reference implementation and
             // compare results

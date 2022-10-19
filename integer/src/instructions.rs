@@ -3,6 +3,7 @@ use crate::maingate::{halo2, AssignedCondition, RegionCtx};
 use crate::rns::Integer;
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
+use maingate::halo2::circuit::Layouter;
 
 /// Signals the range mode that should be applied while assigning a new
 /// [`Integer`]
@@ -35,11 +36,17 @@ pub trait IntegerInstructions<
         range: Range,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 
+    /// Assigns an [`Integer`] constants
+    fn register_constants(
+        &mut self,
+        layouter: &mut impl Layouter<N>,
+        integer: Vec<W>,
+    ) -> Result<(), Error>;
+
     /// Assigns an [`Integer`] constant to a cell in the circuit returning an
     /// [`AssignedInteger`].
-    fn assign_constant(
+    fn get_constant(
         &self,
-        ctx: &mut RegionCtx<'_, N>,
         integer: W,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error>;
 

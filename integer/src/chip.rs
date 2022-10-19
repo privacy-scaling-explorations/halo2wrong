@@ -1,13 +1,13 @@
-use std::rc::Rc;
-
 use super::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use crate::instructions::{IntegerInstructions, Range};
 use crate::rns::{Common, Integer, Rns};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
+use maingate::halo2::circuit::Layouter;
+use maingate::MainGate;
+use maingate::RangeChip;
 use maingate::{halo2, AssignedCondition, AssignedValue, MainGateInstructions, RegionCtx};
-use maingate::{MainGate, MainGateConfig};
-use maingate::{RangeChip, RangeConfig};
+use std::rc::Rc;
 
 mod add;
 mod assert_in_field;
@@ -20,26 +20,6 @@ mod mul;
 mod reduce;
 mod square;
 
-/// Configuration for [`IntegerChip`]
-#[derive(Clone, Debug)]
-pub struct IntegerConfig {
-    /// Configuration for [`RangeChip`]
-    range_config: RangeConfig,
-    /// Configuration for [`MainGate`]
-    main_gate_config: MainGateConfig,
-}
-
-impl IntegerConfig {
-    // Creates a new [`IntegerConfig`] from a [`RangeConfig`] and a
-    /// [`MainGateConfig`]
-    pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
-        Self {
-            range_config,
-            main_gate_config,
-        }
-    }
-}
-
 /// Chip for integer instructions
 #[derive(Clone, Debug)]
 pub struct IntegerChip<
@@ -48,11 +28,8 @@ pub struct IntegerChip<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    /// RangeChip
     range_chip: RangeChip<N>,
-    /// MainGate
     main_gate: MainGate<N>,
-    /// Residue number system used to represent the integers
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
@@ -99,12 +76,19 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         self.assign_integer_generic(ctx, integer, range)
     }
 
-    fn assign_constant(
+    fn register_constants(
+        &mut self,
+        layouter: &mut impl Layouter<N>,
+        integers: Vec<W>,
+    ) -> Result<(), Error> {
+        self.register_constants_generic(layouter, integers)
+    }
+
+    fn get_constant(
         &self,
-        ctx: &mut RegionCtx<'_, N>,
-        integer: W,
+        constant: W,
     ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        self.assign_constant_generic(ctx, integer)
+        self.get_constant_generic(constant)
     }
 
     fn decompose(
@@ -523,10 +507,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Create new ['IntegerChip'] with the configuration and a shared [`Rns`]
-    pub fn new(config: IntegerConfig, rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>) -> Self {
-        IntegerChip {
-            range_chip: RangeChip::new(config.range_config),
-            main_gate: MainGate::new(config.main_gate_config),
+    pub fn new(
+        main_gate: MainGate<N>,
+        range_chip: RangeChip<N>,
+        rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+    ) -> Self {
+        Self {
+            range_chip,
+            main_gate,
             rns,
         }
     }
@@ -541,6 +529,11 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         &self.main_gate
     }
 
+    /// Getter for mutable [`MainGate`]
+    pub fn main_gate_mut(&mut self) -> &mut MainGate<N> {
+        &mut self.main_gate
+    }
+
     /// Getter for [`Rns`]
     pub fn rns(&self) -> Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         Rc::clone(&self.rns)
@@ -549,15 +542,16 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
 #[cfg(test)]
 mod tests {
-    use super::{IntegerChip, IntegerConfig, IntegerInstructions, Range};
+    use super::{IntegerChip, IntegerInstructions, Range};
     use crate::rns::{Common, Integer, Rns};
     use crate::{FieldExt, UnassignedInteger};
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use maingate::mock_prover_verify;
+    use maingate::RangeInstructions;
     use maingate::{
         big_to_fe, decompose_big, fe_to_big, halo2, AssignedCondition, MainGate, MainGateConfig,
-        MainGateInstructions, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
+        MainGateInstructions, RangeChip, RangeConfig, RegionCtx,
     };
     use num_bigint::{BigUint as big_uint, RandBigInt};
     use num_traits::Zero;
@@ -697,17 +691,9 @@ mod tests {
             }
         }
 
-        fn integer_chip_config(&self) -> IntegerConfig {
-            IntegerConfig {
-                range_config: self.range_config.clone(),
-                main_gate_config: self.main_gate_config.clone(),
-            }
-        }
-
         fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
             let range_chip = RangeChip::<N>::new(self.range_config.clone());
             range_chip.load_table(layouter)?;
-
             Ok(())
         }
     }
@@ -723,13 +709,14 @@ mod tests {
 
             impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                 fn integer_chip(&self, config:TestCircuitConfig) -> IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>{
-                    IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(config.integer_chip_config(), Rc::clone(&self.rns))
+                    let main_gate = MainGate::new(config.main_gate_config);
+                    let range_gate = RangeChip::new(config.range_config);
+                    IntegerChip::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(main_gate, range_gate, Rc::clone(&self.rns))
                 }
 
                 fn tester(&self) -> TestRNS<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     TestRNS {rns:Rc::clone(&self.rns)}
                 }
-
             }
 
             impl<W: FieldExt, N: FieldExt,  const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
@@ -1487,6 +1474,7 @@ mod tests {
             let main_gate = MainGate::<N>::new(config.main_gate_config.clone());
             let integer_chip = self.integer_chip(config.clone());
             let t = self.tester();
+
             layouter.assign_region(
                 || "region 0",
                 |region| {
@@ -1504,6 +1492,36 @@ mod tests {
                         integer_chip.assign_integer(ctx, integer.into(), Range::Remainder)?;
                     let assigned_sign = integer_chip.sign(ctx, &assigned)?;
                     main_gate.assert_one(ctx, &assigned_sign)?;
+
+                    Ok(())
+                },
+            )?;
+            config.config_range(&mut layouter)
+        }
+    );
+
+    impl_circuit!(
+        TestCircuitConstantRegistry,
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<N>,
+        ) -> Result<(), Error> {
+            let mut integer_chip = self.integer_chip(config.clone());
+            integer_chip
+                .register_constants(&mut layouter, vec![W::from(1), W::from(10), W::from(11)])?;
+
+            layouter.assign_region(
+                || "region 0",
+                |region| {
+                    let ctx = &mut RegionCtx::new(region, 0);
+
+                    assert!(integer_chip.get_constant(W::from(100)).is_err());
+                    let a = integer_chip.get_constant(W::from(1))?;
+                    let b = integer_chip.get_constant(W::from(10))?;
+                    let c0 = integer_chip.get_constant(W::from(11))?;
+                    let c1 = integer_chip.add(ctx, &a, &b)?;
+                    integer_chip.assert_equal(ctx, &c0, &c1)?;
 
                     Ok(())
                 },
@@ -1602,5 +1620,9 @@ mod tests {
     #[test]
     fn test_integer_circuit_sign() {
         test_circuit!(TestCircuitSign);
+    }
+    #[test]
+    fn test_integer_circuit_constant_assignment() {
+        test_circuit!(TestCircuitConstantRegistry);
     }
 }

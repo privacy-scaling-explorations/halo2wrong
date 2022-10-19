@@ -3,10 +3,12 @@ use crate::rns::{Common, Integer};
 use crate::{AssignedInteger, AssignedLimb, UnassignedInteger};
 use halo2::arithmetic::FieldExt;
 use halo2::plonk::Error;
+use maingate::halo2::circuit::Layouter;
 use maingate::{fe_to_big, halo2, MainGateInstructions, RangeInstructions, RegionCtx, Term};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 use std::rc::Rc;
+use std::vec;
 
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -90,33 +92,41 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Ok(self.new_assigned_integer(&limbs.try_into().unwrap(), native))
     }
 
-    pub(super) fn assign_constant_generic(
-        &self,
-        ctx: &mut RegionCtx<'_, N>,
-        integer: W,
-    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let integer = Integer::from_fe(integer, Rc::clone(&self.rns));
-        let main_gate = self.main_gate();
-
-        let limbs = integer.limbs();
-        let mut assigned_limbs: Vec<AssignedLimb<N>> = Vec::with_capacity(NUMBER_OF_LIMBS);
-
-        for limb in limbs.iter() {
-            let assigned = main_gate.assign_constant(ctx, *limb)?;
-            assigned_limbs.push(AssignedLimb::from(assigned, fe_to_big(*limb)));
+    pub(super) fn register_constants_generic(
+        &mut self,
+        layouter: &mut impl Layouter<N>,
+        integers: Vec<W>,
+    ) -> Result<(), Error> {
+        let mut constants = vec![];
+        for integer in integers {
+            let unassigned = Integer::from_fe(integer, Rc::clone(&self.rns));
+            for limb in unassigned.limbs() {
+                constants.push(limb)
+            }
+            constants.push(unassigned.native());
         }
+        self.main_gate.register_constants(layouter, constants)?;
+        Ok(())
+    }
 
-        let assigned_limbs = limbs
+    pub(super) fn get_constant_generic(
+        &self,
+        constant: W,
+    ) -> Result<AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let constant = Integer::from_fe(constant, Rc::clone(&self.rns));
+
+        let assigned_limbs = constant
+            .limbs()
             .iter()
             .map(|limb| {
                 Ok(AssignedLimb::from(
-                    main_gate.assign_constant(ctx, *limb)?,
+                    self.main_gate.get_constant(*limb)?,
                     fe_to_big(*limb),
                 ))
             })
             .collect::<Result<Vec<AssignedLimb<N>>, Error>>()?;
 
-        let native = main_gate.assign_constant(ctx, integer.native())?;
+        let native = self.main_gate.get_constant(constant.native())?;
 
         Ok(self.new_assigned_integer(&assigned_limbs.try_into().unwrap(), native))
     }

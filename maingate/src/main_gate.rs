@@ -16,49 +16,10 @@ use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedCondition, AssignedValue};
 use halo2wrong::halo2::circuit::Value;
 use halo2wrong::RegionCtx;
-use std::{iter, marker::PhantomData};
+use std::collections::BTreeMap;
+use std::iter;
 
 const WIDTH: usize = 5;
-
-/// `ColumnTags` is an helper to find special columns that are frequently used
-/// across gates
-pub trait ColumnTags<Column> {
-    /// Next row accumulator
-    fn next() -> Column;
-    /// First column
-    fn first() -> Column;
-    /// Index that last term should in linear combination
-    fn last_term_index() -> usize;
-}
-
-/// Enumerates columns of the main gate
-#[derive(Debug)]
-pub enum MainGateColumn {
-    /// A
-    A = 0,
-    /// B
-    B = 1,
-    /// C
-    C = 2,
-    /// D
-    D = 3,
-    /// E
-    E = 4,
-}
-
-impl ColumnTags<MainGateColumn> for MainGateColumn {
-    fn first() -> Self {
-        MainGateColumn::A
-    }
-
-    fn next() -> Self {
-        MainGateColumn::E
-    }
-
-    fn last_term_index() -> usize {
-        Self::first() as usize
-    }
-}
 
 /// Config defines fixed and witness columns of the main gate
 #[derive(Clone, Debug)]
@@ -95,7 +56,8 @@ impl MainGateConfig {
 #[derive(Clone, Debug)]
 pub struct MainGate<F: FieldExt> {
     config: MainGateConfig,
-    _marker: PhantomData<F>,
+    /// TODO: remove pub
+    pub constants: BTreeMap<F, AssignedValue<F>>,
 }
 
 impl<F: FieldExt> Chip<F> for MainGate<F> {
@@ -131,7 +93,6 @@ impl<F: FieldExt> From<CombinationOptionCommon<F>> for CombinationOption<F> {
 
 impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
     type CombinationOption = CombinationOption<F>;
-    type MainGateColumn = MainGateColumn;
 
     fn expose_public(
         &self,
@@ -143,23 +104,56 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         layouter.constrain_instance(value.cell(), config.instance, row)
     }
 
-    fn assign_to_column(
+    fn assign_value(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
-        column: MainGateColumn,
     ) -> Result<AssignedValue<F>, Error> {
-        let column = match column {
-            MainGateColumn::A => self.config.a,
-            MainGateColumn::B => self.config.b,
-            MainGateColumn::C => self.config.c,
-            MainGateColumn::D => self.config.d,
-            MainGateColumn::E => self.config.e,
-        };
-        let cell = ctx.assign_advice(|| "assign value", column, unassigned)?;
-        // proceed to the next row
+        let cell = ctx.assign_advice(|| "assign value", self.config.a, unassigned)?;
         self.no_operation(ctx)?;
         Ok(cell)
+    }
+
+    fn assign_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        constant: F,
+    ) -> Result<AssignedValue<F>, Error> {
+        Ok(self
+            .apply(
+                ctx,
+                [Term::unassigned_to_sub(Value::known(constant))],
+                constant,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )
+            .unwrap()
+            .swap_remove(0))
+    }
+
+    fn register_constants(
+        &mut self,
+        layouter: &mut impl Layouter<F>,
+        constants: Vec<F>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "assign constant",
+            |region| {
+                let ctx = &mut RegionCtx::new(region, 0);
+                for constant in constants.iter() {
+                    let e = self.assign_constant(ctx, *constant)?;
+                    self.constants.insert(*constant, e);
+                }
+                Ok(())
+            },
+        )?;
+        Ok(())
+    }
+
+    fn get_constant(&self, constant: F) -> Result<AssignedValue<F>, Error> {
+        match self.constants.get(&constant) {
+            Some(e) => Ok(e.clone()),
+            None => Err(Error::Synthesis),
+        }
     }
 
     fn sub_sub_with_constant(
@@ -434,7 +428,7 @@ impl<F: FieldExt> MainGate<F> {
     pub fn new(config: MainGateConfig) -> Self {
         MainGate {
             config,
-            _marker: PhantomData,
+            constants: BTreeMap::new(),
         }
     }
 
@@ -536,6 +530,7 @@ mod tests {
     use halo2wrong::utils::{big_to_fe, decompose};
     use halo2wrong::RegionCtx;
     use rand_core::OsRng;
+    use std::collections::BTreeMap;
     use std::marker::PhantomData;
 
     #[derive(Clone)]
@@ -547,7 +542,7 @@ mod tests {
         fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
             MainGate::<F> {
                 config: self.main_gate_config.clone(),
-                _marker: PhantomData,
+                constants: BTreeMap::new(),
             }
         }
     }
@@ -750,7 +745,12 @@ mod tests {
                             CombinationOptionCommon::CombineToNextMul(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, Value::known(a_next))?;
+                        ctx.assign_advice(
+                            || "assign value",
+                            main_gate.config.e,
+                            Value::known(a_next),
+                        )?;
+                        main_gate.no_operation(ctx)?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
@@ -765,7 +765,12 @@ mod tests {
                             CombinationOptionCommon::CombineToNextMul(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, Value::known(a_next))?;
+                        ctx.assign_advice(
+                            || "assign value",
+                            main_gate.config.e,
+                            Value::known(a_next),
+                        )?;
+                        main_gate.no_operation(ctx)?;
                     }
 
                     // CombineToNextScaleMul(F, F)
@@ -798,7 +803,12 @@ mod tests {
                             CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, Value::known(a_next))?;
+                        ctx.assign_advice(
+                            || "assign value",
+                            main_gate.config.e,
+                            Value::known(a_next),
+                        )?;
+                        main_gate.no_operation(ctx)?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
@@ -813,7 +823,12 @@ mod tests {
                             CombinationOptionCommon::CombineToNextScaleMul(r_next, r_scale).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, Value::known(a_next))?;
+                        ctx.assign_advice(
+                            || "assign value",
+                            main_gate.config.e,
+                            Value::known(a_next),
+                        )?;
+                        main_gate.no_operation(ctx)?;
                     }
 
                     // CombineToNextAdd(F)
@@ -845,7 +860,12 @@ mod tests {
                             CombinationOptionCommon::CombineToNextAdd(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, Value::known(a_next))?;
+                        ctx.assign_advice(
+                            || "assign value",
+                            main_gate.config.e,
+                            Value::known(a_next),
+                        )?;
+                        main_gate.no_operation(ctx)?;
 
                         let terms: Vec<Term<F>> = assigned
                             .iter()
@@ -860,7 +880,12 @@ mod tests {
                             CombinationOptionCommon::CombineToNextAdd(r_next).into(),
                         )?;
 
-                        main_gate.assign_to_acc(ctx, Value::known(a_next))?;
+                        ctx.assign_advice(
+                            || "assign value",
+                            main_gate.config.e,
+                            Value::known(a_next),
+                        )?;
+                        main_gate.no_operation(ctx)?;
                     }
 
                     Ok(())
@@ -1257,7 +1282,7 @@ mod tests {
         ) -> Result<(), Error> {
             let main_gate = MainGate::<F> {
                 config: config.main_gate_config,
-                _marker: PhantomData,
+                constants: BTreeMap::new(),
             };
 
             let rand = || -> F { F::random(OsRng) };
@@ -1372,7 +1397,7 @@ mod tests {
         ) -> Result<(), Error> {
             let main_gate = MainGate::<F> {
                 config: config.main_gate_config,
-                _marker: PhantomData,
+                constants: BTreeMap::new(),
             };
 
             let rand = || -> F { F::random(OsRng) };
@@ -1464,7 +1489,7 @@ mod tests {
         ) -> Result<(), Error> {
             let main_gate = MainGate::<F> {
                 config: config.main_gate_config,
-                _marker: PhantomData,
+                constants: BTreeMap::new(),
             };
 
             let rand = || -> F { F::random(OsRng) };
@@ -1533,7 +1558,7 @@ mod tests {
         ) -> Result<(), Error> {
             let main_gate = MainGate::<F> {
                 config: config.main_gate_config,
-                _marker: PhantomData,
+                constants: BTreeMap::new(),
             };
 
             layouter.assign_region(
@@ -1564,6 +1589,71 @@ mod tests {
     fn test_main_gate_sign() {
         const K: u32 = 10;
         let circuit = TestCircuitSign::<Fp> {
+            _marker: PhantomData::<Fp>,
+        };
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(K, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+        assert_eq!(prover.verify(), Ok(()));
+    }
+
+    #[derive(Default)]
+    struct TestCircuitRegistryConstant<F: FieldExt> {
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: FieldExt> Circuit<F> for TestCircuitRegistryConstant<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let mut main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                constants: BTreeMap::new(),
+            };
+
+            main_gate
+                .register_constants(&mut layouter, vec![F::from(1), F::from(10), F::from(11)])?;
+
+            layouter.assign_region(
+                || "region 0",
+                |region| {
+                    let ctx = &mut RegionCtx::new(region, 0);
+
+                    assert!(main_gate.get_constant(F::from(100)).is_err());
+                    let a = main_gate.get_constant(F::from(1))?;
+                    let b = main_gate.get_constant(F::from(10))?;
+                    let c0 = main_gate.get_constant(F::from(11))?;
+                    let c1 = main_gate.add(ctx, &a, &b)?;
+                    main_gate.assert_equal(ctx, &c0, &c1)?;
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_main_gate_constant_assignment() {
+        const K: u32 = 10;
+        let circuit = TestCircuitRegistryConstant::<Fp> {
             _marker: PhantomData::<Fp>,
         };
         let public_inputs = vec![vec![]];

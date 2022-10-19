@@ -15,19 +15,14 @@ impl<
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Pads scalar up to the next window_size mul
-    fn pad(
-        &self,
-        region: &mut RegionCtx<'_, N>,
-        bits: &mut Vec<AssignedCondition<N>>,
-        window_size: usize,
-    ) -> Result<(), Error> {
+    fn pad(&self, bits: &mut Vec<AssignedCondition<N>>, window_size: usize) -> Result<(), Error> {
         assert_eq!(bits.len(), Emulated::ScalarExt::NUM_BITS as usize);
 
         // TODO: This is a tmp workaround. Instead of padding with zeros we can use a
         // shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
         let zeros: Vec<AssignedCondition<N>> = (0..padding_offset)
-            .map(|_| self.main_gate().assign_constant(region, N::zero()))
+            .map(|_| self.scalar_field_chip().main_gate().get_constant(N::zero()))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();
@@ -106,7 +101,7 @@ impl<
 
         let scalar_chip = self.scalar_field_chip();
         let decomposed = &mut scalar_chip.decompose(region, scalar)?;
-        self.pad(region, decomposed, window_size)?;
+        self.pad(decomposed, window_size)?;
         let windowed = Self::window(decomposed.to_vec(), window_size);
         let table = &self.make_incremental_table(region, &aux.to_add, point, window_size)?;
 
@@ -154,7 +149,7 @@ impl<
 
         // 2. Pad scalars bit representations
         for decomposed in decomposed_scalars.iter_mut() {
-            self.pad(region, decomposed, window_size)?;
+            self.pad(decomposed, window_size)?;
         }
 
         // 3. Split scalar bits into windows

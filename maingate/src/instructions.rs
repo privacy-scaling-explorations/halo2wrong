@@ -5,10 +5,10 @@
 use crate::{
     halo2::{
         arithmetic::{Field, FieldExt},
-        circuit::{Chip, Layouter, Value},
+        circuit::{Layouter, Value},
         plonk::Error,
     },
-    AssignedCondition, AssignedValue, ColumnTags, MainGateColumn,
+    AssignedCondition, AssignedValue,
 };
 use halo2wrong::{
     utils::{big_to_fe, decompose, fe_to_big, power_of_two},
@@ -148,11 +148,9 @@ pub enum CombinationOptionCommon<F: FieldExt> {
 /// Instructions covers many basic constaints such as assignments, logical and
 /// arithmetic operations. Also includes general purpose `combine` and  `apply`
 /// functions to let user to build custom constaints using this main gate
-pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
+pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize> {
     /// Options for implementors to implement some more custom functionalities
     type CombinationOption: From<CombinationOptionCommon<F>>;
-    /// Position related customisations should be defined as ['MainGateColumn']
-    type MainGateColumn: ColumnTags<Self::MainGateColumn>;
 
     /// Expect an assigned value to be equal to a public input
     fn expose_public(
@@ -162,49 +160,29 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         row: usize,
     ) -> Result<(), Error>;
 
-    /// Constrain a witness to be equal to a fixed value. This should allow us
-    /// to move a fixed value around
+    /// Assignes a constant and returns assigned cell
     fn assign_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         constant: F,
-    ) -> Result<AssignedValue<F>, Error> {
-        let e = self
-            .apply(
-                ctx,
-                [Term::unassigned_to_sub(Value::known(constant))],
-                constant,
-                CombinationOptionCommon::OneLinerAdd.into(),
-            )?
-            .swap_remove(0);
+    ) -> Result<AssignedValue<F>, Error>;
 
-        Ok(e)
-    }
+    /// Constrain a witness to be equal to a fixed value. This should allow us
+    /// to move a fixed value around
+    fn register_constants(
+        &mut self,
+        layouter: &mut impl Layouter<F>,
+        constant: Vec<F>,
+    ) -> Result<(), Error>;
+
+    /// Returns already assigned constant value
+    fn get_constant(&self, constant: F) -> Result<AssignedValue<F>, Error>;
 
     /// Assigns a value at the current row
     fn assign_value(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         unassigned: Value<F>,
-    ) -> Result<AssignedValue<F>, Error> {
-        self.assign_to_column(ctx, unassigned, Self::MainGateColumn::first())
-    }
-
-    /// Assigns a value to the column that is allocated for accumulation purpose
-    fn assign_to_acc(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        unassigned: Value<F>,
-    ) -> Result<AssignedValue<F>, Error> {
-        self.assign_to_column(ctx, unassigned, Self::MainGateColumn::next())
-    }
-
-    /// Assigns new witness to the specified column
-    fn assign_to_column(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        value: Value<F>,
-        column: Self::MainGateColumn,
     ) -> Result<AssignedValue<F>, Error>;
 
     /// Assigns given value and enforces that the value is `0` or `1`
@@ -1023,7 +1001,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         // `result` will be assigned in the first iteration.
         // First iteration is guaranteed to be present disallowing empty
         let mut result = None;
-        let last_term_index: usize = MainGateColumn::last_term_index();
+        let last_term_index: usize = 0;
 
         let mut assigned: Vec<AssignedValue<F>> = vec![];
         for (i, chunk) in terms.chunks(chunk_width).enumerate() {

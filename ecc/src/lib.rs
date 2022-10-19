@@ -20,10 +20,9 @@ pub use integer::maingate;
 use halo2::halo2curves as curves;
 
 use crate::halo2::arithmetic::{CurveAffine, FieldExt};
-use crate::integer::chip::IntegerConfig;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::AssignedInteger;
-use crate::maingate::{big_to_fe, AssignedCondition, MainGateConfig, RangeConfig};
+use crate::maingate::{big_to_fe, AssignedCondition};
 use group::Curve;
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
@@ -119,29 +118,6 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     /// Returns $y$ coordinate
     pub fn y(&self) -> &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         &self.y
-    }
-}
-
-/// Config for Ecc Chip
-#[derive(Clone, Debug)]
-pub struct EccConfig {
-    range_config: RangeConfig,
-    main_gate_config: MainGateConfig,
-}
-
-impl EccConfig {
-    /// Returns new `EccConfig` given `RangeConfig` and `MainGateConfig`
-    pub fn new(range_config: RangeConfig, main_gate_config: MainGateConfig) -> Self {
-        Self {
-            range_config,
-            main_gate_config,
-        }
-    }
-
-    /// Returns new `IntegerConfig` with matching `RangeConfig` and
-    /// `MainGateConfig`
-    pub(crate) fn integer_chip_config(&self) -> IntegerConfig {
-        IntegerConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 }
 

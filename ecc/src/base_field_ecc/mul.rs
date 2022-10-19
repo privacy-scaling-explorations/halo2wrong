@@ -1,6 +1,7 @@
 use super::{AssignedPoint, BaseFieldEccChip};
 use crate::maingate::{AssignedCondition, AssignedValue, MainGateInstructions};
 use crate::{halo2, Selector, Table, Windowed};
+use group::ff::Field;
 use group::ff::PrimeField;
 use halo2::arithmetic::CurveAffine;
 use halo2::plonk::Error;
@@ -12,18 +13,16 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     /// Pads scalar up to the next window_size mul
     fn pad(
         &self,
-        ctx: &mut RegionCtx<'_, C::Scalar>,
         bits: &mut Vec<AssignedCondition<C::Scalar>>,
         window_size: usize,
     ) -> Result<(), Error> {
-        use group::ff::Field;
         assert_eq!(bits.len(), C::Scalar::NUM_BITS as usize);
 
         // TODO: This is a tmp workaround. Instead of padding with zeros we can use a
         // shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
         let zeros: Vec<AssignedCondition<C::Scalar>> = (0..padding_offset)
-            .map(|_| self.main_gate().assign_constant(ctx, C::Scalar::zero()))
+            .map(|_| self.main_gate().get_constant(C::Scalar::zero()))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();
@@ -103,7 +102,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let main_gate = self.main_gate();
         let decomposed = &mut main_gate.to_bits(ctx, scalar, C::Scalar::NUM_BITS as usize)?;
 
-        self.pad(ctx, decomposed, window_size)?;
+        self.pad(decomposed, window_size)?;
         let windowed = Self::window(decomposed.to_vec(), window_size);
         let table = &self.make_incremental_table(ctx, &aux.to_add, point, window_size)?;
 
@@ -150,7 +149,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
             .collect::<Result<_, Error>>()?;
 
         for decomposed in decomposed_scalars.iter_mut() {
-            self.pad(ctx, decomposed, window_size)?;
+            self.pad(decomposed, window_size)?;
         }
 
         let windowed_scalars: Vec<Windowed<C::Scalar>> = decomposed_scalars
