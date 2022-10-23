@@ -1,7 +1,6 @@
 //! `integer` implements constraints for non native field
 //! operations
 
-#![feature(trait_alias)]
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 
