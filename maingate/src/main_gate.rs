@@ -10,7 +10,7 @@
 
 use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::{Chip, Layouter};
-use crate::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance};
+use crate::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance, Selector};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedCondition, AssignedValue};
@@ -19,6 +19,7 @@ use halo2wrong::RegionCtx;
 use std::{iter, marker::PhantomData};
 
 const WIDTH: usize = 5;
+const NUM_FIXED: usize = 9;
 
 /// `ColumnTags` is an helper to find special columns that are frequently used
 /// across gates
@@ -82,12 +83,34 @@ pub struct MainGateConfig {
 
     pub(crate) s_constant: Column<Fixed>,
     pub(crate) instance: Column<Instance>,
+
+    pub(crate) selector: Selector,
 }
 
 impl MainGateConfig {
     /// Returns advice columns of `MainGateConfig`
     pub fn advices(&self) -> [Column<Advice>; WIDTH] {
         [self.a, self.b, self.c, self.d, self.e]
+    }
+
+    /// Returns fixed columns of `MainGateConfig`
+    pub fn fixed(&self) -> [Column<Fixed>; NUM_FIXED] {
+        [
+            self.sa,
+            self.sb,
+            self.sc,
+            self.sd,
+            self.se,
+            self.se_next,
+            self.s_mul_ab,
+            self.s_mul_cd,
+            self.s_constant,
+        ]
+    }
+
+    /// Returns the selector for the main_gate
+    pub fn selector(&self) -> Selector {
+        self.selector
     }
 }
 
@@ -300,6 +323,9 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
         constant: F,
         option: CombinationOption<F>,
     ) -> Result<Vec<AssignedValue<F>>, Error> {
+        // Enable the selector
+        ctx.enable(self.config.selector)?;
+
         let terms = terms.into_iter().collect::<Vec<_>>();
         debug_assert!(terms.len() <= WIDTH);
 
@@ -460,6 +486,8 @@ impl<F: FieldExt> MainGate<F> {
 
         let instance = meta.instance_column();
 
+        let selector = meta.selector();
+
         meta.enable_equality(a);
         meta.enable_equality(b);
         meta.enable_equality(c);
@@ -488,8 +516,10 @@ impl<F: FieldExt> MainGate<F> {
 
             let s_constant = meta.query_fixed(s_constant, Rotation::cur());
 
+            let s = meta.query_selector(selector);
+
             vec![
-                a.clone() * sa
+                s * (a.clone() * sa
                     + b.clone() * sb
                     + c.clone() * sc
                     + d.clone() * sd
@@ -497,7 +527,7 @@ impl<F: FieldExt> MainGate<F> {
                     + a * b * s_mul_ab
                     + c * d * s_mul_cd
                     + se_next * e_next
-                    + s_constant,
+                    + s_constant),
             ]
         });
 
@@ -517,6 +547,7 @@ impl<F: FieldExt> MainGate<F> {
             s_mul_ab,
             s_mul_cd,
             instance,
+            selector,
         }
     }
 }
