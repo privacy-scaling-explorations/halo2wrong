@@ -1,6 +1,6 @@
 [package]
 name = "halo2wrong"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["kilic <kiliconu@itu.edu.tr>"]
 edition = "2021"
 
