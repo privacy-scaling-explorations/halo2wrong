@@ -5,6 +5,7 @@ use halo2::{
 };
 use std::collections::BTreeMap;
 use utils::decompose;
+pub mod integer;
 pub mod maingate;
 pub mod utils;
 

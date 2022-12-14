@@ -125,7 +125,7 @@ pub(crate) enum ShortedOperation<F: FieldExt> {
         result: Scaled<F>,
     },
 }
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Collector<F: FieldExt> {
     pub(crate) number_of_witnesses: u32,
     pub(crate) simple_operations: Vec<Operation<F>>,
@@ -136,7 +136,6 @@ pub struct Collector<F: FieldExt> {
     bases: BTreeMap<usize, Vec<F>>,
     pub(crate) lookups: BTreeMap<usize, Vec<Witness<F>>>,
 }
-
 impl<F: FieldExt> Collector<F> {
     pub fn equal(&mut self, w0: &Witness<F>, w1: &Witness<F>) {
         self.copies.push((w0.id(), w1.id()))
@@ -177,6 +176,16 @@ impl<F: FieldExt> Collector<F> {
             id: self.number_of_witnesses,
             value,
         }
+    }
+    pub(crate) fn bases(&mut self, bit_len: usize) -> Vec<F> {
+        self.bases
+            .entry(bit_len)
+            .or_insert_with(|| {
+                (0..F::NUM_BITS as usize / bit_len)
+                    .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
+                    .collect()
+            })
+            .clone()
     }
     pub fn range(&mut self, w: &Witness<F>, bit_len: usize) {
         self.lookups
@@ -519,13 +528,7 @@ impl<F: FieldExt> Collector<F> {
         let decomposed = w0
             .decompose(number_of_limbs, sublimb_bit_len)
             .transpose_vec(number_of_limbs);
-        let bases = self.bases.get(&sublimb_bit_len).unwrap_or_else(|| {
-            panic!(
-                "composition table is not set, bit lenght: {}",
-                sublimb_bit_len
-            )
-        })[..number_of_limbs]
-            .to_vec();
+        let bases = self.bases(sublimb_bit_len)[..number_of_limbs].to_vec();
         // lookup and assign decomposed limbs
         let decomposed = decomposed
             .iter()

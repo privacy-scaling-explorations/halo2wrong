@@ -503,89 +503,89 @@ fn test_decomposition() {
 }
 
 impl<F: FieldExt> Collector<F> {
-    fn info(&self) {
+    pub(crate) fn info(&self) {
         println!("------");
-        println!("collector: {}", self.number_of_witnesses);
+        println!("collector {}", self.number_of_witnesses);
         println!("constants: {}", self.constants.len());
         println!("simple ops: {}", self.simple_operations.len());
         println!("extended ops: {}", self.extended_operations.len());
         println!("shorted ops: {}", self.shorted_opeartions.len());
         let mut add = 0;
-        let mut addscaled = 0;
+        let mut add_scaled = 0;
         let mut sub = 0;
         let mut mul = 0;
         let mut scale = 0;
-        let mut divunsafe = 0;
-        let mut invunsafe = 0;
-        let mut assertnotzero = 0;
-        let mut assertbit = 0;
-        let mut assertonexorany = 0;
+        let mut div_unsafe = 0;
+        let mut inv_unsafe = 0;
+        let mut assert_not_zero = 0;
+        let mut assert_bit = 0;
+        let mut assert_one_xor_any = 0;
         let mut or = 0;
-        let mut assertnand = 0;
+        let mut assert_nand = 0;
         for op in self.simple_operations.iter() {
             match op {
                 Operation::Add { w0: _, w1: _, u: _ } => add += 1,
-                Operation::AddScaled { w0: _, w1: _, u: _ } => addscaled += 1,
+                Operation::AddScaled { w0: _, w1: _, u: _ } => add_scaled += 1,
                 Operation::Sub { w0: _, w1: _, u: _ } => sub += 1,
                 Operation::Mul { w0: _, w1: _, u: _ } => mul += 1,
                 Operation::Scale { w: _, u: _ } => scale += 1,
-                Operation::DivUnsafe { w0: _, w1: _, u: _ } => divunsafe += 1,
-                Operation::InvUnsafe { w: _, one: _, u: _ } => invunsafe += 1,
+                Operation::DivUnsafe { w0: _, w1: _, u: _ } => div_unsafe += 1,
+                Operation::InvUnsafe { w: _, one: _, u: _ } => inv_unsafe += 1,
                 Operation::AssertNotZero {
                     w: _,
                     inv: _,
                     one: _,
-                } => assertnotzero += 1,
-                Operation::AssertBit { bit: _ } => assertbit += 1,
+                } => assert_not_zero += 1,
+                Operation::AssertBit { bit: _ } => assert_bit += 1,
                 Operation::AssertOneXorAny {
                     bit: _,
                     one_xor_any: _,
-                } => assertonexorany += 1,
+                } => assert_one_xor_any += 1,
                 Operation::Or { w0: _, w1: _, u: _ } => or += 1,
-                Operation::AssertNand { w0: _, w1: _ } => assertnand += 1,
+                Operation::AssertNand { w0: _, w1: _ } => assert_nand += 1,
                 _ => {}
             }
         }
 
-        let mut addconstant = 0;
-        let mut subfromconstant = 0;
-        let mut subandaddconstant = 0;
-        let mut muladdconstantscaled = 0;
-        let mut equaltoconstant = 0;
+        let mut add_constant = 0;
+        let mut sub_from_constant = 0;
+        let mut sub_and_add_constant = 0;
+        let mut mul_add_constant_scaled = 0;
+        let mut equal_to_constant = 0;
         for op in self.extended_operations.iter() {
             match op {
                 ExtendedOperation::AddConstant {
                     w0: _,
                     constant: _,
                     u: _,
-                } => addconstant += 1,
+                } => add_constant += 1,
                 ExtendedOperation::SubFromConstant {
                     constant: _,
                     w1: _,
                     u: _,
-                } => subfromconstant += 1,
+                } => sub_from_constant += 1,
                 ExtendedOperation::SubAndAddConstant {
                     w0: _,
                     w1: _,
                     constant: _,
                     u: _,
-                } => subandaddconstant += 1,
+                } => sub_and_add_constant += 1,
                 ExtendedOperation::MulAddConstantScaled {
                     factor: _,
                     w0: _,
                     w1: _,
                     constant: _,
                     u: _,
-                } => muladdconstantscaled += 1,
-                ExtendedOperation::EqualToConstant { w0: _, constant: _ } => equaltoconstant += 1,
+                } => mul_add_constant_scaled += 1,
+                ExtendedOperation::EqualToConstant { w0: _, constant: _ } => equal_to_constant += 1,
             }
         }
         let mut select = 0;
-        let mut selectorassign = 0;
+        let mut select_or_assign = 0;
         let mut compose = 0;
-        let mut composeseconddegree = 0;
+        let mut compose_second_degree = 0;
         let mut compose_number_of_chunks = 0;
-        let mut composeseconddegree_number_of_chunks = 0;
+        let mut compose_second_degree_number_of_chunks = 0;
         for op in self.shorted_opeartions.iter() {
             match op {
                 ShortedOperation::Select {
@@ -599,7 +599,7 @@ impl<F: FieldExt> Collector<F> {
                     w: _,
                     constant: _,
                     selected: _,
-                } => selectorassign += 1,
+                } => select_or_assign += 1,
                 ShortedOperation::Compose {
                     terms,
                     constant: _,
@@ -624,40 +624,40 @@ impl<F: FieldExt> Collector<F> {
                         })
                         .count();
                     let number_of_sd_chunks = (number_of_second_degree_terms - 1) / 2 + 1;
-                    composeseconddegree_number_of_chunks += number_of_sd_chunks;
-                    composeseconddegree += 1;
+                    compose_second_degree_number_of_chunks += number_of_sd_chunks;
+                    compose_second_degree += 1;
                 }
             }
         }
+        println!("add: {}", add);
+        println!("add_scaled: {}", add_scaled);
+        println!("sub: {}", sub);
+        println!("mul: {}", mul);
+        println!("scale: {}", scale);
+        println!("div_unsafe: {}", div_unsafe);
+        println!("inv_unsafe: {}", inv_unsafe);
+        println!("assert_not_zero: {}", assert_not_zero);
+        println!("assert_bit: {}", assert_bit);
+        println!("assert_one_xor_any: {}", assert_one_xor_any);
+        println!("or: {}", or);
+        println!("assert_nand: {}", assert_nand);
+        println!("add_constant: {}", add_constant);
+        println!("sub_from_constant: {}", sub_from_constant);
+        println!("sub_and_add_constant: {}", sub_and_add_constant);
+        println!("mul_add_constant_scaled: {}", mul_add_constant_scaled);
+        println!("equal_to_constant: {}", equal_to_constant);
+        println!("select: {}", select);
+        println!("select_or_assign: {}", select_or_assign);
+        println!("compose: {}", compose);
+        println!("compose_second_degree: {}", compose_second_degree);
+        println!("compose_number_of_chunks: {}", compose_number_of_chunks);
+        println!(
+            "compose_second_degree_number_of_chunks: {}",
+            compose_second_degree_number_of_chunks
+        );
         println!("lookups");
         for (bitlen, limbs) in self.lookups.iter() {
             println!("{} {}", bitlen, limbs.len());
         }
-        println!("add: {}", add);
-        println!("addscaled: {}", addscaled);
-        println!("sub: {}", sub);
-        println!("mul: {}", mul);
-        println!("scale: {}", scale);
-        println!("divunsafe: {}", divunsafe);
-        println!("invunsafe: {}", invunsafe);
-        println!("assertnotzero: {}", assertnotzero);
-        println!("assertbit: {}", assertbit);
-        println!("assertonexorany: {}", assertonexorany);
-        println!("or: {}", or);
-        println!("assertnand: {}", assertnand);
-        println!("addconstant: {}", addconstant);
-        println!("subfromconstant: {}", subfromconstant);
-        println!("subandaddconstant: {}", subandaddconstant);
-        println!("muladdconstantscaled: {}", muladdconstantscaled);
-        println!("equaltoconstant: {}", equaltoconstant);
-        println!("select: {}", select);
-        println!("selectorassign: {}", selectorassign);
-        println!("compose: {}", compose);
-        println!("composeseconddegree: {}", composeseconddegree);
-        println!("compose_number_of_chunks: {}", compose_number_of_chunks);
-        println!(
-            "composeseconddegree_number_of_chunks: {}",
-            composeseconddegree_number_of_chunks
-        );
     }
 }
