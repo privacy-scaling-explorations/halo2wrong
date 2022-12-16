@@ -193,7 +193,7 @@ fn test_ecc_base_field() {
     const K: u32 = 23;
     const LIMB_BIT_LEN: usize = 88;
     const NUMBER_OF_LIMBS: usize = 3;
-    const LOOKUP_WIDTH: usize = 2;
+    const LOOKUP_WIDTH: usize = 1;
     const NUMBER_OF_SUBLIMBS: usize = 4;
 
     // const K: u32 = 20;
