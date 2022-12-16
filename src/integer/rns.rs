@@ -5,29 +5,17 @@ use num_bigint::BigUint as Big;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
 
-/// Common interface for [`Limb`] and [`Integer`]
 pub trait Common<F: FieldExt> {
-    /// Returns the represented value
     fn big(&self) -> Big;
-
-    /// Return the value modulus the Native field size.
     fn native(&self) -> F {
         let native_value = self.big() % modulus::<F>();
         big_to_fe(native_value)
     }
-
-    /// Returns true if the represented values, false otherwise.
     fn eq(&self, other: &Self) -> bool {
         self.big() == other.big()
     }
 }
 
-/// Residue Numeral System
-/// Representation of an integer holding its values modulo several coprime
-/// integers.
-///
-/// Contains all the necessary values to carry out operations such as
-/// multiplication and reduction in this representation.
 #[derive(Debug, Clone)]
 pub struct Rns<
     W: FieldExt,
@@ -36,48 +24,22 @@ pub struct Rns<
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
 > {
-    /// Order of the wrong field W. (In the article `p`).
     pub(crate) wrong_modulus: Big,
-    /// Order of the native field N. (In the article `n`).
     pub(crate) native_modulus: Big,
-    /// Native field elements representing `2^(i*r)` with `r = BIT_LEN_LIMB`.
     pub(super) left_shifters: [N; NUMBER_OF_LIMBS],
-    /// The value `base_aux` is a vector of auxiliary limbs representing the
-    /// value `2p` with `p` the size of the wrong modulus.
     base_aux: [Big; NUMBER_OF_LIMBS],
-    // TODO: consider `ConstantInteger` to replace `[N;NUMBER_OF_LIMBS]`
-    /// Negative wrong modulus: `-p mod 2^t` as vector of limbs.
     pub(super) negative_wrong_modulus_decomposed: [N; NUMBER_OF_LIMBS],
-    /// Wrong modulus `p` as vector of limbs.
     pub(super) wrong_modulus_decomposed: [N; NUMBER_OF_LIMBS],
-    /// Wrong modulus as native field element: `p mod n`.
     pub(super) wrong_modulus_in_native_modulus: N,
-
-    /// Maximum value for a reduced limb.
     pub(super) max_reduced_limb: Big,
-    /// Maximum value for an unreduced limb.
     pub(super) max_unreduced_limb: Big,
-    /// Maximum value of the remainder.
     pub(super) max_remainder: Big,
-    /// Maximum value that can be safely multiplied (guaranteeing the result
-    /// will be reducible).
     pub(super) max_operand: Big,
-    /// Maximum value of the quotient `q` in a reduction.
-    // pub(super) max_mul_quotient: Big,
-
-    /// Maximum value of most significant limb for `max_reduced_limb`.
     pub(super) max_most_significant_reduced_limb: Big,
-    /// Maximum value of most significant limb for `max_operand_limb`.
     pub(super) max_most_significant_operand_limb: Big,
-    /// Maximum value of most significant limb for `max_mul_quotient`.
     pub(super) max_most_significant_mul_quotient_limb: Big,
-
-    /// Bit length of the maximum value allowed for residues in multiplication
     pub(super) mul_v_bit_len: usize,
-    /// Bit length of the maximum value allowed for residues in reduction
-    /// circuit.
     pub(super) red_v_bit_len: usize,
-
     _marker_wrong: PhantomData<W>,
 }
 
@@ -89,11 +51,6 @@ impl<
         const NUMBER_OF_SUBLIMBS: usize,
     > Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
-    /// Calculates [`Rns`] `base_aux`.
-    /// Calculates base auxillary value wich must be equal to `wrong_modulus`
-    /// and all limbs of it must be higher than dense limb value. This value
-    /// is used in operations like subtractions in order to avoid negative
-    /// when values when working with `Big`.
     fn calculate_base_aux() -> [Big; NUMBER_OF_LIMBS] {
         let two = N::from(2);
         let r = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
@@ -120,8 +77,6 @@ impl<
         base_aux.try_into().unwrap()
     }
 
-    /// Calculates and builds a [`Rns`] with all its necessary values given
-    /// the bit length used for its limbs.
     pub fn construct() -> Self {
         assert!(NUMBER_OF_LIMBS > 2);
         let one = &Big::one();
@@ -145,7 +100,7 @@ impl<
         let wrong_modulus = &modulus::<W>();
         // native field modulus: `n`
         let native_modulus = &modulus::<N>();
-
+        
         // Multiplication is constrained as:
         //
         // `a * b = w * quotient + remainder`
@@ -400,15 +355,11 @@ impl<
 
         // rns
     }
-    /// Left shifters by limb size
     pub(crate) fn left_shifter(&self, i: usize) -> N {
         self.left_shifters[i]
     }
-    /// Computes the overflow that each component of the [`Rns`] must support.
-    // TODO: consider soundness of only single overflow length
     pub fn overflow_lengths(&self) -> Vec<usize> {
         let bit_len_lookup = BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS;
-        // Assert that bit length of limbs is divisible by sub limbs for lookup
         assert!(bit_len_lookup * NUMBER_OF_SUBLIMBS == BIT_LEN_LIMB);
         let max_most_significant_mul_quotient_limb_size =
             self.max_most_significant_mul_quotient_limb.bits() as usize % bit_len_lookup;

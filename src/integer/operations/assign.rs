@@ -1,8 +1,9 @@
 use crate::{
     integer::{
         chip::{IntegerChip, Range},
-        Integer, Limb,
+        ConstantInteger, Integer, Limb,
     },
+    utils::decompose,
     Scaled, Witness,
 };
 use halo2::{circuit::Value, halo2curves::FieldExt};
@@ -15,8 +16,14 @@ impl<
         const NUMBER_OF_SUBLIMBS: usize,
     > IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
-    pub fn assign_constant(&mut self, constant: W) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let constant = self.rns.constant(constant);
+    pub fn register_constant(
+        &mut self,
+        constant: W,
+    ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let limbs = decompose(constant, NUMBER_OF_LIMBS, BIT_LEN_LIMB)
+            .try_into()
+            .unwrap();
+        let constant = ConstantInteger::<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(&limbs);
         #[cfg(test)]
         {
             self.report.n_assign += 1;

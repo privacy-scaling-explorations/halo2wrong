@@ -146,7 +146,6 @@ impl<F: FieldExt> Collector<F> {
     pub fn assign(&mut self, value: Value<F>) -> Witness<F> {
         let w = self.new_witness(value);
         self.simple_operations.push(Operation::Assign { w });
-
         w
     }
     pub fn assert_equal(&mut self, w0: &Witness<F>, w1: &Witness<F>) {
@@ -529,7 +528,6 @@ impl<F: FieldExt> Collector<F> {
             .decompose(number_of_limbs, sublimb_bit_len)
             .transpose_vec(number_of_limbs);
         let bases = self.bases(sublimb_bit_len)[..number_of_limbs].to_vec();
-        // lookup and assign decomposed limbs
         let decomposed = decomposed
             .iter()
             .enumerate()
@@ -544,14 +542,12 @@ impl<F: FieldExt> Collector<F> {
                 w
             })
             .collect::<Vec<Witness<F>>>();
-        // ensure the decomposed limbs are equal to the input
         let terms: Vec<Scaled<_>> = decomposed
             .iter()
             .zip(bases.iter())
             .map(|(coeff, base)| Scaled::new(coeff, *base))
             .collect();
         let w1 = &self.compose(&terms[..], F::zero(), F::one());
-        // must be equal with the input
         self.equal(w0, w1);
         decomposed
     }

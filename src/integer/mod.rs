@@ -11,12 +11,9 @@ pub mod rns;
 #[cfg(test)]
 pub mod tests;
 
-/// AssignedLimb is a limb of an non native integer
 #[derive(Debug, Clone)]
 pub struct Limb<F: FieldExt> {
-    // Witness value
     witness: Witness<F>,
-    // Maximum value to track overflow and reduction flow
     max: Big,
 }
 impl<F: FieldExt> Limb<F> {
@@ -121,8 +118,6 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .map(|native| debug.field("nat", &native));
         big.map(|big| {
             debug.field("val", &big.to_str_radix(16));
-            // let native = &big % modulus::<N>();
-            // debug.field("nat", &native.to_str_radix(16));
             let reduced = &big % modulus::<W>();
             debug.field("red", &reduced.to_str_radix(16));
         });
@@ -169,9 +164,10 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn new(limbs: &[N; NUMBER_OF_LIMBS]) -> Self {
+        let native = compose(limbs.to_vec(), BIT_LEN_LIMB);
         Self {
             limbs: *limbs,
-            native: compose(limbs.to_vec(), BIT_LEN_LIMB),
+            native,
             _marker: PhantomData,
         }
     }

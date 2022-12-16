@@ -4,20 +4,13 @@ use super::{rns::Rns, ConstantInteger, Integer, Limb};
 use crate::{maingate::operations::Collector, Witness};
 use halo2::halo2curves::FieldExt;
 
-/// Signals the range mode that should be applied while assigning a new
-/// [`Integer`]
 #[derive(Debug)]
 pub enum Range {
-    /// Allowed range for multiplication result
     Remainder,
-    /// Maximum allowed range for a multiplication operation
     Operand,
-    /// Maximum allowed range for an integer for multiplicaiton quotient
     MulQuotient,
-    /// Signal for unreduced value
     Unreduced,
 }
-/// Chip for integer instructions
 #[derive(Clone, Debug)]
 pub struct IntegerChip<
     W: FieldExt,
@@ -31,7 +24,6 @@ pub struct IntegerChip<
     #[cfg(test)]
     pub(crate) report: Report,
 }
-
 impl<
         W: FieldExt,
         N: FieldExt,
@@ -58,8 +50,8 @@ impl<
             report: Report::default(),
         }
     }
-    pub fn collector(&mut self) -> &mut Collector<N> {
-        &mut self.o
+    pub fn operations(&self) -> &Collector<N> {
+        &self.o
     }
     pub fn rns(&self) -> &Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS> {
         &self.rns
@@ -73,6 +65,12 @@ impl<
         const NUMBER_OF_SUBLIMBS: usize,
     > IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
+    pub fn to_bits(&mut self, e: &Witness<N>) -> Vec<Witness<N>> {
+        self.o.to_bits(e, N::NUM_BITS as usize)
+    }
+    pub fn get_constant(&mut self, e: N) -> Witness<N> {
+        self.o.get_constant(e)
+    }
     pub fn copy_equal(
         &mut self,
         w0: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -155,9 +153,9 @@ impl<
         w0: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         w1: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let w0 = &self.reduce_if_limbs_gt_unreduced(w0);
+        let w0 = &self.reduce_if_limbs_gt_reduced(w0);
         let w0 = &self.reduce_if_gt_max_operand(w0);
-        let w1 = &self.reduce_if_limbs_gt_unreduced(w1);
+        let w1 = &self.reduce_if_limbs_gt_reduced(w1);
         let w1 = &self.reduce_if_gt_max_operand(w1);
         self._mul(w0, w1)
     }
@@ -166,7 +164,7 @@ impl<
         w0: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         constant: &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let w0 = &self.reduce_if_limbs_gt_unreduced(w0);
+        let w0 = &self.reduce_if_limbs_gt_reduced(w0);
         let w0 = &self.reduce_if_gt_max_operand(w0);
         self._mul_constant(w0, constant)
     }
@@ -183,9 +181,9 @@ impl<
         w0: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         w1: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let w0 = &self.reduce_if_limbs_gt_unreduced(w0);
+        let w0 = &self.reduce_if_limbs_gt_reduced(w0);
         let w0 = &self.reduce_if_gt_max_operand(w0);
-        let w1 = &self.reduce_if_limbs_gt_unreduced(w1);
+        let w1 = &self.reduce_if_limbs_gt_reduced(w1);
         let w1 = &self.reduce_if_gt_max_operand(w1);
         self._div_incomplete(w0, w1)
     }

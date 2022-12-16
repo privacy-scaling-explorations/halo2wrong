@@ -55,9 +55,11 @@ impl<
         self.o.info();
         println!("{:#?}", self.report);
     }
+    pub fn assign_native(&mut self, value: Value<N>) -> Witness<N> {
+        self.o.assign(value)
+    }
     pub fn assign(
         &mut self,
-
         limbs: Value<[N; NUMBER_OF_LIMBS]>,
         range: Range,
     ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
@@ -183,8 +185,6 @@ struct MyCircuit<
     const MAINGATE_LOOKUP_WIDTH: usize,
 > {
     _marker: PhantomData<(W, N)>,
-    #[allow(dead_code)]
-    fail: Option<usize>,
 }
 impl<
         W: FieldExt,
@@ -354,8 +354,7 @@ impl<
             ch.copy_equal(&u0, &u1);
             ch.assert_equal(&u0, &u1);
         }
-
-        config.maingate.layout(&mut ly, ch.o)
+        config.maingate.layout(&mut ly, ch.operations())
     }
 }
 #[test]
@@ -384,7 +383,6 @@ fn test_integer() {
         LOOKUP_WIDTH,
     > {
         _marker: PhantomData,
-        fail: None,
     };
     let public_inputs = vec![vec![]];
     let prover = match MockProver::run(K, &circuit, public_inputs) {

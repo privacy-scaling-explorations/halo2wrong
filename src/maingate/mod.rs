@@ -22,7 +22,6 @@ pub mod operations;
 #[cfg(test)]
 mod tests;
 
-// Fixed column helpers
 impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     #[allow(dead_code)]
     pub(crate) fn empty_extended_gate(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
@@ -75,7 +74,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     pub fn layout(
         &mut self,
         ly: &mut impl Layouter<F>,
-        collector: Collector<F>,
+        collector: &Collector<F>,
     ) -> Result<(), Error> {
         let cell_map = ly.assign_region(
             || "",

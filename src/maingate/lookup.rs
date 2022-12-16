@@ -18,11 +18,8 @@ impl<F: FieldExt, const W: usize> LookupGate<F, W> {
         column: usize,
         witness: &Witness<F>,
     ) -> Result<(), Error> {
-        // resolve advice column
         let advice = self.advice_columns[column % W];
-        // assign witness to advice column
         let new_cell = ctx.assign_advice(|| "", advice, witness.value())?;
-        // copy witness to new cell
         ctx.copy_chain(witness.id(), new_cell)
     }
     pub fn layout(

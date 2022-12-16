@@ -44,7 +44,6 @@ impl<F: FieldExt> Collector<F> {
         Value::known(u)
     }
 }
-
 #[derive(Clone)]
 struct TestConfig1<F: FieldExt, const LOOKUP_WIDTH: usize> {
     maingate: MainGate<F, LOOKUP_WIDTH>,
@@ -65,10 +64,9 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> Circuit<F> for MyCircuit1<F, LOOKUP
             maingate: MainGate::<F, LOOKUP_WIDTH>::configure(meta, vec![], vec![]),
         }
     }
-    fn synthesize(&self, config: Self::Config, mut ly: impl Layouter<F>) -> Result<(), Error> {
+    fn synthesize(&self, mut config: Self::Config, mut ly: impl Layouter<F>) -> Result<(), Error> {
         let mut o: Collector<F> = Collector::default();
         let ly = &mut ly;
-        let mut maingate = config.maingate;
 
         let value = |e: F| Value::known(e);
         let rand_fe = || F::random(OsRng);
@@ -286,9 +284,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> Circuit<F> for MyCircuit1<F, LOOKUP
         {
             o.info();
         }
-        maingate.layout(ly, o)?;
-
-        Ok(())
+        config.maingate.layout(ly, &o)
     }
 }
 #[test]
@@ -365,7 +361,7 @@ impl<F: FieldExt, const W: usize> Circuit<F> for MyCircuit2<F, W> {
         {
             o.info();
         }
-        maingate.layout(ly, o)?;
+        maingate.layout(ly, &o)?;
         Ok(())
     }
 }
@@ -484,7 +480,7 @@ impl<F: FieldExt, const W: usize, const LIMB_BIT_LEN: usize, const OVERFLOW_BIT_
         {
             o.info();
         }
-        maingate.layout(ly, o)?;
+        maingate.layout(ly, &o)?;
         Ok(())
     }
 }
@@ -504,12 +500,6 @@ fn test_decomposition() {
 
 impl<F: FieldExt> Collector<F> {
     pub(crate) fn info(&self) {
-        println!("------");
-        println!("collector {}", self.number_of_witnesses);
-        println!("constants: {}", self.constants.len());
-        println!("simple ops: {}", self.simple_operations.len());
-        println!("extended ops: {}", self.extended_operations.len());
-        println!("shorted ops: {}", self.shorted_opeartions.len());
         let mut add = 0;
         let mut add_scaled = 0;
         let mut sub = 0;
@@ -629,6 +619,14 @@ impl<F: FieldExt> Collector<F> {
                 }
             }
         }
+
+        println!("------");
+        println!("collector {}", self.number_of_witnesses);
+        println!("constants: {}", self.constants.len());
+        println!("simple ops: {}", self.simple_operations.len());
+        println!("extended ops: {}", self.extended_operations.len());
+        println!("shorted ops: {}", self.shorted_opeartions.len());
+
         println!("add: {}", add);
         println!("add_scaled: {}", add_scaled);
         println!("sub: {}", sub);
@@ -655,9 +653,27 @@ impl<F: FieldExt> Collector<F> {
             "compose_second_degree_number_of_chunks: {}",
             compose_second_degree_number_of_chunks
         );
+        println!(
+            "total compose chunks: {}",
+            compose_number_of_chunks + compose_second_degree_number_of_chunks
+        );
+        let isolated = std::cmp::max(self.simple_operations.len(), self.extended_operations.len());
+        let shorted = compose_number_of_chunks
+            + compose_second_degree_number_of_chunks
+            + select
+            + select_or_assign;
+        println!("isolated {}", isolated);
+        println!("shorted {}", shorted);
+        println!("total {}", shorted + isolated);
+
         println!("lookups");
         for (bitlen, limbs) in self.lookups.iter() {
             println!("{} {}", bitlen, limbs.len());
         }
+        let number_of_lookus = self
+            .lookups
+            .iter()
+            .fold(0usize, |acc, (_, next)| acc + next.len());
+        println!("number of lookup {}", number_of_lookus);
     }
 }
