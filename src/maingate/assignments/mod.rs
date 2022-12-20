@@ -1,20 +1,20 @@
-use super::{
-    config::{ExtendedGate, MainGate, SimpleGate},
-    operations::{ExtendedOperation, Operation, ShortedOperation},
-};
-use crate::{Composable, RegionCtx, Scaled, SecondDegreeScaled, Witness};
+use super::operations::Operation;
+use crate::{Composable, RegionCtx, Scaled, SecondDegreeScaled, Term, Witness};
 use halo2::{
     circuit::Value,
     halo2curves::FieldExt,
     plonk::{Advice, Column, Error, Fixed},
 };
+mod extended_gate;
+mod main_gate;
+mod simple_gate;
 pub enum ColumnID {
     A,
     B,
     C,
     NEXT,
 }
-pub(crate) trait AssignmentsInternal<F: FieldExt> {
+pub trait AssignmentsInternal<F: FieldExt> {
     fn column(&self, id: ColumnID) -> (Column<Fixed>, Column<Advice>);
     fn enable_scaled_mul(&self, ctx: &mut RegionCtx<'_, F>, factor: F) -> Result<(), Error>;
     fn assign(
@@ -75,7 +75,7 @@ pub(crate) trait AssignmentsInternal<F: FieldExt> {
         self.set_constant(ctx, F::zero())
     }
 }
-pub(crate) trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
+pub trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
     #[cfg(test)]
     // arithmetic equality constrait. only for testing.
     fn assert_equal(
@@ -271,102 +271,8 @@ pub(crate) trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
         }
     }
 }
-impl<F: FieldExt> Assignments<F> for SimpleGate<F> {}
-impl<F: FieldExt> AssignmentsInternal<F> for SimpleGate<F> {
-    fn enable_scaled_mul(&self, ctx: &mut RegionCtx<'_, F>, factor: F) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.s_mul, factor).map(|_| ())
-    }
-    fn enable_next(&self, _: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        Ok(())
-    }
-    fn disable_next(&self, _: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        Ok(())
-    }
-    fn set_constant(&self, _: &mut RegionCtx<'_, F>, _: F) -> Result<(), Error> {
-        Ok(())
-    }
-    fn column(&self, id: ColumnID) -> (Column<Fixed>, Column<Advice>) {
-        match id {
-            ColumnID::A => (self.sa, self.a),
-            ColumnID::B => (self.sb, self.b),
-            ColumnID::C => (self.sc, self.c),
-            ColumnID::NEXT => unreachable!("simple gate has no further rotation"),
-        }
-    }
-    fn no_op(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        self.disable_constant(ctx)?;
-        self.disable_mul(ctx)?;
-        self.disable_next(ctx)?;
-        ctx.assign_fixed(|| "", self.sa, F::zero())?;
-        ctx.assign_fixed(|| "", self.sb, F::zero())?;
-        ctx.assign_fixed(|| "", self.sc, F::zero())?;
-        Ok(())
-    }
-}
-impl<F: FieldExt> AssignmentsInternal<F> for ExtendedGate<F> {
-    fn enable_scaled_mul(&self, ctx: &mut RegionCtx<'_, F>, factor: F) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.s_mul, factor).map(|_| ())
-    }
-    fn enable_next(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.s_next, F::one()).map(|_| ())
-    }
-    fn disable_next(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.s_next, F::zero()).map(|_| ())
-    }
-    fn set_constant(&self, ctx: &mut RegionCtx<'_, F>, constant: F) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.constant, constant).map(|_| ())
-    }
-    fn column(&self, id: ColumnID) -> (Column<Fixed>, Column<Advice>) {
-        match id {
-            ColumnID::A => (self.sa, self.a),
-            ColumnID::B => (self.sb, self.b),
-            ColumnID::C => (self.sc, self.c),
-            ColumnID::NEXT => (self.s_next, self.c),
-        }
-    }
-    fn no_op(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        self.disable_constant(ctx)?;
-        self.disable_mul(ctx)?;
-        self.disable_next(ctx)?;
-        ctx.assign_fixed(|| "", self.sa, F::zero())?;
-        ctx.assign_fixed(|| "", self.sb, F::zero())?;
-        ctx.assign_fixed(|| "", self.sc, F::zero())?;
-        Ok(())
-    }
-}
-impl<F: FieldExt> Assignments<F> for ExtendedGate<F> {}
-impl<F: FieldExt> ExtendedGate<F> {
-    pub(crate) fn assign_extended_op(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        op: &ExtendedOperation<F>,
-    ) -> Result<(), Error> {
-        match op {
-            ExtendedOperation::AddConstant { w0, constant, u } => {
-                self.add_constant(ctx, w0, *constant, u)
-            }
-            ExtendedOperation::SubFromConstant { constant, w1, u } => {
-                self.sub_from_constant(ctx, *constant, w1, u)
-            }
-            ExtendedOperation::SubAndAddConstant {
-                w0,
-                w1,
-                constant,
-                u,
-            } => self.sub_and_add_constant(ctx, w0, w1, *constant, u),
-            ExtendedOperation::MulAddConstantScaled {
-                factor,
-                w0,
-                w1,
-                constant,
-                u,
-            } => self.mul_add_constant_scaled(ctx, *factor, w0, w1, *constant, u),
-            ExtendedOperation::EqualToConstant { w0, constant } => {
-                self.equal_to_constant(ctx, w0, *constant)
-            }
-        }
-    }
-    pub(crate) fn add_constant(
+pub trait ConstantAssignments<F: FieldExt>: Assignments<F> {
+    fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         w0: &Witness<F>,
@@ -380,7 +286,7 @@ impl<F: FieldExt> ExtendedGate<F> {
         self.empty_cell(ctx, ColumnID::B)?;
         self.assign(ctx, ColumnID::C, &Scaled::result(u))
     }
-    pub(crate) fn sub_from_constant(
+    fn sub_from_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         constant: F,
@@ -394,7 +300,7 @@ impl<F: FieldExt> ExtendedGate<F> {
         self.empty_cell(ctx, ColumnID::B)?;
         self.assign(ctx, ColumnID::C, &Scaled::result(u))
     }
-    pub(crate) fn sub_and_add_constant(
+    fn sub_and_add_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         w0: &Witness<F>,
@@ -409,7 +315,7 @@ impl<F: FieldExt> ExtendedGate<F> {
         self.assign(ctx, ColumnID::B, &Scaled::sub(w1))?;
         self.assign(ctx, ColumnID::C, &Scaled::result(u))
     }
-    pub(crate) fn mul_add_constant_scaled(
+    fn mul_add_constant_scaled(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         factor: F,
@@ -425,7 +331,7 @@ impl<F: FieldExt> ExtendedGate<F> {
         self.assign(ctx, ColumnID::B, &Scaled::mul(w1))?;
         self.assign(ctx, ColumnID::C, &Scaled::result(u))
     }
-    pub(crate) fn equal_to_constant(
+    fn equal_to_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
         w0: &Witness<F>,
@@ -439,80 +345,35 @@ impl<F: FieldExt> ExtendedGate<F> {
         self.assign(ctx, ColumnID::A, &Scaled::add(w0))
     }
 }
-
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
-    pub(crate) fn assign_shorted_op(
-        &mut self,
+trait ComplexAssignements<F: FieldExt> {
+    fn select(
+        &self,
         ctx: &mut RegionCtx<'_, F>,
-        op: &ShortedOperation<F>,
-    ) -> Result<(), Error> {
-        match op {
-            ShortedOperation::Select {
-                cond,
-                w0,
-                w1,
-                selected,
-            } => {
-                // c*w0 - c*w1 + w1 - res = 0
-                self.short_gates(ctx)?;
-                self.disable_next(ctx)?;
-                self.disable_constant(ctx)?;
-                self.simple_gate.enable_mul(ctx)?;
-                self.extended_gate.enable_scaled_mul(ctx, -F::one())?;
-                // c*w0 - c*w1 + w1 - res = 0
-                // simple gate
-                self.simple_gate
-                    .assign(ctx, ColumnID::A, &Scaled::mul(cond))?;
-                self.simple_gate
-                    .assign(ctx, ColumnID::B, &Scaled::mul(w0))?;
-                self.simple_gate
-                    .assign(ctx, ColumnID::C, &Scaled::add(w1))?;
-                // extended gate
-                self.extended_gate
-                    .assign(ctx, ColumnID::A, &Scaled::mul(cond))?;
-                self.extended_gate
-                    .assign(ctx, ColumnID::B, &Scaled::mul(w1))?;
-                self.extended_gate
-                    .assign(ctx, ColumnID::C, &Scaled::sub(selected))?;
-                ctx.next();
-                Ok(())
-            }
-            ShortedOperation::SelectOrAssign {
-                cond,
-                w,
-                constant,
-                selected,
-            } => {
-                // * c*w0 - c*constant + constant - selected = 0
-                self.short_gates(ctx)?;
-                self.disable_next(ctx)?;
-                self.set_constant(ctx, *constant)?;
-                self.simple_gate.enable_mul(ctx)?;
-                self.extended_gate.disable_mul(ctx)?;
-                // simple gate
-                self.simple_gate
-                    .assign(ctx, ColumnID::A, &Scaled::mul(cond))?;
-                self.simple_gate.assign(ctx, ColumnID::B, &Scaled::mul(w))?;
-                self.simple_gate
-                    .assign(ctx, ColumnID::C, &Scaled::new(cond, -*constant))?;
-                // extended gate
-                self.extended_gate.empty_cell(ctx, ColumnID::A)?;
-                self.extended_gate.empty_cell(ctx, ColumnID::B)?;
-                self.extended_gate
-                    .assign(ctx, ColumnID::C, &Scaled::sub(selected))?;
-                ctx.next();
-                Ok(())
-            }
-            ShortedOperation::Compose {
-                terms,
-                constant,
-                result,
-            } => self.compose(ctx, terms, result, *constant),
-            ShortedOperation::ComposeSecondDegree {
-                terms,
-                constant,
-                result,
-            } => self.compose_second_degree(ctx, terms, result, *constant),
-        }
-    }
+        cond: &Witness<F>,
+        w0: &Witness<F>,
+        w1: &Witness<F>,
+        selected: &Witness<F>,
+    ) -> Result<(), Error>;
+    fn select_or_assign(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        cond: &Witness<F>,
+        w: &Witness<F>,
+        constant: F,
+        selected: &Witness<F>,
+    ) -> Result<(), Error>;
+    fn compose(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        terms: &[Scaled<F>],
+        result: &Scaled<F>,
+        constant: F,
+    ) -> Result<(), Error>;
+    fn compose_second_degree(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        terms: &[Term<F>],
+        result: &Scaled<F>,
+        constant: F,
+    ) -> Result<(), Error>;
 }

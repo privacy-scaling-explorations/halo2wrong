@@ -4,7 +4,7 @@ use num_integer::Integer;
 use std::{collections::BTreeMap, fmt::Debug};
 
 #[derive(Debug, Clone)]
-pub(crate) enum Operation<F: FieldExt> {
+pub enum Operation<F: FieldExt> {
     #[cfg(test)]
     AssertEqual {
         w0: Witness<F>,
@@ -71,7 +71,7 @@ pub(crate) enum Operation<F: FieldExt> {
     },
 }
 #[derive(Debug, Clone)]
-pub(crate) enum ExtendedOperation<F: FieldExt> {
+pub(crate) enum ConstantOperation<F: FieldExt> {
     AddConstant {
         w0: Witness<F>,
         constant: F,
@@ -101,7 +101,7 @@ pub(crate) enum ExtendedOperation<F: FieldExt> {
     },
 }
 #[derive(Debug, Clone)]
-pub(crate) enum ShortedOperation<F: FieldExt> {
+pub(crate) enum ComplexOperation<F: FieldExt> {
     Select {
         cond: Witness<F>,
         w0: Witness<F>,
@@ -129,8 +129,8 @@ pub(crate) enum ShortedOperation<F: FieldExt> {
 pub struct Collector<F: FieldExt> {
     pub(crate) number_of_witnesses: u32,
     pub(crate) simple_operations: Vec<Operation<F>>,
-    pub(crate) extended_operations: Vec<ExtendedOperation<F>>,
-    pub(crate) shorted_opeartions: Vec<ShortedOperation<F>>,
+    pub(crate) constant_operations: Vec<ConstantOperation<F>>,
+    pub(crate) shorted_opeartions: Vec<ComplexOperation<F>>,
     pub(crate) copies: Vec<(u32, u32)>,
     pub(crate) constants: BTreeMap<F, Witness<F>>,
     bases: BTreeMap<usize, Vec<F>>,
@@ -345,8 +345,8 @@ impl<F: FieldExt> Collector<F> {
     pub fn add_constant(&mut self, w0: &Witness<F>, constant: F) -> Witness<F> {
         let u = w0.value().map(|w0| w0 + constant);
         let u = self.new_witness(u);
-        self.extended_operations
-            .push(ExtendedOperation::AddConstant {
+        self.constant_operations
+            .push(ConstantOperation::AddConstant {
                 w0: *w0,
                 constant,
                 u,
@@ -356,8 +356,8 @@ impl<F: FieldExt> Collector<F> {
     pub fn sub_from_constant(&mut self, constant: F, w1: &Witness<F>) -> Witness<F> {
         let u = w1.value().map(|w1| constant - w1);
         let u = self.new_witness(u);
-        self.extended_operations
-            .push(ExtendedOperation::SubFromConstant {
+        self.constant_operations
+            .push(ConstantOperation::SubFromConstant {
                 constant,
                 w1: *w1,
                 u,
@@ -372,8 +372,8 @@ impl<F: FieldExt> Collector<F> {
     ) -> Witness<F> {
         let u = (w0.value() - w1.value).map(|dif| dif + constant);
         let u = self.new_witness(u);
-        self.extended_operations
-            .push(ExtendedOperation::SubAndAddConstant {
+        self.constant_operations
+            .push(ConstantOperation::SubAndAddConstant {
                 w0: *w0,
                 w1: *w1,
                 constant,
@@ -390,8 +390,8 @@ impl<F: FieldExt> Collector<F> {
     ) -> Witness<F> {
         let u = (w0.value() * w1.value).map(|e| factor * e + constant);
         let u = self.new_witness(u);
-        self.extended_operations
-            .push(ExtendedOperation::MulAddConstantScaled {
+        self.constant_operations
+            .push(ConstantOperation::MulAddConstantScaled {
                 factor,
                 w0: *w0,
                 w1: *w1,
@@ -401,8 +401,8 @@ impl<F: FieldExt> Collector<F> {
         u
     }
     pub fn equal_to_constant(&mut self, w0: &Witness<F>, constant: F) {
-        self.extended_operations
-            .push(ExtendedOperation::EqualToConstant { w0: *w0, constant })
+        self.constant_operations
+            .push(ConstantOperation::EqualToConstant { w0: *w0, constant })
     }
     pub fn assert_zero(&mut self, w0: &Witness<F>) {
         self.equal_to_constant(w0, F::zero())
@@ -427,7 +427,7 @@ impl<F: FieldExt> Collector<F> {
                 }
             });
         let selected = self.new_witness(selected);
-        self.shorted_opeartions.push(ShortedOperation::Select {
+        self.shorted_opeartions.push(ComplexOperation::Select {
             cond: *cond,
             w0: *w0,
             w1: *w1,
@@ -454,7 +454,7 @@ impl<F: FieldExt> Collector<F> {
         });
         let selected = self.new_witness(selected);
         self.shorted_opeartions
-            .push(ShortedOperation::SelectOrAssign {
+            .push(ComplexOperation::SelectOrAssign {
                 cond: *cond,
                 w: *w,
                 constant,
@@ -478,7 +478,7 @@ impl<F: FieldExt> Collector<F> {
             }
         });
         let result = self.new_witness(result);
-        self.shorted_opeartions.push(ShortedOperation::Compose {
+        self.shorted_opeartions.push(ComplexOperation::Compose {
             terms,
             constant,
             result: Scaled::new(&result.clone(), result_base),
@@ -507,7 +507,7 @@ impl<F: FieldExt> Collector<F> {
         });
         let result = self.new_witness(result);
         self.shorted_opeartions
-            .push(ShortedOperation::ComposeSecondDegree {
+            .push(ComplexOperation::ComposeSecondDegree {
                 terms,
                 constant,
                 result: Scaled::new(&result.clone(), result_base),

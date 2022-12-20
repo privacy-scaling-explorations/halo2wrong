@@ -1,6 +1,6 @@
 use super::{config::MainGate, operations::Collector};
 use crate::{
-    maingate::operations::{ExtendedOperation, Operation, ShortedOperation},
+    maingate::operations::{ComplexOperation, ConstantOperation, Operation},
     utils::compose,
     Composable, Scaled, SecondDegreeScaled, Term, Witness,
 };
@@ -542,32 +542,32 @@ impl<F: FieldExt> Collector<F> {
         let mut sub_and_add_constant = 0;
         let mut mul_add_constant_scaled = 0;
         let mut equal_to_constant = 0;
-        for op in self.extended_operations.iter() {
+        for op in self.constant_operations.iter() {
             match op {
-                ExtendedOperation::AddConstant {
+                ConstantOperation::AddConstant {
                     w0: _,
                     constant: _,
                     u: _,
                 } => add_constant += 1,
-                ExtendedOperation::SubFromConstant {
+                ConstantOperation::SubFromConstant {
                     constant: _,
                     w1: _,
                     u: _,
                 } => sub_from_constant += 1,
-                ExtendedOperation::SubAndAddConstant {
+                ConstantOperation::SubAndAddConstant {
                     w0: _,
                     w1: _,
                     constant: _,
                     u: _,
                 } => sub_and_add_constant += 1,
-                ExtendedOperation::MulAddConstantScaled {
+                ConstantOperation::MulAddConstantScaled {
                     factor: _,
                     w0: _,
                     w1: _,
                     constant: _,
                     u: _,
                 } => mul_add_constant_scaled += 1,
-                ExtendedOperation::EqualToConstant { w0: _, constant: _ } => equal_to_constant += 1,
+                ConstantOperation::EqualToConstant { w0: _, constant: _ } => equal_to_constant += 1,
             }
         }
         let mut select = 0;
@@ -578,19 +578,19 @@ impl<F: FieldExt> Collector<F> {
         let mut compose_second_degree_number_of_chunks = 0;
         for op in self.shorted_opeartions.iter() {
             match op {
-                ShortedOperation::Select {
+                ComplexOperation::Select {
                     cond: _,
                     w0: _,
                     w1: _,
                     selected: _,
                 } => select += 1,
-                ShortedOperation::SelectOrAssign {
+                ComplexOperation::SelectOrAssign {
                     cond: _,
                     w: _,
                     constant: _,
                     selected: _,
                 } => select_or_assign += 1,
-                ShortedOperation::Compose {
+                ComplexOperation::Compose {
                     terms,
                     constant: _,
                     result: _,
@@ -601,7 +601,7 @@ impl<F: FieldExt> Collector<F> {
                     compose_number_of_chunks += number_of_chunks;
                     compose += 1;
                 }
-                ShortedOperation::ComposeSecondDegree {
+                ComplexOperation::ComposeSecondDegree {
                     terms,
                     constant: _,
                     result: _,
@@ -624,7 +624,7 @@ impl<F: FieldExt> Collector<F> {
         println!("collector {}", self.number_of_witnesses);
         println!("constants: {}", self.constants.len());
         println!("simple ops: {}", self.simple_operations.len());
-        println!("extended ops: {}", self.extended_operations.len());
+        println!("constant ops: {}", self.constant_operations.len());
         println!("shorted ops: {}", self.shorted_opeartions.len());
 
         println!("add: {}", add);
@@ -657,7 +657,7 @@ impl<F: FieldExt> Collector<F> {
             "total compose chunks: {}",
             compose_number_of_chunks + compose_second_degree_number_of_chunks
         );
-        let isolated = std::cmp::max(self.simple_operations.len(), self.extended_operations.len());
+        let isolated = std::cmp::max(self.simple_operations.len(), self.constant_operations.len());
         let shorted = compose_number_of_chunks
             + compose_second_degree_number_of_chunks
             + select

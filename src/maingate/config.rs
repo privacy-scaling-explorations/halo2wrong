@@ -9,7 +9,6 @@ use std::{
 };
 #[derive(Clone, Debug)]
 pub struct MainGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
-    // TODO: consider composition lenghts as `Range` const
     pub(crate) simple_gate: SimpleGate<F>,
     pub(crate) extended_gate: ExtendedGate<F>,
     pub(crate) q_isolate_simple: Selector,
@@ -42,6 +41,7 @@ pub struct ExtendedGate<F: FieldExt> {
     pub(crate) sc: Column<Fixed>,
     pub(crate) s_next: Column<Fixed>,
     pub(crate) constant: Column<Fixed>,
+    // TODO: implement public inputs
     // pub(crate) instance: Column<Instance>,
     _marker: PhantomData<F>,
 }

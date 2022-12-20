@@ -100,7 +100,7 @@ impl<
         let wrong_modulus = &modulus::<W>();
         // native field modulus: `n`
         let native_modulus = &modulus::<N>();
-        
+
         // Multiplication is constrained as:
         //
         // `a * b = w * quotient + remainder`
