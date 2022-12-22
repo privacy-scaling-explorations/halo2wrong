@@ -4,6 +4,7 @@ mod transcript;
 pub use ecc;
 pub use ecc::halo2;
 pub use ecc::maingate;
+pub use hasher::HasherChip;
 
 pub use crate::transcript::*;
 
