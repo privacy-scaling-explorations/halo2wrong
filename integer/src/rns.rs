@@ -168,7 +168,7 @@ pub struct Rns<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
     /// Order of the binary field (In the article: 2^t).
     pub binary_modulus: big_uint,
     /// Order of the ring result of the direct product of the native field and
-    /// binary field (In the article notation: M = n * p).
+    /// binary field (In the article notation: M = n * 2^t).
     pub crt_modulus: big_uint,
 
     /// Native field elements representing `2^(i*-r)` with `r = BIT_LEN_LIMB`.
