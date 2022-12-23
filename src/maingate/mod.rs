@@ -1,13 +1,23 @@
 use self::{
     assignments::{Assignments, AssignmentsInternal},
-    config::{LookupGate, MainGate},
+    config::{ExtendedGate, LookupGate, MainGate},
     operations::Collector,
 };
-use crate::{
-    maingate::{assignments::ColumnID, operations::Operation},
-    RegionCtx, Scaled,
+use crate::{maingate::operations::Operation, RegionCtx};
+use halo2::{
+    circuit::Layouter,
+    halo2curves::FieldExt,
+    plonk::{ConstraintSystem, Error},
 };
-use halo2::{circuit::Layouter, halo2curves::FieldExt, plonk::Error};
+
+pub trait Gate<F: FieldExt>: Clone {
+    fn layout(&self, ly: &mut impl Layouter<F>, collector: &Collector<F>) -> Result<(), Error>;
+    fn configure(
+        meta: &mut ConstraintSystem<F>,
+        composition_bit_lenghts: Vec<usize>,
+        overflow_bit_lenghts: Vec<usize>,
+    ) -> Self;
+}
 
 pub mod assignments;
 pub mod config;
@@ -62,12 +72,15 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
         self.extended_gate.disable_constant(ctx)
     }
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
-    pub fn layout(
-        &mut self,
-        ly: &mut impl Layouter<F>,
-        collector: &Collector<F>,
-    ) -> Result<(), Error> {
+impl<F: FieldExt, const LOOKUP_WIDTH: usize> Gate<F> for MainGate<F, LOOKUP_WIDTH> {
+    fn configure(
+        meta: &mut ConstraintSystem<F>,
+        composition_bit_lenghts: Vec<usize>,
+        overflow_bit_lenghts: Vec<usize>,
+    ) -> Self {
+        Self::_configure(meta, composition_bit_lenghts, overflow_bit_lenghts)
+    }
+    fn layout(&self, ly: &mut impl Layouter<F>, collector: &Collector<F>) -> Result<(), Error> {
         let cell_map = ly.assign_region(
             || "",
             |region| {
@@ -119,8 +132,8 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
                     }
                 }
                 // 4. assign shorted operations
-                for op in collector.shorted_opeartions.iter() {
-                    self.assign_shorted_op(ctx, op)?;
+                for op in collector.complex_operations.iter() {
+                    self.assign_complex_operation(ctx, op)?;
                 }
                 // 5. to espace from unassigned next cell error
                 self.simple_gate.empty(ctx)?;
@@ -133,29 +146,46 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
             },
         )?;
         // finally layout lookup gate
-        self.lookup_gate.layout(ly, &cell_map, &collector.lookups)?;
+        self.extended_gate
+            .lookup_gate
+            .layout(ly, &cell_map, &collector.lookups)?;
         Ok(())
     }
-    fn assign_with_horizontal_offset(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        term: &Scaled<F>,
-        offset: usize,
-    ) -> Result<(), Error> {
-        assert!(offset < 6);
-        if offset == 0 {
-            self.simple_gate.assign(ctx, ColumnID::A, term)
-        } else if offset == 1 {
-            self.simple_gate.assign(ctx, ColumnID::B, term)
-        } else if offset == 2 {
-            self.simple_gate.assign(ctx, ColumnID::C, term)
-        } else if offset == 3 {
-            self.extended_gate.assign(ctx, ColumnID::A, term)
-        } else if offset == 4 {
-            self.extended_gate.assign(ctx, ColumnID::B, term)
-        } else {
-            self.extended_gate.assign(ctx, ColumnID::C, term)
-        }
+}
+impl<F: FieldExt, const LOOKUP_WIDTH: usize> Gate<F> for ExtendedGate<F, LOOKUP_WIDTH> {
+    fn configure(
+        meta: &mut ConstraintSystem<F>,
+        composition_bit_lenghts: Vec<usize>,
+        overflow_bit_lenghts: Vec<usize>,
+    ) -> Self {
+        Self::_configure(meta, composition_bit_lenghts, overflow_bit_lenghts)
+    }
+    fn layout(&self, ly: &mut impl Layouter<F>, collector: &Collector<F>) -> Result<(), Error> {
+        let cell_map = ly.assign_region(
+            || "",
+            |region| {
+                let ctx = &mut RegionCtx::new(region);
+                for op in collector.simple_operations.iter() {
+                    self.assign_op(ctx, op)?;
+                    ctx.next();
+                }
+                for op in collector.constant_operations.iter() {
+                    self.assign_constant_op(ctx, op)?;
+                    ctx.next();
+                }
+                for op in collector.complex_operations.iter() {
+                    self.assign_complex_op(ctx, op)?;
+                }
+                self.empty(ctx)?;
+                // 6 .apply indirect copy constraints
+                for (id0, id1) in collector.copies.iter() {
+                    ctx.copy(*id0, *id1)?;
+                }
+                Ok(ctx.cell_map())
+            },
+        )?;
+        self.lookup_gate.layout(ly, &cell_map, &collector.lookups)?;
+        Ok(())
     }
 }
 

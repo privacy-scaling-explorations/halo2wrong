@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     integer::Limb,
-    maingate::{config::MainGate, operations::Collector},
+    maingate::{config::MainGate, operations::Collector, Gate},
     utils::{big_to_fe, modulus},
     Scaled, Witness,
 };
@@ -221,7 +221,6 @@ impl<
         TestConfig { maingate, rns }
     }
     fn synthesize(&self, config: Self::Config, mut ly: impl Layouter<N>) -> Result<(), Error> {
-        let mut config = config;
         let o = Collector::default();
         let mut ch = config.integer_chip(o);
         {

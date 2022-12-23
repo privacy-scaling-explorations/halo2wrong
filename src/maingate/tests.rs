@@ -1,6 +1,9 @@
-use super::{config::MainGate, operations::Collector};
+use super::{config::MainGate, operations::Collector, Gate};
 use crate::{
-    maingate::operations::{ComplexOperation, ConstantOperation, Operation},
+    maingate::{
+        config::ExtendedGate,
+        operations::{ComplexOperation, ConstantOperation, Operation},
+    },
     utils::compose,
     Composable, Scaled, SecondDegreeScaled, Term, Witness,
 };
@@ -45,33 +48,36 @@ impl<F: FieldExt> Collector<F> {
     }
 }
 #[derive(Clone)]
-struct TestConfig1<F: FieldExt, const LOOKUP_WIDTH: usize> {
-    maingate: MainGate<F, LOOKUP_WIDTH>,
-}
-#[derive(Default)]
-struct MyCircuit1<F: FieldExt, const LOOKUP_WIDTH: usize> {
+struct TestConfig1<F: FieldExt, G: Gate<F> + Clone> {
+    gate: G,
     _marker: PhantomData<F>,
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> Circuit<F> for MyCircuit1<F, LOOKUP_WIDTH> {
-    type Config = TestConfig1<F, LOOKUP_WIDTH>;
+#[derive(Default)]
+// struct MyCircuit1<F: FieldExt> {
+struct MyCircuit1<F: FieldExt, G: Gate<F>> {
+    _marker: PhantomData<(F, G)>,
+}
+impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
+    type Config = TestConfig1<F, G>;
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        Self {
+            _marker: PhantomData,
+        }
     }
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         TestConfig1 {
-            maingate: MainGate::<F, LOOKUP_WIDTH>::configure(meta, vec![], vec![]),
+            gate: G::configure(meta, vec![], vec![]),
+            _marker: PhantomData,
         }
     }
-    fn synthesize(&self, mut config: Self::Config, mut ly: impl Layouter<F>) -> Result<(), Error> {
+    fn synthesize(&self, config: Self::Config, mut ly: impl Layouter<F>) -> Result<(), Error> {
         let mut o: Collector<F> = Collector::default();
         let ly = &mut ly;
-
         let value = |e: F| Value::known(e);
         let rand_fe = || F::random(OsRng);
         let rand_value = || value(rand_fe());
-
         let one = &o.register_constant(F::one());
         let zero = &o.register_constant(F::zero());
         o.assert_one(one);
@@ -284,14 +290,25 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> Circuit<F> for MyCircuit1<F, LOOKUP
         {
             o.info();
         }
-        config.maingate.layout(ly, &o)
+        config.gate.layout(ly, &o)
     }
 }
 #[test]
 fn test_arithmetic() {
     const K: u32 = 15;
-    let circuit = MyCircuit1::<Fp, 0> {
-        _marker: PhantomData::<Fp>,
+    // extended gate
+    let circuit = MyCircuit1::<Fp, ExtendedGate<_, 0>> {
+        _marker: PhantomData::<_>,
+    };
+    let public_inputs = vec![vec![]];
+    let prover = match MockProver::run(K, &circuit, public_inputs) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    prover.assert_satisfied();
+    // main gate
+    let circuit = MyCircuit1::<Fp, MainGate<_, 0>> {
+        _marker: PhantomData::<_>,
     };
     let public_inputs = vec![vec![]];
     let prover = match MockProver::run(K, &circuit, public_inputs) {
@@ -300,36 +317,39 @@ fn test_arithmetic() {
     };
     prover.assert_satisfied();
 }
-#[derive(Clone)]
-struct TestConfig2<F: FieldExt, const W: usize> {
-    maingate: MainGate<F, W>,
-}
-#[derive(Default)]
-struct MyCircuit2<F: FieldExt, const W: usize> {
-    _marker: PhantomData<F>,
-}
-impl<F: FieldExt, const W: usize> MyCircuit2<F, W> {
+impl<F: FieldExt, G: Gate<F>> MyCircuit2<F, G> {
     fn bit_lenghts() -> Vec<usize> {
         vec![4, 5, 6, 7]
     }
 }
+#[derive(Clone)]
+struct TestConfig2<F: FieldExt, G: Gate<F> + Clone> {
+    gate: G,
+    _marker: PhantomData<F>,
+}
+#[derive(Default)]
+struct MyCircuit2<F: FieldExt, G: Gate<F>> {
+    _marker: PhantomData<(F, G)>,
+}
 
-impl<F: FieldExt, const W: usize> Circuit<F> for MyCircuit2<F, W> {
-    type Config = TestConfig2<F, W>;
+impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit2<F, G> {
+    type Config = TestConfig2<F, G>;
     type FloorPlanner = V1;
+
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        Self {
+            _marker: PhantomData,
+        }
     }
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        assert!(W > 0);
         TestConfig2 {
-            maingate: MainGate::<F, W>::configure(meta, Self::bit_lenghts(), vec![]),
+            gate: G::configure(meta, Self::bit_lenghts(), vec![]),
+            _marker: PhantomData,
         }
     }
     fn synthesize(&self, config: Self::Config, mut ly: impl Layouter<F>) -> Result<(), Error> {
         let mut o: Collector<F> = Collector::default();
         let ly = &mut ly;
-        let mut maingate = config.maingate;
         let bit_lenghts = Self::bit_lenghts();
         let max_vals = bit_lenghts
             .iter()
@@ -361,15 +381,26 @@ impl<F: FieldExt, const W: usize> Circuit<F> for MyCircuit2<F, W> {
         {
             o.info();
         }
-        maingate.layout(ly, &o)?;
+        config.gate.layout(ly, &o)?;
         Ok(())
     }
 }
 #[test]
 fn test_lookup() {
     const K: u32 = 15;
-    let circuit = MyCircuit2::<Fp, 2> {
-        _marker: PhantomData::<Fp>,
+    // extended gate
+    let circuit = MyCircuit2::<Fp, ExtendedGate<_, 2>> {
+        _marker: PhantomData::<_>,
+    };
+    let public_inputs = vec![vec![]];
+    let prover = match MockProver::run(K, &circuit, public_inputs) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    prover.assert_satisfied();
+    // main gate
+    let circuit = MyCircuit2::<Fp, MainGate<_, 2>> {
+        _marker: PhantomData::<_>,
     };
     let public_inputs = vec![vec![]];
     let prover = match MockProver::run(K, &circuit, public_inputs) {
@@ -379,43 +410,45 @@ fn test_lookup() {
     prover.assert_satisfied();
 }
 #[derive(Clone)]
-struct TestConfig3<F: FieldExt, const W: usize> {
-    maingate: MainGate<F, W>,
+struct TestConfig3<F: FieldExt, G: Gate<F> + Clone> {
+    gate: G,
+    _marker: PhantomData<F>,
 }
 #[derive(Default)]
 struct MyCircuit3<
     F: FieldExt,
+    G: Gate<F> + Clone,
     const W: usize,
     const LIMB_BIT_LEN: usize,
     const OVERFLOW_BIT_LEN: usize,
 > {
-    _marker: PhantomData<F>,
+    _marker: PhantomData<(F, G)>,
 }
-
-impl<F: FieldExt, const W: usize, const LIMB_BIT_LEN: usize, const OVERFLOW_BIT_LEN: usize>
-    Circuit<F> for MyCircuit3<F, W, LIMB_BIT_LEN, OVERFLOW_BIT_LEN>
+impl<
+        F: FieldExt,
+        G: Gate<F> + Clone,
+        const W: usize,
+        const LIMB_BIT_LEN: usize,
+        const OVERFLOW_BIT_LEN: usize,
+    > Circuit<F> for MyCircuit3<F, G, W, LIMB_BIT_LEN, OVERFLOW_BIT_LEN>
 {
-    type Config = TestConfig3<F, W>;
+    type Config = TestConfig3<F, G>;
     type FloorPlanner = V1;
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        Self {
+            _marker: PhantomData,
+        }
     }
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
         assert!(W > 0);
-
         TestConfig3 {
-            maingate: MainGate::<F, W>::configure(
-                meta,
-                vec![LIMB_BIT_LEN, 1],
-                vec![OVERFLOW_BIT_LEN],
-            ),
+            gate: G::configure(meta, vec![LIMB_BIT_LEN, 1], vec![OVERFLOW_BIT_LEN]),
+            _marker: PhantomData,
         }
     }
     fn synthesize(&self, config: Self::Config, mut ly: impl Layouter<F>) -> Result<(), Error> {
         let mut o: Collector<F> = Collector::default();
         let ly = &mut ly;
-        let mut maingate = config.maingate;
-
         // w/ overflow
         for number_of_limbs in 1..10 {
             let bit_len = number_of_limbs * LIMB_BIT_LEN + OVERFLOW_BIT_LEN;
@@ -480,15 +513,26 @@ impl<F: FieldExt, const W: usize, const LIMB_BIT_LEN: usize, const OVERFLOW_BIT_
         {
             o.info();
         }
-        maingate.layout(ly, &o)?;
+        config.gate.layout(ly, &o)?;
         Ok(())
     }
 }
 #[test]
 fn test_decomposition() {
     const K: u32 = 15;
-    let circuit = MyCircuit2::<Fp, 2> {
-        _marker: PhantomData::<Fp>,
+    // extended gate
+    let circuit = MyCircuit1::<Fp, ExtendedGate<_, 2>> {
+        _marker: PhantomData::<_>,
+    };
+    let public_inputs = vec![vec![]];
+    let prover = match MockProver::run(K, &circuit, public_inputs) {
+        Ok(prover) => prover,
+        Err(e) => panic!("{:#?}", e),
+    };
+    prover.assert_satisfied();
+    // main gate
+    let circuit = MyCircuit1::<Fp, MainGate<_, 2>> {
+        _marker: PhantomData::<_>,
     };
     let public_inputs = vec![vec![]];
     let prover = match MockProver::run(K, &circuit, public_inputs) {
@@ -576,7 +620,7 @@ impl<F: FieldExt> Collector<F> {
         let mut compose_second_degree = 0;
         let mut compose_number_of_chunks = 0;
         let mut compose_second_degree_number_of_chunks = 0;
-        for op in self.shorted_opeartions.iter() {
+        for op in self.complex_operations.iter() {
             match op {
                 ComplexOperation::Select {
                     cond: _,
@@ -625,7 +669,7 @@ impl<F: FieldExt> Collector<F> {
         println!("constants: {}", self.constants.len());
         println!("simple ops: {}", self.simple_operations.len());
         println!("constant ops: {}", self.constant_operations.len());
-        println!("shorted ops: {}", self.shorted_opeartions.len());
+        println!("shorted ops: {}", self.complex_operations.len());
 
         println!("add: {}", add);
         println!("add_scaled: {}", add_scaled);

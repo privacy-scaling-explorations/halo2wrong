@@ -27,7 +27,7 @@ pub trait AssignmentsInternal<F: FieldExt> {
         let (fixed, advice) = self.column(column);
         // assign fixed
         ctx.assign_fixed(|| "", fixed, e.factor())?;
-        // assigne witness
+        // assign witness
         let witness = e.witness();
         let new_cell = ctx.assign_advice(|| "", advice, witness.value())?;
         // if already assigned enfoce copy constraint

@@ -1,7 +1,7 @@
 use super::{base_field_ecc::BaseFieldEccChip, Point};
 use crate::{
     integer::{chip::IntegerChip, rns::Rns},
-    maingate::{config::MainGate, operations::Collector},
+    maingate::{config::MainGate, operations::Collector, Gate},
     Witness,
 };
 use group::Curve;

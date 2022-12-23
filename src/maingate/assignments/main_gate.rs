@@ -5,6 +5,30 @@ use crate::{
 };
 use halo2::{circuit::Value, halo2curves::FieldExt, plonk::Error};
 
+impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
+    fn assign_with_horizontal_offset(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        term: &Scaled<F>,
+        offset: usize,
+    ) -> Result<(), Error> {
+        assert!(offset < 6);
+        if offset == 0 {
+            self.simple_gate.assign(ctx, ColumnID::A, term)
+        } else if offset == 1 {
+            self.simple_gate.assign(ctx, ColumnID::B, term)
+        } else if offset == 2 {
+            self.simple_gate.assign(ctx, ColumnID::C, term)
+        } else if offset == 3 {
+            self.extended_gate.assign(ctx, ColumnID::A, term)
+        } else if offset == 4 {
+            self.extended_gate.assign(ctx, ColumnID::B, term)
+        } else {
+            self.extended_gate.assign(ctx, ColumnID::C, term)
+        }
+    }
+}
+
 impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate<F, LOOKUP_WIDTH> {
     fn select(
         &self,
@@ -233,8 +257,8 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
     }
 }
 impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
-    pub(crate) fn assign_shorted_op(
-        &mut self,
+    pub(crate) fn assign_complex_operation(
+        &self,
         ctx: &mut RegionCtx<'_, F>,
         op: &ComplexOperation<F>,
     ) -> Result<(), Error> {

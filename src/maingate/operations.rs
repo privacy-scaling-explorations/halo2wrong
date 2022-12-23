@@ -130,7 +130,7 @@ pub struct Collector<F: FieldExt> {
     pub(crate) number_of_witnesses: u32,
     pub(crate) simple_operations: Vec<Operation<F>>,
     pub(crate) constant_operations: Vec<ConstantOperation<F>>,
-    pub(crate) shorted_opeartions: Vec<ComplexOperation<F>>,
+    pub(crate) complex_operations: Vec<ComplexOperation<F>>,
     pub(crate) copies: Vec<(u32, u32)>,
     pub(crate) constants: BTreeMap<F, Witness<F>>,
     bases: BTreeMap<usize, Vec<F>>,
@@ -427,7 +427,7 @@ impl<F: FieldExt> Collector<F> {
                 }
             });
         let selected = self.new_witness(selected);
-        self.shorted_opeartions.push(ComplexOperation::Select {
+        self.complex_operations.push(ComplexOperation::Select {
             cond: *cond,
             w0: *w0,
             w1: *w1,
@@ -453,7 +453,7 @@ impl<F: FieldExt> Collector<F> {
             }
         });
         let selected = self.new_witness(selected);
-        self.shorted_opeartions
+        self.complex_operations
             .push(ComplexOperation::SelectOrAssign {
                 cond: *cond,
                 w: *w,
@@ -478,7 +478,7 @@ impl<F: FieldExt> Collector<F> {
             }
         });
         let result = self.new_witness(result);
-        self.shorted_opeartions.push(ComplexOperation::Compose {
+        self.complex_operations.push(ComplexOperation::Compose {
             terms,
             constant,
             result: Scaled::new(&result.clone(), result_base),
@@ -506,7 +506,7 @@ impl<F: FieldExt> Collector<F> {
             }
         });
         let result = self.new_witness(result);
-        self.shorted_opeartions
+        self.complex_operations
             .push(ComplexOperation::ComposeSecondDegree {
                 terms,
                 constant,

@@ -23,7 +23,7 @@ impl<F: FieldExt, const W: usize> LookupGate<F, W> {
         ctx.copy_chain(witness.id(), new_cell)
     }
     pub fn layout(
-        &mut self,
+        &self,
         ly: &mut impl Layouter<F>,
         cell_map: &BTreeMap<u32, AssignedCell<F, F>>,
         loookups: &BTreeMap<usize, Vec<Witness<F>>>,
@@ -32,7 +32,7 @@ impl<F: FieldExt, const W: usize> LookupGate<F, W> {
         self.layout_advice(ly, cell_map, loookups)
     }
     fn layout_advice(
-        &mut self,
+        &self,
         ly: &mut impl Layouter<F>,
         cell_map: &BTreeMap<u32, AssignedCell<F, F>>,
         lookups: &BTreeMap<usize, Vec<Witness<F>>>,

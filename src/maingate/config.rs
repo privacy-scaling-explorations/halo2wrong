@@ -10,11 +10,10 @@ use std::{
 #[derive(Clone, Debug)]
 pub struct MainGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
     pub(crate) simple_gate: SimpleGate<F>,
-    pub(crate) extended_gate: ExtendedGate<F>,
+    pub(crate) extended_gate: ExtendedGate<F, LOOKUP_WIDTH>,
     pub(crate) q_isolate_simple: Selector,
     pub(crate) q_isolate_extended: Selector,
     pub(crate) q_short: Selector,
-    pub(crate) lookup_gate: LookupGate<F, LOOKUP_WIDTH>,
 }
 
 #[derive(Clone, Debug)]
@@ -31,7 +30,7 @@ pub struct SimpleGate<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ExtendedGate<F: FieldExt> {
+pub struct ExtendedGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
     pub(crate) a: Column<Advice>,
     pub(crate) b: Column<Advice>,
     pub(crate) c: Column<Advice>,
@@ -41,17 +40,86 @@ pub struct ExtendedGate<F: FieldExt> {
     pub(crate) sc: Column<Fixed>,
     pub(crate) s_next: Column<Fixed>,
     pub(crate) constant: Column<Fixed>,
+    pub(crate) lookup_gate: LookupGate<F, LOOKUP_WIDTH>,
     // TODO: implement public inputs
     // pub(crate) instance: Column<Instance>,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
-    pub fn configure(
+impl<F: FieldExt, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
+    pub fn _configure(
         meta: &mut ConstraintSystem<F>,
         composition_bit_lenghts: Vec<usize>,
         overflow_bit_lenghts: Vec<usize>,
-    ) -> MainGate<F, LOOKUP_WIDTH> {
+    ) -> Self {
+        let a1 = meta.advice_column();
+        let b1 = meta.advice_column();
+        let c1 = meta.advice_column();
+        let sa1 = meta.fixed_column();
+        let sb1 = meta.fixed_column();
+        let sc1 = meta.fixed_column();
+        let s_mul1 = meta.fixed_column();
+
+        let s_next = meta.fixed_column();
+        let constant = meta.fixed_column();
+        let instance = meta.instance_column();
+
+        meta.enable_equality(a1);
+        meta.enable_equality(b1);
+        meta.enable_equality(c1);
+        meta.enable_equality(instance);
+
+        meta.create_gate("maingate", |meta| {
+            let a1 = meta.query_advice(a1, Rotation::cur());
+            let b1 = meta.query_advice(b1, Rotation::cur());
+            let next = meta.query_advice(c1, Rotation::next());
+            let c1 = meta.query_advice(c1, Rotation::cur());
+            let sa1 = meta.query_fixed(sa1, Rotation::cur());
+            let sb1 = meta.query_fixed(sb1, Rotation::cur());
+            let sc1 = meta.query_fixed(sc1, Rotation::cur());
+            let s_mul1 = meta.query_fixed(s_mul1, Rotation::cur());
+            let s_next = meta.query_fixed(s_next, Rotation::cur());
+            let constant = meta.query_fixed(constant, Rotation::cur());
+            let extended_gate = a1.clone() * sa1
+                + b1.clone() * sb1
+                + c1 * sc1
+                + a1 * b1 * s_mul1
+                + s_next * next
+                + constant;
+            vec![extended_gate]
+        });
+
+        let mut bit_lengths: Vec<usize> = composition_bit_lenghts
+            .iter()
+            .chain(overflow_bit_lenghts.iter())
+            .filter_map(|b| if *b == 0 { None } else { Some(*b) })
+            .collect();
+        bit_lengths.sort_unstable();
+        bit_lengths.dedup();
+        let lookup_gate = LookupGate::configure(meta, bit_lengths);
+        Self {
+            a: a1,
+            b: b1,
+            c: c1,
+            sa: sa1,
+            sb: sb1,
+            sc: sc1,
+            s_mul: s_mul1,
+            s_next,
+            constant,
+            lookup_gate,
+            // instance,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
+    pub fn _configure(
+        meta: &mut ConstraintSystem<F>,
+        composition_bit_lenghts: Vec<usize>,
+        overflow_bit_lenghts: Vec<usize>,
+    ) -> Self {
         let a0 = meta.advice_column();
         let b0 = meta.advice_column();
         let c0 = meta.advice_column();
@@ -122,6 +190,15 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
             vec![shorted_gate, isolated_simple_gate, isolated_extended_gate]
         });
 
+        let mut bit_lengths: Vec<usize> = composition_bit_lenghts
+            .iter()
+            .chain(overflow_bit_lenghts.iter())
+            .filter_map(|b| if *b == 0 { None } else { Some(*b) })
+            .collect();
+        bit_lengths.sort_unstable();
+        bit_lengths.dedup();
+        let lookup_gate = LookupGate::configure(meta, bit_lengths);
+
         let extended_gate = ExtendedGate {
             a: a1,
             b: b1,
@@ -132,6 +209,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
             s_mul: s_mul1,
             s_next,
             constant,
+            lookup_gate,
             // instance,
             _marker: PhantomData,
         };
@@ -146,22 +224,12 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
             _marker: PhantomData,
         };
 
-        let mut bit_lengths: Vec<usize> = composition_bit_lenghts
-            .iter()
-            .chain(overflow_bit_lenghts.iter())
-            .filter_map(|b| if *b == 0 { None } else { Some(*b) })
-            .collect();
-        bit_lengths.sort_unstable();
-        bit_lengths.dedup();
-        let lookup_gate = LookupGate::configure(meta, bit_lengths);
-
         MainGate {
             simple_gate,
             extended_gate,
             q_isolate_simple,
             q_isolate_extended,
             q_short,
-            lookup_gate,
         }
     }
 }
