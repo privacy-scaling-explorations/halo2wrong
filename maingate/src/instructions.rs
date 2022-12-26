@@ -866,7 +866,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     }
 
     /// Assigns a new witness `r` as:
-    /// `r = a * b`
+    /// `r = a + b`
     fn add(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -877,7 +877,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     }
 
     /// Assigns a new witness `r` as:
-    /// `r = a * b + constant`
+    /// `r = a + b + constant`
     fn add_with_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
