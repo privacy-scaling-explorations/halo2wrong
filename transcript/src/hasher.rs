@@ -11,7 +11,7 @@ pub struct AssignedState<F: FieldExt, const T: usize>(pub(super) [AssignedValue<
 /// `HasherChip` is basically responsible for contraining permutation part of
 /// transcript pipeline
 #[derive(Debug, Clone)]
-pub(crate) struct HasherChip<
+pub struct HasherChip<
     F: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN: usize,
@@ -33,7 +33,7 @@ impl<
     > HasherChip<F, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>
 {
     // Constructs new hasher chip with assigned initial state
-    pub(crate) fn new(
+    pub fn new(
         // TODO: we can remove initial state assingment in construction
         ctx: &mut RegionCtx<'_, F>,
         spec: &Spec<F, T, RATE>,
@@ -71,7 +71,7 @@ impl<
     > HasherChip<F, NUMBER_OF_LIMBS, BIT_LEN, T, RATE>
 {
     /// Construct main gate
-    pub(super) fn main_gate(&self) -> MainGate<F> {
+    pub fn main_gate(&self) -> MainGate<F> {
         MainGate::<_>::new(self.main_gate_config.clone())
     }
 
@@ -259,7 +259,7 @@ impl<
     }
 
     /// Constrains poseidon permutation while mutating the given state
-    pub(crate) fn permutation(
+    pub fn permutation(
         &mut self,
         ctx: &mut RegionCtx<'_, F>,
         inputs: Vec<AssignedValue<F>>,
@@ -298,7 +298,7 @@ impl<
         Ok(())
     }
 
-    pub(crate) fn hash(&mut self, ctx: &mut RegionCtx<'_, F>) -> Result<AssignedValue<F>, Error> {
+    pub fn hash(&mut self, ctx: &mut RegionCtx<'_, F>) -> Result<AssignedValue<F>, Error> {
         // Get elements to be hashed
         let input_elements = self.absorbing.clone();
         // Flush the input que
