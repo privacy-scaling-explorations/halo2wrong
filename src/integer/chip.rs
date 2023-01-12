@@ -68,6 +68,9 @@ impl<
     pub fn to_bits(&mut self, e: &Witness<N>) -> Vec<Witness<N>> {
         self.o.to_bits(e, N::NUM_BITS as usize)
     }
+    pub fn decompose(&mut self, e: &Witness<N>, radix: usize) -> Vec<Witness<N>> {
+        self.o.decompose(e, radix, N::NUM_BITS as usize)
+    }
     pub fn get_constant(&mut self, e: N) -> Witness<N> {
         self.o.get_constant(e)
     }

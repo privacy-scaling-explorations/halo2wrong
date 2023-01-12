@@ -1,22 +1,35 @@
 use super::{base_field_ecc::BaseFieldEccChip, Point};
+use crate::Witness;
 use crate::{
     integer::{chip::IntegerChip, rns::Rns},
     maingate::{config::MainGate, operations::Collector, Gate},
-    Witness,
 };
+use group::ff::PrimeField;
 use group::Curve;
 use group::Group;
 use halo2::{
     arithmetic::Field,
     circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::MockProver,
-    halo2curves::CurveAffine,
+    halo2curves::{CurveAffine, CurveExt},
     plonk::{Circuit, ConstraintSystem, Error},
 };
-
 use rand_core::OsRng;
 use std::marker::PhantomData;
 
+pub(crate) fn multiexp_naive_var<C: CurveExt>(point: &[C], scalar: &[C::ScalarExt]) -> C
+where
+    <C::ScalarExt as PrimeField>::Repr: AsRef<[u8]>,
+{
+    assert!(!point.is_empty());
+    assert_eq!(point.len(), scalar.len());
+    point
+        .iter()
+        .zip(scalar.iter())
+        .fold(C::identity(), |acc, (point, scalar)| {
+            acc + (*point * *scalar)
+        })
+}
 #[derive(Clone)]
 struct TestConfig<
     C: CurveAffine,
@@ -28,22 +41,6 @@ struct TestConfig<
     maingate: MainGate<C::Scalar, MAINGATE_LOOKUP_WIDTH>,
     rns: Rns<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
     aux_generator: C,
-}
-impl<
-        C: CurveAffine,
-        const NUMBER_OF_LIMBS: usize,
-        const BIT_LEN_LIMB: usize,
-        const NUMBER_OF_SUBLIMBS: usize,
-    > BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
-{
-    // fn from_str(&self, x: &str, y: &str) -> Value<C> {
-    //     use crate::utils::big_to_fe;
-    //     use num_bigint::BigUint as Big;
-    //     use num_traits::Num;
-    //     let x: C::Base = big_to_fe(Big::from_str_radix(x, 16).unwrap());
-    //     let y: C::Base = big_to_fe(Big::from_str_radix(y, 16).unwrap());
-    //     Value::known(C::from_xy(x, y).unwrap())
-    // }
 }
 impl<
         C: CurveAffine,
@@ -114,10 +111,12 @@ impl<
         mut config: Self::Config,
         mut ly: impl Layouter<C::Scalar>,
     ) -> Result<(), Error> {
-        let point = |point: C::CurveExt| -> Value<C> { Value::known(point.into()) };
-        let scalar = |e: C::Scalar| -> Value<C::Scalar> { Value::known(e) };
-        let rand_point = || point(C::CurveExt::random(OsRng));
-        let rand_scalar = || scalar(C::Scalar::random(OsRng));
+        fn value<T>(e: T) -> Value<T> {
+            Value::known(e)
+        }
+        let rand_point = || C::CurveExt::random(OsRng);
+        let rand_scalar = || C::Scalar::random(OsRng);
+
         let o = Collector::default();
         let mut ch = config.ecc_chip(o);
         // constant registry
@@ -131,24 +130,24 @@ impl<
         let p_constant = ch.get_constant(p.into());
         ch.assert_equal(&p_assigned, &p_constant);
         // add
-        let a = rand_point();
-        let b = rand_point();
-        let c = (a + b).map(|p| p.to_affine());
+        let a: Value<C> = value(rand_point().into());
+        let b: Value<C> = value(rand_point().into());
+        let c: Value<C> = (a + b).map(|p| p.to_affine());
         let a = ch.assign_point(a);
         let b = ch.assign_point(b);
         let c0 = ch.assign_point(c);
         let c1 = ch.add(&a, &b);
         ch.assert_equal(&c0, &c1);
         // double
-        let a = rand_point();
+        let a: Value<C> = value(rand_point().into());
         let c = (a + a).map(|p| p.to_affine());
         let a = ch.assign_point(a);
         let c0 = ch.assign_point(c);
         let c1 = ch.double(&a);
         ch.assert_equal(&c0, &c1);
         // ladder
-        let a = rand_point();
-        let b = rand_point();
+        let a: Value<C> = value(rand_point().into());
+        let b: Value<C> = value(rand_point().into());
         let c = a.zip(b).map(|(a, b)| (a + b + a).to_affine());
         let a = ch.assign_point(a);
         let b = ch.assign_point(b);
@@ -156,38 +155,45 @@ impl<
         let c1 = ch.ladder(&a, &b);
         ch.assert_equal(&c0, &c1);
         // mul
-        let a = rand_point();
-        let e = rand_scalar();
+        let a: Value<C> = value(rand_point().into());
+        let e = value(rand_scalar());
         let c = a.zip(e).map(|(a, e)| (a * e).to_affine());
         let a = ch.assign_point(a);
         let e = ch.assign_scalar(e);
         let c0 = ch.assign_point(c);
         let c1 = ch.mul(&a, &e, 2);
         ch.assert_equal(&c0, &c1);
-        // mul batch
-        let number_of_pairs = 50;
+        // msm
+        let number_of_points = 100;
         let window_size = 4;
-        // ch.configure_for_batch_multiplication(ly, window_size, number_of_pairs)?;
-        let pairs = (0..number_of_pairs)
-            .map(|_| {
-                let a = rand_point();
-                let e = rand_scalar();
-                let a = ch.assign_point(a);
-                let e = ch.assign_scalar(e);
-                (a, e)
+        let (points, scalars): (Vec<C::CurveExt>, Vec<C::Scalar>) = (0..number_of_points)
+            .map(|_| (rand_point(), rand_scalar()))
+            .unzip();
+        let res0 = multiexp_naive_var(&points[..], &scalars[..]);
+        let res0 = ch.assign_point(value(res0.into()));
+        #[allow(clippy::type_complexity)]
+        let (points, scalars): (
+            Vec<Point<C::Base, C::ScalarExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+            Vec<Witness<C::ScalarExt>>,
+        ) = points
+            .into_iter()
+            .zip(scalars.into_iter())
+            .map(|(point, scalar)| {
+                let point = ch.assign_point(value(point.into()));
+                let scalar = ch.assign_scalar(value(scalar));
+                (point, scalar)
             })
-            .collect::<Vec<(
-                Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-                Witness<C::Scalar>,
-            )>>();
-        ch.mul_batch(pairs, window_size);
+            .unzip();
+
+        let res1 = ch.msm_1d_horizontal(&points[..], &scalars[..], window_size);
+        let res2 = ch.msm_bucket(&points[..], &scalars[..], window_size);
+        ch.assert_equal(&res0, &res1);
+        ch.assert_equal(&res0, &res2);
+
         let o = ch.operations();
-        o.info();
-        ch.integer_chip.info();
         config.maingate.layout(&mut ly, o)
     }
 }
-
 #[test]
 fn test_ecc_base_field() {
     const K: u32 = 23;

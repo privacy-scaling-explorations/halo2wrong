@@ -1,6 +1,5 @@
-use super::{ConstantPoint, MulAux, Point};
+use super::{ConstantPoint, Point};
 use crate::{
-    ecc::make_mul_aux,
     integer::{
         chip::{IntegerChip, Range},
         rns::Rns,
@@ -12,9 +11,10 @@ use crate::{
 use halo2::{circuit::Value, halo2curves::CurveAffine};
 
 mod add;
-mod mul;
+#[allow(dead_code)]
+mod mul_var_bucket;
+mod mul_var_sliding;
 #[derive(Debug, Clone)]
-#[allow(clippy::type_complexity)]
 pub struct BaseFieldEccChip<
     C: CurveAffine,
     const NUMBER_OF_LIMBS: usize,
@@ -63,20 +63,6 @@ impl<
     }
     fn parameter_b() -> ConstantInteger<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         C::b().into()
-    }
-    pub(crate) fn get_mul_aux(
-        &mut self,
-        window_size: usize,
-        number_of_pairs: usize,
-    ) -> MulAux<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        assert!(window_size > 0);
-        assert!(number_of_pairs > 0);
-        let to_add = self.register_constant(self.aux_generator);
-        let aux = make_mul_aux(self.aux_generator, window_size, number_of_pairs);
-        let to_sub = self.register_constant(aux);
-        // to_add the equivalent of AuxInit and to_sub AuxFin
-        // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMgview
-        MulAux::new(to_add, to_sub)
     }
     pub fn constant_point(
         point: C,
@@ -243,5 +229,13 @@ impl<
         to_add: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         self._ladder_incomplete(to_double, to_add)
+    }
+    pub fn msm(
+        &mut self,
+        points: &[Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
+        scalars: &[Witness<C::Scalar>],
+        window_size: usize,
+    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        self.msm_1d_horizontal(points, scalars, window_size)
     }
 }
