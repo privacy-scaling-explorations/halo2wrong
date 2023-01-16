@@ -69,6 +69,13 @@ pub enum Operation<F: FieldExt> {
         w0: Witness<F>,
         w1: Witness<F>,
     },
+    SelectConstant {
+        cond: Witness<F>,
+        c0: F,
+        c1: F,
+        one: Witness<F>,
+        selected: Witness<F>,
+    },
 }
 #[derive(Debug, Clone)]
 pub(crate) enum ConstantOperation<F: FieldExt> {
@@ -460,6 +467,21 @@ impl<F: FieldExt> Collector<F> {
                 constant,
                 selected,
             });
+        selected
+    }
+    pub fn select_constant(&mut self, cond: &Witness<F>, c0: F, c1: F) -> Witness<F> {
+        let selected = cond
+            .value()
+            .map(|cond| if cond == F::one() { c0 } else { c1 });
+        let one = self.get_constant(F::one());
+        let selected = self.new_witness(selected);
+        self.simple_operations.push(Operation::SelectConstant {
+            cond: *cond,
+            c0,
+            c1,
+            one,
+            selected,
+        });
         selected
     }
     pub fn compose(&mut self, terms: &[Scaled<F>], constant: F, result_base: F) -> Witness<F> {

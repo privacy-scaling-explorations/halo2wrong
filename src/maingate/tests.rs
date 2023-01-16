@@ -190,6 +190,12 @@ impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
             o.equal(selected, w0);
             let selected = &o.select_or_assign(zero, w0, constant);
             o.equal_to_constant(selected, constant);
+            let c0 = rand_fe();
+            let c1 = rand_fe();
+            let selected = &o.select_constant(one, c0, c1);
+            o.equal_to_constant(selected, c0);
+            let selected = &o.select_constant(zero, c0, c1);
+            o.equal_to_constant(selected, c1);
         }
         // combination first degree
         for i in 1..30 {
@@ -268,13 +274,11 @@ impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
             o.assert_zero(&u);
             let u = o.is_zero(zero);
             o.assert_one(&u);
-
             let w0 = &o.rand_witness();
             let must_be_w0 = &o.or(w0, zero);
             o.equal(must_be_w0, w0);
             let must_be_w0 = &o.or(zero, w0);
             o.equal(must_be_w0, w0);
-
             let w0 = &o.rand_witness();
             let w1 = &o.rand_witness();
             let must_be_one = o.is_equal(w0, w0);

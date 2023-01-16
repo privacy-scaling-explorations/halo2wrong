@@ -48,7 +48,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         x.zip(y).map(|(x, y)| C::from_xy(x, y).unwrap())
     }
 }
-#[derive(Clone)]
+
+#[derive(Clone, Debug)]
 pub struct ConstantPoint<
     W: FieldExt,
     N: FieldExt,
@@ -61,13 +62,18 @@ pub struct ConstantPoint<
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ConstantPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    pub fn new(
-        x: &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        y: &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> ConstantPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn new<C: CurveAffine>(
+        point: C,
+    ) -> ConstantPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let coords = point.coordinates();
+        // disallow point of infinity
+        // it will not pass assing point enforcement
+        let coords = coords.unwrap();
+        let x = coords.x();
+        let y = coords.y();
         ConstantPoint {
-            x: x.clone(),
-            y: y.clone(),
+            x: ConstantInteger::from(x),
+            y: ConstantInteger::from(y),
         }
     }
     pub fn x(&self) -> &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
@@ -75,5 +81,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
     pub fn y(&self) -> &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         &self.y
+    }
+    pub fn value<C>(&self) -> C
+    where
+        C: CurveAffine<Base = W, ScalarExt = N>,
+    {
+        let x = self.x.value();
+        let y = self.y.value();
+        C::from_xy(x, y).unwrap()
     }
 }

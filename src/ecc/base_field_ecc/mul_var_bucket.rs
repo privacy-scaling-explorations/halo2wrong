@@ -1,9 +1,8 @@
 use super::{BaseFieldEccChip, Point};
-use crate::{Scaled, Witness};
+use crate::Witness;
 use group::ff::PrimeField;
 use group::Curve;
 use group::Group;
-use halo2::arithmetic::Field;
 use halo2::halo2curves::CurveAffine;
 
 macro_rules! div_ceil {
@@ -98,45 +97,6 @@ impl<
             correction_point,
         }
     }
-    fn update_buckets(
-        &mut self,
-        slice: &[Witness<C::Scalar>],
-        point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        buckets: &mut [Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
-    ) {
-        let slice: Vec<Scaled<C::Scalar>> = slice
-            .iter()
-            .enumerate()
-            .map(|(i, bit)| Scaled::new(bit, C::Scalar::from(1 << i)))
-            .collect();
-
-        let index = self
-            .integer_chip
-            .o
-            .compose(&slice[..], C::Scalar::zero(), C::Scalar::one());
-
-        for (j, bucket) in buckets.iter_mut().take(1 << slice.len()).enumerate() {
-            let j = self.integer_chip.get_constant(C::Scalar::from(j as u64));
-            let cond = self.integer_chip.o.is_equal(&index, &j);
-            *bucket = self.select(&cond, point, bucket);
-        }
-    }
-    fn select_bucket(
-        &mut self,
-        slice: &[Witness<C::Scalar>],
-        buckets: &[Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let number_of_bits = slice.len();
-        let mut reducer = buckets.to_vec();
-        for (i, slice) in slice.iter().enumerate() {
-            let n = 1 << (number_of_bits - 1 - i);
-            for j in 0..n {
-                let k = 2 * j;
-                reducer[j] = self.select(slice, &reducer[k + 1], &reducer[k]);
-            }
-        }
-        reducer[0].clone()
-    }
     pub(crate) fn msm_bucket(
         &mut self,
         points: &[Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
@@ -176,9 +136,9 @@ impl<
                     // * select a bucket
                     // * add point to the selected bucket
                     // * update buckets
-                    let bucket = self.select_bucket(&scalar[j], &buckets);
+                    let bucket = self.select_multi(&scalar[j], &buckets);
                     let bucket_updated = self.add(&bucket, point);
-                    self.update_buckets(&scalar[j], &bucket_updated, &mut buckets);
+                    self.update_table(&scalar[j], &bucket_updated, &mut buckets);
                 }
                 // accumulate buckets
                 buckets.reverse();

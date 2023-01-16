@@ -17,6 +17,11 @@ use halo2::{
 use rand_core::OsRng;
 use std::marker::PhantomData;
 
+// fn from_str<C: CurveAffine>(x: &str, y: &str) -> C {
+//     let x = C::Base::from_str_vartime(x).unwrap();
+//     let y = C::Base::from_str_vartime(y).unwrap();
+//     C::from_xy(x, y).unwrap()
+// }
 pub(crate) fn multiexp_naive_var<C: CurveExt>(point: &[C], scalar: &[C::ScalarExt]) -> C
 where
     <C::ScalarExt as PrimeField>::Repr: AsRef<[u8]>,
@@ -154,7 +159,7 @@ impl<
         let c0 = ch.assign_point(c);
         let c1 = ch.ladder(&a, &b);
         ch.assert_equal(&c0, &c1);
-        // mul
+        // mul var
         let a: Value<C> = value(rand_point().into());
         let e = value(rand_scalar());
         let c = a.zip(e).map(|(a, e)| (a * e).to_affine());
@@ -189,6 +194,14 @@ impl<
         let res2 = ch.msm_bucket(&points[..], &scalars[..], window_size);
         ch.assert_equal(&res0, &res1);
         ch.assert_equal(&res0, &res2);
+        // mul fix
+        let a: C = rand_point().into();
+        let e = value(rand_scalar());
+        let c = e.map(|e| (a * e).to_affine());
+        let e = ch.assign_scalar(e);
+        let res0 = ch.assign_point(c);
+        let res1 = ch.mul_fix(a, &e, 3);
+        ch.assert_equal(&res0, &res1);
 
         let o = ch.operations();
         config.maingate.layout(&mut ly, o)

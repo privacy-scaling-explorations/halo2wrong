@@ -31,8 +31,8 @@ pub(crate) struct MulAux<
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
-    generator: Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    correction: Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub(crate) generator: Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    pub(crate) correction: Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 impl<
         C: CurveAffine,
@@ -64,7 +64,7 @@ impl<
             .map(|chunk| chunk.to_vec())
             .collect()
     }
-    fn make_incremental_table(
+    fn assign_incremental_table(
         &mut self,
         aux: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -77,22 +77,6 @@ impl<
         }
         table
     }
-    fn select_multi(
-        &mut self,
-        selector: &[Witness<C::Scalar>],
-        table: &[Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let number_of_selectors = selector.len();
-        let mut reducer = table.to_vec();
-        for (i, selector) in selector.iter().enumerate() {
-            let n = 1 << (number_of_selectors - 1 - i);
-            for j in 0..n {
-                let k = 2 * j;
-                reducer[j] = self.select(selector, &reducer[k + 1], &reducer[k]);
-            }
-        }
-        reducer[0].clone()
-    }
     pub fn mul(
         &mut self,
         point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
@@ -103,7 +87,7 @@ impl<
         let aux = self.get_mul_aux(window_size, 1);
         let decomposed = &mut self.integer_chip.to_bits(scalar);
         let windowed = Self::window(decomposed, window_size);
-        let table = &self.make_incremental_table(&aux.generator, point, window_size);
+        let table = &self.assign_incremental_table(&aux.generator, point, window_size);
         let mut acc = self.select_multi(&windowed[0], table);
         acc = self.double_n(&acc, window_size);
         let to_add = self.select_multi(&windowed[1], table);
@@ -140,7 +124,7 @@ impl<
             .iter()
             .enumerate()
             .map(|(i, point)| {
-                let table = self.make_incremental_table(&running_aux, point, window_size);
+                let table = self.assign_incremental_table(&running_aux, point, window_size);
                 if i != number_of_points - 1 {
                     running_aux = self.double(&running_aux);
                 }

@@ -248,6 +248,22 @@ pub trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
         self.assign(ctx, ColumnID::B, &Scaled::mul(w1))?;
         self.empty_cell(ctx, ColumnID::C)
     }
+    fn select_constant(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        cond: &Witness<F>,
+        c0: F,
+        c1: F,
+        one: &Witness<F>,
+        selected: &Witness<F>,
+    ) -> Result<(), Error> {
+        self.disable_next(ctx)?;
+        self.disable_constant(ctx)?;
+        self.disable_mul(ctx)?;
+        self.assign(ctx, ColumnID::A, &Scaled::new(cond, c0 - c1))?;
+        self.assign(ctx, ColumnID::B, &Scaled::new(one, c1))?;
+        self.assign(ctx, ColumnID::C, &Scaled::result(selected))
+    }
     fn assign_op(&self, ctx: &mut RegionCtx<'_, F>, op: &Operation<F>) -> Result<(), Error> {
         match op {
             #[cfg(test)]
@@ -268,6 +284,13 @@ pub trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
             }
             Operation::Or { w0, w1, u } => self.or(ctx, w0, w1, u),
             Operation::AssertNand { w0, w1 } => self.assert_nand(ctx, w0, w1),
+            Operation::SelectConstant {
+                cond,
+                c0,
+                c1,
+                one,
+                selected,
+            } => self.select_constant(ctx, cond, *c0, *c1, one, selected),
         }
     }
 }

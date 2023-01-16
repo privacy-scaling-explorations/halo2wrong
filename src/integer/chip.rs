@@ -233,6 +233,28 @@ impl<
             .select_or_assign(cond, w0.native(), constant.native());
         Integer::new(&limbs, native)
     }
+    pub fn select_constant(
+        &mut self,
+        cond: &Witness<N>,
+        c0: &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        c1: &ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let (max_values, _) = self.rns.max_values(Range::Remainder);
+        let limbs = c0
+            .limbs()
+            .iter()
+            .zip(c1.limbs().iter())
+            .zip(max_values.into_iter())
+            .map(|((c0, c1), max_val)| {
+                let selected = self.o.select_constant(cond, *c0, *c1);
+                Limb::new(&selected, max_val)
+            })
+            .collect::<Vec<Limb<N>>>()
+            .try_into()
+            .unwrap();
+        let native = self.o.select_constant(cond, c0.native(), c1.native());
+        Integer::new(&limbs, native)
+    }
     pub fn assert_bit(&mut self, w0: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) {
         for limb in w0.limbs().iter().skip(1) {
             self.o.assert_zero(&limb.witness());

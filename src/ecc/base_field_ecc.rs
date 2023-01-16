@@ -6,11 +6,12 @@ use crate::{
         ConstantInteger,
     },
     maingate::operations::Collector,
-    Witness,
+    Scaled, Witness,
 };
-use halo2::{circuit::Value, halo2curves::CurveAffine};
+use halo2::{arithmetic::Field, circuit::Value, halo2curves::CurveAffine};
 
 mod add;
+mod mul_fix;
 #[allow(dead_code)]
 mod mul_var_bucket;
 mod mul_var_sliding;
@@ -63,17 +64,6 @@ impl<
     }
     fn parameter_b() -> ConstantInteger<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         C::b().into()
-    }
-    pub fn constant_point(
-        point: C,
-    ) -> ConstantPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let coords = point.coordinates();
-        // disallow point of infinity
-        // it will not pass assing point enforcement
-        let coords = coords.unwrap();
-        let x = &coords.x().into();
-        let y = &coords.y().into();
-        ConstantPoint::new(x, y)
     }
 }
 impl<
@@ -179,10 +169,96 @@ impl<
         p2: C,
     ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let integer_chip = self.integer_chip();
-        let p2 = Self::constant_point(p2);
+        let p2 = ConstantPoint::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(p2);
         let x = &integer_chip.select_or_assign(p1.x(), p2.x(), c);
         let y = &integer_chip.select_or_assign(p1.y(), p2.y(), c);
         Point::new(x, y)
+    }
+    pub fn select_multi(
+        &mut self,
+        selector: &[Witness<C::Scalar>],
+        table: &[Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
+    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let number_of_selectors = selector.len();
+        let mut reducer = table.to_vec();
+        for (i, selector) in selector.iter().enumerate() {
+            let n = 1 << (number_of_selectors - 1 - i);
+            for j in 0..n {
+                let k = 2 * j;
+                reducer[j] = self.select(selector, &reducer[k + 1], &reducer[k]);
+            }
+        }
+        reducer[0].clone()
+    }
+    pub fn select_constant(
+        &mut self,
+        c: &Witness<C::Scalar>,
+        p1: &ConstantPoint<C::Base, C::ScalarExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        p2: &ConstantPoint<C::Base, C::ScalarExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let integer_chip = self.integer_chip();
+        let x = &integer_chip.select_constant(c, p1.x(), p2.x());
+        let y = &integer_chip.select_constant(c, p1.y(), p2.y());
+        Point::new(x, y)
+    }
+    pub fn select_constant_multi(
+        &mut self,
+        selector: &[Witness<C::Scalar>],
+        table: &[ConstantPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
+    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let number_of_selectors = selector.len();
+        let n = 1 << (number_of_selectors - 1);
+        let mut reducer = (0..n)
+            .map(|j| {
+                let k = 2 * j;
+                self.select_constant(&selector[0], &table[k + 1], &table[k])
+            })
+            .collect::<Vec<Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>();
+        for (i, selector) in selector.iter().skip(1).enumerate() {
+            let n = 1 << (number_of_selectors - 2 - i);
+            for j in 0..n {
+                let k = 2 * j;
+                reducer[j] = self.select(selector, &reducer[k + 1], &reducer[k]);
+            }
+        }
+        reducer[0].clone()
+    }
+    // pub fn select_multi_constant(
+    //     &mut self,
+    //     selector: &[Witness<C::Scalar>],
+    //     table: &[C],
+    // ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    //     let number_of_selectors = selector.len();
+    //     let mut reducer = table.to_vec();
+    //     for (i, selector) in selector.iter().enumerate() {
+    //         let n = 1 << (number_of_selectors - 1 - i);
+    //         for j in 0..n {
+    //             let k = 2 * j;
+    //             reducer[j] = self.select(selector, &reducer[k + 1], &reducer[k]);
+    //         }
+    //     }
+    //     reducer[0].clone()
+    // }
+    fn update_table(
+        &mut self,
+        slice: &[Witness<C::Scalar>],
+        point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        table: &mut [Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
+    ) {
+        let slice: Vec<Scaled<C::Scalar>> = slice
+            .iter()
+            .enumerate()
+            .map(|(i, bit)| Scaled::new(bit, C::Scalar::from(1 << i)))
+            .collect();
+        let index = self
+            .integer_chip
+            .o
+            .compose(&slice[..], C::Scalar::zero(), C::Scalar::one());
+        for (j, bucket) in table.iter_mut().take(1 << slice.len()).enumerate() {
+            let j = self.integer_chip.get_constant(C::Scalar::from(j as u64));
+            let cond = self.integer_chip.o.is_equal(&index, &j);
+            *bucket = self.select(&cond, point, bucket);
+        }
     }
     pub fn normalize(
         &mut self,
