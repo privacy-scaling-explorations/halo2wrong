@@ -591,7 +591,7 @@ mod tests {
         >() {
             let circuit = TestEccAddition::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::default();
             let instance = vec![vec![]];
-            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+            mock_prover_verify(&circuit, instance);
         }
 
         run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
@@ -708,7 +708,7 @@ mod tests {
                 ..Default::default()
             };
             let instance = vec![public_data];
-            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+            mock_prover_verify(&circuit, instance);
         }
 
         run::<Pallas, BnScalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>();
@@ -827,7 +827,7 @@ mod tests {
                     ..Default::default()
                 };
                 let instance = vec![vec![]];
-                assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                mock_prover_verify(&circuit, instance);
             }
         }
 
@@ -957,7 +957,7 @@ mod tests {
                                 ..Default::default()
                             };
                             let instance = vec![vec![]];
-                            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                            mock_prover_verify(&circuit, instance);
                         }
                     }
                 }

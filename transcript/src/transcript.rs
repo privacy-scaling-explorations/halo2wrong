@@ -322,7 +322,7 @@ mod tests {
                             expected: Value::known(expected),
                         };
                         let instance = vec![vec![]];
-                        assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                        mock_prover_verify(&circuit, instance);
                     }
                 }
             }

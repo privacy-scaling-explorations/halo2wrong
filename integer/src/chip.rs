@@ -1518,7 +1518,7 @@ mod tests {
 
                 let circuit = $circuit::<$wrong_field, $native_field, $bit_len_limb> { rns: Rc::new(rns) };
             let instance = vec![vec![]];
-            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+            mock_prover_verify(&circuit, instance);
             )*
         };
     }

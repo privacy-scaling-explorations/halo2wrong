@@ -508,7 +508,7 @@ mod tests {
         fn run<C: CurveAffine>() {
             let circuit = TestEccAddition::<C>::default();
             let instance = vec![vec![]];
-            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+            mock_prover_verify(&circuit, instance);
         }
         run::<Bn256>();
         run::<Pallas>();
@@ -599,7 +599,7 @@ mod tests {
                 b: Value::known(b),
             };
             let instance = vec![public_data];
-            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+            mock_prover_verify(&circuit, instance);
         }
 
         run::<Bn256>();
@@ -686,7 +686,7 @@ mod tests {
                     window_size,
                 };
                 let instance = vec![vec![]];
-                assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                mock_prover_verify(&circuit, instance);
             }
         }
         run::<Bn256>();
@@ -788,7 +788,7 @@ mod tests {
                                 number_of_pairs,
                             };
                             let instance = vec![vec![]];
-                            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+                            mock_prover_verify(&circuit, instance);
                         }
                     }
                 }
