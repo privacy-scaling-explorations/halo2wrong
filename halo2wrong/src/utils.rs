@@ -1,7 +1,7 @@
 use crate::halo2::{
     arithmetic::FieldExt,
     circuit::Value,
-    dev::{MockProver, VerifyFailure},
+    dev::MockProver,
     plonk::{
         Advice, Any, Assigned, Assignment, Circuit, Column, ConstraintSystem, Error, Fixed,
         FloorPlanner, Instance, Selector,
@@ -63,14 +63,14 @@ pub fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
         .fold(big_uint::zero(), |acc, val| (acc << bit_len) + val)
 }
 
-pub fn mock_prover_verify<F: FieldExt, C: Circuit<F>>(
-    circuit: &C,
-    instance: Vec<Vec<F>>,
-) -> Result<(), Vec<VerifyFailure>> {
+pub fn mock_prover_verify<F: FieldExt, C: Circuit<F>>(circuit: &C, instance: Vec<Vec<F>>) {
     let dimension = DimensionMeasurement::measure(circuit).unwrap();
     let prover = MockProver::run(dimension.k(), circuit, instance)
         .unwrap_or_else(|err| panic!("{:#?}", err));
-    prover.verify_at_rows_par(dimension.advice_range(), dimension.advice_range())
+    assert_eq!(
+        prover.verify_at_rows_par(dimension.advice_range(), dimension.advice_range()),
+        Ok(())
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -158,6 +158,14 @@ impl<F: FieldExt> Assignment<F> for DimensionMeasurement {
     fn query_instance(&self, _: Column<Instance>, offset: usize) -> Result<Value<F>, Error> {
         self.update(Instance, offset);
         Ok(Value::unknown())
+    }
+
+    fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>,
+    {
+        // Do nothing.
     }
 
     fn assign_advice<V, VR, A, AR>(

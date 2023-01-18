@@ -343,7 +343,7 @@ mod tests {
                 ..Default::default()
             };
             let instance = vec![vec![]];
-            assert_eq!(mock_prover_verify(&circuit, instance), Ok(()));
+            mock_prover_verify(&circuit, instance);
         }
 
         use crate::curves::bn256::Fr as BnScalar;
