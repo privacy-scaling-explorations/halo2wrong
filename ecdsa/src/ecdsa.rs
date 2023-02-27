@@ -2,6 +2,7 @@ use super::integer::{IntegerChip, IntegerConfig};
 use crate::halo2;
 use crate::integer;
 use crate::maingate;
+use ecc::maingate::MainGateInstructions;
 use ecc::maingate::RegionCtx;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
 use halo2::arithmetic::{CurveAffine, FieldExt};
@@ -120,9 +121,8 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
 
         // 5. compute Q = u1*G + u2*pk
         let e_gen = ecc_chip.assign_point(ctx, Value::known(E::generator()))?;
-        let g1 = ecc_chip.mul(ctx, &e_gen, &u1, 2)?;
-        let g2 = ecc_chip.mul(ctx, &pk.point, &u2, 2)?;
-        let q = ecc_chip.add(ctx, &g1, &g2)?;
+        let pairs = vec![(e_gen, u1), (pk.point.clone(), u2)];
+        let q = ecc_chip.mul_batch_1d_horizontal(ctx, pairs, 4)?;
 
         // 6. reduce q_x in E::ScalarExt
         // assuming E::Base/E::ScalarExt have the same number of limbs
@@ -245,7 +245,7 @@ mod tests {
                     let ctx = &mut RegionCtx::new(region, offset);
 
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+                    ecc_chip.assign_aux(ctx, self.window_size, 2)?;
                     Ok(())
                 },
             )?;
@@ -339,7 +339,7 @@ mod tests {
                 signature: Value::known((r, s)),
                 msg_hash: Value::known(msg_hash),
                 aux_generator,
-                window_size: 2,
+                window_size: 4,
                 ..Default::default()
             };
             let instance = vec![vec![]];
