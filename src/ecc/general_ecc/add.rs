@@ -1,21 +1,22 @@
-use super::BaseFieldEccChip;
+use super::GeneralEccChip;
 use crate::{ecc::Point, integer::chip::IntegerChip};
-use halo2::halo2curves::CurveAffine;
+use halo2::halo2curves::{CurveAffine, FieldExt};
 
 impl<
         'a,
-        C: CurveAffine,
+        Emulated: CurveAffine,
+        N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > BaseFieldEccChip<'a, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > GeneralEccChip<'a, Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
     pub(crate) fn _add_incomplete(
         &mut self,
-        a: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        b: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let mut ch = IntegerChip::new(self.operations, self.rns);
+        a: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        b: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let mut ch = IntegerChip::new(self.operations, self.rns_base_field);
 
         // lambda = b_y - a_y / b_x - a_x
         let numerator = &ch.sub(&b.y, &a.y);
@@ -34,9 +35,9 @@ impl<
 
     pub(crate) fn _double_incomplete(
         &mut self,
-        point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let mut ch = IntegerChip::new(self.operations, self.rns);
+        point: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let mut ch = IntegerChip::new(self.operations, self.rns_base_field);
 
         // lambda = (3 * a_x^2) / 2 * a_y
         let x_0_square = &ch.square(&point.x);
@@ -56,10 +57,10 @@ impl<
 
     pub(crate) fn _ladder_incomplete(
         &mut self,
-        to_double: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        to_add: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-        let mut ch = IntegerChip::new(self.operations, self.rns);
+        to_double: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        to_add: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let mut ch = IntegerChip::new(self.operations, self.rns_base_field);
 
         // (P + Q) + P
         // P is to_double (x_1, y_1)

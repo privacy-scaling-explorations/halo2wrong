@@ -11,38 +11,39 @@ pub enum Range {
     MulQuotient,
     Unreduced,
 }
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct IntegerChip<
+    'a,
     W: FieldExt,
     N: FieldExt,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
 > {
-    pub(crate) o: Collector<N>,
-    pub(crate) rns: Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
+    pub(crate) o: &'a mut Collector<N>,
+    pub(crate) rns: &'a Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
     #[cfg(test)]
     pub(crate) report: Report,
 }
 impl<
+        'a,
         W: FieldExt,
         N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > IntegerChip<'a, W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
     pub const fn sublimb_bit_len() -> usize {
         assert!(BIT_LEN_LIMB % NUMBER_OF_SUBLIMBS == 0);
         BIT_LEN_LIMB / NUMBER_OF_SUBLIMBS
     }
     pub fn new(
-        mut o: Collector<N>,
-        rns: Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
+        o: &'a mut Collector<N>,
+        rns: &'a Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
     ) -> Self {
         o.get_constant(N::one());
         o.get_constant(N::zero());
-
         Self {
             o,
             rns,
@@ -50,26 +51,38 @@ impl<
             report: Report::default(),
         }
     }
-    pub fn operations(&self) -> &Collector<N> {
-        &self.o
-    }
-    pub fn rns(&self) -> &Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS> {
-        &self.rns
-    }
 }
 impl<
+        'a,
         W: FieldExt,
         N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > IntegerChip<'a, W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
-    pub fn to_bits(&mut self, e: &Witness<N>) -> Vec<Witness<N>> {
-        self.o.to_bits(e, N::NUM_BITS as usize)
-    }
-    pub fn decompose(&mut self, e: &Witness<N>, radix: usize) -> Vec<Witness<N>> {
-        self.o.decompose(e, radix, N::NUM_BITS as usize)
+    // pub fn to_bits_native(&mut self, e: &Witness<N>) -> Vec<Witness<N>> {
+    //     self.o.to_bits(e, N::NUM_BITS as usize)
+    // }
+    // pub fn decompose_native(&mut self, e: &Witness<N>, radix: usize) -> Vec<Witness<N>> {
+    //     self.o.decompose(e, radix, N::NUM_BITS as usize)
+    // }
+    pub fn to_bits(
+        &mut self,
+        integer: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Vec<Witness<N>> {
+        let decomposed: Vec<Witness<N>> = (0..NUMBER_OF_LIMBS)
+            .flat_map(|idx| {
+                let number_of_bits = if idx == NUMBER_OF_LIMBS - 1 {
+                    self.rns.wrong_modulus.bits() as usize % BIT_LEN_LIMB
+                } else {
+                    BIT_LEN_LIMB
+                };
+                self.o.to_bits(integer.limb(idx), number_of_bits)
+            })
+            .collect();
+        assert_eq!(decomposed.len(), self.rns.wrong_modulus.bits() as usize);
+        decomposed
     }
     pub fn get_constant(&mut self, e: N) -> Witness<N> {
         self.o.get_constant(e)

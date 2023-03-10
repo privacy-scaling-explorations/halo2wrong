@@ -3,12 +3,13 @@ use halo2::halo2curves::FieldExt;
 use num_bigint::BigUint as Big;
 
 impl<
+        'a,
         W: FieldExt,
         N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > IntegerChip<'a, W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
     pub(crate) fn _assert_not_zero(&mut self, w0: &Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) {
         #[cfg(test)]

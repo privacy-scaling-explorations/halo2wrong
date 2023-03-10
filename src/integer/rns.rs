@@ -115,7 +115,7 @@ impl<
 
         // Find maxium quotient that won't wrap `quotient * wrong + remainder` side of
         // the equation under `crt_modulus`.
-        let pre_max_quotient = &((crt_modulus - max_remainder) / wrong_modulus);
+        let pre_max_quotient: &Big = &((crt_modulus - max_remainder) / wrong_modulus);
         // Lower this value to make this value suitable for bit range checks.
         let max_quotient = &(log_floor!(pre_max_quotient) - one);
 

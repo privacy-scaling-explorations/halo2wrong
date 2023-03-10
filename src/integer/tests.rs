@@ -44,12 +44,13 @@ pub(crate) struct Report {
     pub(crate) n_assert_not_zero: usize,
 }
 impl<
+        'a,
         W: FieldExt,
         N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > IntegerChip<'a, W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
     pub fn info(&self) {
         self.o.info();
@@ -147,6 +148,7 @@ impl<
         self.from_big(Value::known(Big::one()))
     }
 }
+
 #[derive(Clone)]
 pub struct TestConfig<
     W: FieldExt,
@@ -158,22 +160,7 @@ pub struct TestConfig<
 > {
     pub(crate) maingate: MainGate<N, MAINGATE_LOOKUP_WIDTH>,
     pub(crate) rns: Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
-}
-impl<
-        W: FieldExt,
-        N: FieldExt,
-        const NUMBER_OF_LIMBS: usize,
-        const BIT_LEN_LIMB: usize,
-        const NUMBER_OF_SUBLIMBS: usize,
-        const MAINGATE_LOOKUP_WIDTH: usize,
-    > TestConfig<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS, MAINGATE_LOOKUP_WIDTH>
-{
-    pub fn integer_chip(
-        &self,
-        o: Collector<N>,
-    ) -> IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS> {
-        IntegerChip::new(o, self.rns.clone())
-    }
+    pub(crate) operations: Collector<N>,
 }
 #[derive(Default)]
 struct MyCircuit<
@@ -218,11 +205,16 @@ impl<
             vec![composition_bit_len],
             overflow_bit_lens,
         );
-        TestConfig { maingate, rns }
+        let operations = Collector::default();
+        TestConfig {
+            maingate,
+            rns,
+            operations,
+        }
     }
-    fn synthesize(&self, config: Self::Config, mut ly: impl Layouter<N>) -> Result<(), Error> {
-        let o = Collector::default();
-        let mut ch = config.integer_chip(o);
+    fn synthesize(&self, mut config: Self::Config, mut ly: impl Layouter<N>) -> Result<(), Error> {
+        let mut ch = IntegerChip::new(&mut config.operations, &config.rns);
+
         {
             let zero = ch.rns.zero();
             let zero = ch.range(zero, Range::Remainder);
@@ -353,7 +345,7 @@ impl<
             ch.copy_equal(&u0, &u1);
             ch.assert_equal(&u0, &u1);
         }
-        config.maingate.layout(&mut ly, ch.operations())
+        config.maingate.layout(&mut ly, ch.o)
     }
 }
 #[test]

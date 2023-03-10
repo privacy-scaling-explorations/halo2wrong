@@ -4,6 +4,7 @@ use halo2::{
     halo2curves::{CurveAffine, FieldExt},
 };
 pub mod base_field_ecc;
+pub mod general_ecc;
 #[cfg(test)]
 mod tests;
 #[derive(Clone, Debug)]
@@ -62,9 +63,9 @@ pub struct ConstantPoint<
 impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ConstantPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    pub fn new<C: CurveAffine>(
-        point: C,
-    ) -> ConstantPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    pub fn new<Emulated: CurveAffine>(
+        point: Emulated,
+    ) -> ConstantPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let coords = point.coordinates();
         // disallow point of infinity
         // it will not pass assing point enforcement
@@ -90,4 +91,22 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let y = self.y.value();
         C::from_xy(x, y).unwrap()
     }
+}
+#[cfg(test)]
+use group::ff::PrimeField;
+#[cfg(test)]
+use halo2::arithmetic::CurveExt;
+#[cfg(test)]
+pub(crate) fn multiexp_naive_var<C: CurveExt>(point: &[C], scalar: &[C::ScalarExt]) -> C
+where
+    <C::ScalarExt as PrimeField>::Repr: AsRef<[u8]>,
+{
+    assert!(!point.is_empty());
+    assert_eq!(point.len(), scalar.len());
+    point
+        .iter()
+        .zip(scalar.iter())
+        .fold(C::identity(), |acc, (point, scalar)| {
+            acc + (*point * *scalar)
+        })
 }

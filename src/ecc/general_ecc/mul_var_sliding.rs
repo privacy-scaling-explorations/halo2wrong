@@ -1,6 +1,10 @@
-use super::BaseFieldEccChip;
-use crate::{ecc::Point, utils::big_to_fe, Witness};
-use group::ff::PrimeField;
+use super::GeneralEccChip;
+use crate::{
+    ecc::Point,
+    integer::{chip::IntegerChip, Integer},
+    utils::big_to_fe,
+    Witness,
+};
 use group::Curve;
 use halo2::halo2curves::{CurveAffine, FieldExt};
 use num_bigint::BigUint;
@@ -9,6 +13,7 @@ use num_traits::One;
 fn make_mul_aux<C: CurveAffine>(generator: C, window_size: usize, number_of_pairs: usize) -> C {
     assert!(window_size > 0);
     assert!(number_of_pairs > 0);
+    use group::ff::PrimeField;
     let n = C::Scalar::NUM_BITS as usize;
     let mut number_of_selectors = n / window_size;
     if n % window_size != 0 {
@@ -36,22 +41,23 @@ pub(crate) struct MulAux<
 }
 impl<
         'a,
-        C: CurveAffine,
+        Emulated: CurveAffine,
+        N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > BaseFieldEccChip<'a, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > GeneralEccChip<'a, Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
     pub(crate) fn get_mul_aux(
         &mut self,
         window_size: usize,
         number_of_pairs: usize,
-    ) -> MulAux<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    ) -> MulAux<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         assert!(window_size > 0);
         assert!(number_of_pairs > 0);
-        let generator = self.register_constant(self.aux_generator);
+        let generator = self.register_constant_point(&self.aux_generator.clone());
         let aux = make_mul_aux(self.aux_generator, window_size, number_of_pairs);
-        let correction = self.register_constant(aux);
+        let correction = self.register_constant_point(&aux);
         // to_add the equivalent of AuxInit and to_sub AuxFin
         // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMgview
         MulAux {
@@ -59,7 +65,7 @@ impl<
             correction,
         }
     }
-    fn window(bits: &[Witness<C::Scalar>], window_size: usize) -> Vec<Vec<Witness<C::Scalar>>> {
+    fn window(bits: &[Witness<N>], window_size: usize) -> Vec<Vec<Witness<N>>> {
         bits.chunks(window_size)
             .rev()
             .map(|chunk| chunk.to_vec())
@@ -67,10 +73,10 @@ impl<
     }
     fn assign_incremental_table(
         &mut self,
-        aux: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        aux: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        point: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
-    ) -> Vec<Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
+    ) -> Vec<Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> {
         let table_size = 1 << window_size;
         let mut table = vec![aux.clone()];
         for i in 0..(table_size - 1) {
@@ -80,15 +86,14 @@ impl<
     }
     pub fn mul(
         &mut self,
-        point: &Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        scalar: &Witness<C::Scalar>,
+        point: &Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        scalar: &Integer<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         assert!(window_size > 0);
         let aux = self.get_mul_aux(window_size, 1);
-        let decomposed = &mut self
-            .operations
-            .to_bits(scalar, C::Scalar::NUM_BITS as usize);
+        let mut ch = IntegerChip::new(self.operations, self.rns_scalar_field);
+        let decomposed = &mut ch.to_bits(scalar);
         let windowed = Self::window(decomposed, window_size);
         let table = &self.assign_incremental_table(&aux.generator, point, window_size);
         let mut acc = self.select_multi(&windowed[0], table);
@@ -104,29 +109,25 @@ impl<
     }
     pub(crate) fn msm_1d_horizontal(
         &mut self,
-        points: &[Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
-        scalars: &[Witness<C::Scalar>],
+        points: &[Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
+        scalars: &[Integer<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>],
         window_size: usize,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         assert!(window_size > 0);
         let number_of_points = points.len();
         assert!(number_of_points > 0);
         assert_eq!(number_of_points, scalars.len());
         let aux = self.get_mul_aux(window_size, number_of_points);
-        let decomposed_scalars: Vec<Vec<Witness<C::Scalar>>> = scalars
-            .iter()
-            .map(|scalar| {
-                self.operations
-                    .to_bits(scalar, C::Scalar::NUM_BITS as usize)
-            })
-            .collect();
-        let windowed_scalars: Vec<Vec<Vec<Witness<C::Scalar>>>> = decomposed_scalars
+        let mut ch = IntegerChip::new(self.operations, self.rns_scalar_field);
+        let decomposed_scalars: Vec<Vec<Witness<N>>> =
+            scalars.iter().map(|scalar| ch.to_bits(scalar)).collect();
+        let windowed_scalars: Vec<Vec<Vec<Witness<N>>>> = decomposed_scalars
             .iter()
             .map(|decomposed| Self::window(decomposed, window_size))
             .collect();
         let number_of_windows = windowed_scalars[0].len();
         let mut running_aux = aux.generator.clone();
-        let tables: Vec<Vec<Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>> = points
+        let tables: Vec<Vec<Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>> = points
             .iter()
             .enumerate()
             .map(|(i, point)| {

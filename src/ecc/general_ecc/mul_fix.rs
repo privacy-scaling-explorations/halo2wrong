@@ -1,11 +1,13 @@
-use super::{BaseFieldEccChip, Point};
+use super::{GeneralEccChip, Point};
 use crate::ecc::ConstantPoint;
+use crate::integer::chip::IntegerChip;
+use crate::integer::Integer;
 use crate::utils::big_to_fe;
-use crate::Witness;
 use group::ff::PrimeField;
 use group::Curve;
 use group::Group;
 use halo2::halo2curves::CurveAffine;
+use halo2::halo2curves::FieldExt;
 use num_bigint::BigUint;
 use num_traits::One;
 
@@ -52,47 +54,50 @@ fn window<C: CurveAffine>(point: C, window: usize, aux: C) -> Vec<Vec<C::CurveEx
 }
 impl<
         'a,
-        C: CurveAffine,
+        Emulated: CurveAffine,
+        N: FieldExt,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
-    > BaseFieldEccChip<'a, C, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
+    > GeneralEccChip<'a, Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>
 {
     pub(crate) fn correction_point(
         &mut self,
         window_size: usize,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         assert!(window_size > 0);
-        let _ = self.register_constant(self.aux_generator);
-        let number_of_selectors = div_ceil!(C::Scalar::NUM_BITS as usize, window_size);
+
+        let _ = self.register_constant_point(&self.aux_generator.clone());
+        let number_of_selectors = div_ceil!(Emulated::Scalar::NUM_BITS as usize, window_size);
         let k = (BigUint::one() << number_of_selectors) - BigUint::one();
-        let correction = (self.aux_generator * big_to_fe::<C::Scalar>(k)).to_affine();
-        self.register_constant(-correction)
+        let correction = (self.aux_generator * big_to_fe::<Emulated::Scalar>(k)).to_affine();
+        self.register_constant_point(&-correction)
     }
     pub fn mul_fix(
         &mut self,
-        point: C,
-        scalar: &Witness<C::Scalar>,
+        point: Emulated,
+        scalar: Integer<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
-    ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+    ) -> Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         assert!(window_size > 0);
-        let table: Vec<Vec<C::CurveExt>> = window::<C>(point, window_size, self.aux_generator);
-        let table = table.into_iter().map(batch_affine::<C>).collect::<Vec<_>>();
+        let table: Vec<Vec<Emulated::CurveExt>> =
+            window::<Emulated>(point, window_size, self.aux_generator);
+        let table = table
+            .into_iter()
+            .map(batch_affine::<Emulated>)
+            .collect::<Vec<_>>();
         let table = table.iter().map(|row| {
             row.iter()
-                .map(|e| {
-                    ConstantPoint::<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(*e)
-                })
+                .map(|e| ConstantPoint::<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(*e))
                 .collect::<Vec<_>>()
         });
-        let scalar = &mut self
-            .operations
-            .to_bits(scalar, C::Scalar::NUM_BITS as usize);
-        let acc: Option<Point<C::Base, C::ScalarExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = scalar
+        let mut ch = IntegerChip::new(self.operations, self.rns_scalar_field);
+        let scalar = ch.to_bits(&scalar);
+        let acc: Option<Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = scalar
             .chunks(window_size)
             .zip(table.into_iter())
             .fold(None, |acc, (slice, table)| {
-                let acc: Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> = match acc {
+                let acc: Point<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> = match acc {
                     Some(acc) => {
                         let selected = self.select_constant_multi(slice, &table[..]);
                         self.add(&acc, &selected)
