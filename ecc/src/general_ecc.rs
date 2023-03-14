@@ -594,7 +594,7 @@ mod tests {
     fn test_general_ecc_addition_circuit() {
         fn run<
             C: CurveAffine,
-            N: PrimeField + WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
+            N: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
@@ -699,7 +699,7 @@ mod tests {
     fn test_general_ecc_public_input() {
         fn run<
             C: CurveAffine,
-            N: PrimeField + WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
+            N: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
@@ -830,7 +830,7 @@ mod tests {
     fn test_general_ecc_mul_circuit() {
         fn run<
             C: CurveAffine,
-            N: PrimeField + FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
+            N:  FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {

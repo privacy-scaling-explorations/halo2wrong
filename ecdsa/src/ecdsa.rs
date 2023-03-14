@@ -300,7 +300,7 @@ mod tests {
 
         fn run<
             C: CurveAffine,
-            N: PrimeField + WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
+            N: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
         >() {
             let g = C::generator();
 

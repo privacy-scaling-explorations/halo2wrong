@@ -67,7 +67,7 @@ pub fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
 
 
 pub fn mock_prover_verify<
-    F: PrimeField + WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
+    F: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
     C: Circuit<F>,
 >(
     circuit: &C,
