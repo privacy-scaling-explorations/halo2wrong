@@ -7,3 +7,19 @@ members = [
   "ecdsa",
   "transcript"
 ]
+
+
+
+[patch."https://github.com/privacy-scaling-explorations/halo2.git"]
+halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "halo2-ecc-snark-verifier-0220" }
+
+# remove once 
+# https://github.com/privacy-scaling-explorations/poseidon/pull/7
+# https://github.com/privacy-scaling-explorations/halo2curves/pull/31
+# are merged
+[patch."https://github.com/privacy-scaling-explorations/poseidon.git"]
+poseidon = { git = "https://github.com/scroll-tech/poseidon.git", branch = "halo2-ecc-snark-verifier-0220" }
+
+
+[patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
+halo2curves = { git = "https://github.com/scroll-tech/halo2curves.git", branch = "halo2-ecc-snark-verifier-0220" }

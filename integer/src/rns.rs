@@ -1,5 +1,6 @@
 use crate::NUMBER_OF_LOOKUP_LIMBS;
-use halo2::{arithmetic::FieldExt, circuit::Value};
+use halo2::circuit::Value;
+use maingate::halo2::ff::PrimeField;
 use maingate::{big_to_fe, compose, decompose_big, fe_to_big, halo2, modulus};
 use num_bigint::BigUint as big_uint;
 use num_integer::Integer as _;
@@ -9,7 +10,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 /// Common interface for [`Limb`] and [`Integer`]
-pub trait Common<F: FieldExt> {
+pub trait Common<F: PrimeField> {
     /// Returns the represented value
     fn value(&self) -> big_uint;
 
@@ -25,7 +26,7 @@ pub trait Common<F: FieldExt> {
     }
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     From<Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> for big_uint
 {
     fn from(el: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
@@ -41,7 +42,7 @@ fn bool_to_big(truth: bool) -> big_uint {
     }
 }
 
-impl<F: FieldExt> From<Limb<F>> for big_uint {
+impl<F: PrimeField> From<Limb<F>> for big_uint {
     fn from(limb: Limb<F>) -> Self {
         limb.value()
     }
@@ -51,8 +52,8 @@ impl<F: FieldExt> From<Limb<F>> for big_uint {
 // multiplication gate.
 #[derive(Clone)]
 pub(crate) struct ReductionWitness<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -64,13 +65,13 @@ pub(crate) struct ReductionWitness<
 
 // Wrapper for reduction witnesses
 pub(crate) struct MaybeReduced<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 >(Value<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     From<Value<ReductionWitness<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>>
     for MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
@@ -79,7 +80,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     MaybeReduced<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Returns the quotient value as [`Integer`].
@@ -129,8 +130,12 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 /// Short: as an element of the native field.
 /// Long : as an [`Integer`].
 #[derive(Clone, Debug)]
-pub enum Quotient<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-{
+pub enum Quotient<
+    W: PrimeField,
+    N: PrimeField,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
     /// Single limb quotient
     Short(N),
     /// Integer quotient
@@ -141,8 +146,8 @@ pub enum Quotient<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const 
 // comparision gate.
 #[derive(Clone)]
 pub(crate) struct ComparisionWitness<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -157,7 +162,12 @@ pub(crate) struct ComparisionWitness<
 /// Contains all the necessary values to carry out operations such as
 /// multiplication and reduction in this representation.
 #[derive(Debug, Clone)]
-pub struct Rns<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+pub struct Rns<
+    W: PrimeField,
+    N: PrimeField,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
     /// Bit lenght of sublimbs that is subject to to lookup check
     pub bit_len_lookup: usize,
 
@@ -217,7 +227,7 @@ pub struct Rns<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT
     _marker_wrong: PhantomData<W>,
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Calculates [`Rns`] `base_aux`.
@@ -620,33 +630,33 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
 /// Limb of an [`Integer`].
 #[derive(Debug, Clone)]
-pub struct Limb<F: FieldExt>(F);
+pub struct Limb<F: PrimeField>(F);
 
-impl<F: FieldExt> Common<F> for Limb<F> {
+impl<F: PrimeField> Common<F> for Limb<F> {
     fn value(&self) -> big_uint {
         fe_to_big(self.0)
     }
 }
 
-impl<F: FieldExt> Default for Limb<F> {
+impl<F: PrimeField> Default for Limb<F> {
     fn default() -> Self {
-        Limb(F::zero())
+        Limb(F::ZERO)
     }
 }
 
-impl<F: FieldExt> From<big_uint> for Limb<F> {
+impl<F: PrimeField> From<big_uint> for Limb<F> {
     fn from(e: big_uint) -> Self {
         Self(big_to_fe(e))
     }
 }
 
-impl<F: FieldExt> From<&str> for Limb<F> {
+impl<F: PrimeField> From<&str> for Limb<F> {
     fn from(e: &str) -> Self {
         Self(big_to_fe(big_uint::from_str_radix(e, 16).unwrap()))
     }
 }
 
-impl<F: FieldExt> Limb<F> {
+impl<F: PrimeField> Limb<F> {
     pub(crate) fn new(value: F) -> Self {
         Limb(value)
     }
@@ -662,8 +672,8 @@ impl<F: FieldExt> Limb<F> {
 /// native field plus a reference to the [`Rns`] used.
 #[derive(Clone)]
 pub struct Integer<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -671,8 +681,8 @@ pub struct Integer<
     rns: Rc<Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
-    for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    fmt::Debug for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = self.value();
@@ -687,8 +697,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> Common<N>
-    for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    Common<N> for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn value(&self) -> big_uint {
         let limb_values = self.limbs.iter().map(|limb| limb.value()).collect();
@@ -696,7 +706,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Creates a new integer from a vector of limbs and reference to the used
@@ -783,7 +793,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let result = Self::from_big(result, Rc::clone(&self.rns));
 
         let l = NUMBER_OF_LIMBS;
-        let mut t: Vec<N> = vec![N::zero(); l];
+        let mut t: Vec<N> = vec![N::ZERO; l];
         for k in 0..l {
             for i in 0..=k {
                 let j = k - i;
@@ -825,7 +835,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let result = Self::from_big(result.clone(), Rc::clone(&self.rns));
 
         let l = NUMBER_OF_LIMBS;
-        let mut intermediate: Vec<N> = vec![N::zero(); l];
+        let mut intermediate: Vec<N> = vec![N::ZERO; l];
         for k in 0..l {
             for i in 0..=k {
                 let j = k - i;
@@ -881,7 +891,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let lsh1 = self.rns.left_shifter(1);
         let (rsh1, rsh2) = (self.rns.right_shifter(1), self.rns.right_shifter(2));
 
-        let mut carry = N::zero();
+        let mut carry = N::ZERO;
         // TODO: use chunks
         (0..u_len)
             .map(|i| {

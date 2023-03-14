@@ -2,14 +2,14 @@ use super::{AssignedPoint, GeneralEccChip};
 use crate::integer::{AssignedInteger, IntegerInstructions};
 use crate::maingate::{AssignedCondition, MainGateInstructions};
 use crate::{halo2, Selector, Table, Windowed};
-use group::ff::PrimeField;
-use halo2::arithmetic::{CurveAffine, FieldExt};
+use halo2::arithmetic::CurveAffine;
 use halo2::plonk::Error;
+use integer::halo2::ff::PrimeField;
 use integer::maingate::RegionCtx;
 
 impl<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -27,7 +27,7 @@ impl<
         // shorter ending window.
         let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
         let zeros: Vec<AssignedCondition<N>> = (0..padding_offset)
-            .map(|_| self.main_gate().assign_constant(region, N::zero()))
+            .map(|_| self.main_gate().assign_constant(region, N::ZERO))
             .collect::<Result<_, Error>>()?;
         bits.extend(zeros);
         bits.reverse();

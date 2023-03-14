@@ -1,5 +1,4 @@
 use crate::halo2::{
-    arithmetic::FieldExt,
     circuit::Value,
     dev::MockProver,
     plonk::{
@@ -7,7 +6,10 @@ use crate::halo2::{
         FloorPlanner, Instance, Selector,
     },
 };
-use halo2::plonk::Challenge;
+use halo2::{
+    ff::{FromUniformBytes, PrimeField, WithSmallOrderMulGroup},
+    plonk::Challenge,
+};
 use num_bigint::BigUint as big_uint;
 use num_traits::{Num, One, Zero};
 use std::{
@@ -15,29 +17,29 @@ use std::{
     ops::{RangeInclusive, Shl},
 };
 
-pub fn modulus<F: FieldExt>() -> big_uint {
+pub fn modulus<F: PrimeField>() -> big_uint {
     big_uint::from_str_radix(&F::MODULUS[2..], 16).unwrap()
 }
 
-pub fn power_of_two<F: FieldExt>(n: usize) -> F {
+pub fn power_of_two<F: PrimeField>(n: usize) -> F {
     big_to_fe(big_uint::one() << n)
 }
 
-pub fn big_to_fe<F: FieldExt>(e: big_uint) -> F {
+pub fn big_to_fe<F: PrimeField>(e: big_uint) -> F {
     let modulus = modulus::<F>();
     let e = e % modulus;
     F::from_str_vartime(&e.to_str_radix(10)[..]).unwrap()
 }
 
-pub fn fe_to_big<F: FieldExt>(fe: F) -> big_uint {
+pub fn fe_to_big<F: PrimeField>(fe: F) -> big_uint {
     big_uint::from_bytes_le(fe.to_repr().as_ref())
 }
 
-pub fn decompose<F: FieldExt>(e: F, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
+pub fn decompose<F: PrimeField>(e: F, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
     decompose_big(fe_to_big(e), number_of_limbs, bit_len)
 }
 
-pub fn decompose_big<F: FieldExt>(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
+pub fn decompose_big<F: PrimeField>(e: big_uint, number_of_limbs: usize, bit_len: usize) -> Vec<F> {
     let mut e = e;
     let mask = big_uint::from(1usize).shl(bit_len) - 1usize;
     let limbs: Vec<F> = (0..number_of_limbs)
@@ -63,7 +65,14 @@ pub fn compose(input: Vec<big_uint>, bit_len: usize) -> big_uint {
         .fold(big_uint::zero(), |acc, val| (acc << bit_len) + val)
 }
 
-pub fn mock_prover_verify<F: FieldExt, C: Circuit<F>>(circuit: &C, instance: Vec<Vec<F>>) {
+
+pub fn mock_prover_verify<
+    F: PrimeField + WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
+    C: Circuit<F>,
+>(
+    circuit: &C,
+    instance: Vec<Vec<F>>,
+)  {
     let dimension = DimensionMeasurement::measure(circuit).unwrap();
     let prover = MockProver::run(dimension.k(), circuit, instance)
         .unwrap_or_else(|err| panic!("{:#?}", err));
@@ -118,7 +127,7 @@ impl DimensionMeasurement {
         }
     }
 
-    pub fn measure<F: FieldExt, C: Circuit<F>>(circuit: &C) -> Result<Dimension, Error> {
+    pub fn measure<F: PrimeField, C: Circuit<F>>(circuit: &C) -> Result<Dimension, Error> {
         let mut cs = ConstraintSystem::default();
         let config = C::configure(&mut cs);
         let mut measurement = Self::default();
@@ -132,11 +141,18 @@ impl DimensionMeasurement {
     }
 }
 
-impl<F: FieldExt> Assignment<F> for DimensionMeasurement {
+impl<F: PrimeField> Assignment<F> for DimensionMeasurement {
     fn enter_region<NR, N>(&mut self, _: N)
     where
         NR: Into<String>,
         N: FnOnce() -> NR,
+    {
+    }
+
+    fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)
+    where
+        A: FnOnce() -> AR,
+        AR: Into<String>,
     {
     }
 
@@ -158,14 +174,6 @@ impl<F: FieldExt> Assignment<F> for DimensionMeasurement {
     fn query_instance(&self, _: Column<Instance>, offset: usize) -> Result<Value<F>, Error> {
         self.update(Instance, offset);
         Ok(Value::unknown())
-    }
-
-    fn annotate_column<A, AR>(&mut self, _annotation: A, _column: Column<Any>)
-    where
-        A: FnOnce() -> AR,
-        AR: Into<String>,
-    {
-        // Do nothing.
     }
 
     fn assign_advice<V, VR, A, AR>(
@@ -237,7 +245,7 @@ impl<F: FieldExt> Assignment<F> for DimensionMeasurement {
 #[test]
 fn test_round_trip() {
     use crate::curves::pasta::Fp;
-    use group::ff::Field as _;
+    use halo2::ff::Field as _;
     use num_bigint::RandomBits;
     use rand::Rng;
     use rand_core::OsRng;
@@ -286,7 +294,7 @@ fn test_dimension_measurement() {
     #[derive(Default)]
     struct TestCircuit<F>(PhantomData<F>);
 
-    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuit<F> {
         type Config = (Column<Instance>, Column<Fixed>, [Column<Advice>; 2]);
         type FloorPlanner = V1;
 
@@ -311,7 +319,7 @@ fn test_dimension_measurement() {
                 || "",
                 |mut region| {
                     for i in 0..15 {
-                        region.assign_fixed(|| "", f0, i, || Value::known(F::zero()))?;
+                        region.assign_fixed(|| "", f0, i, || Value::known(F::ZERO))?;
                     }
                     Ok(())
                 },
@@ -320,7 +328,7 @@ fn test_dimension_measurement() {
                 || "",
                 |mut region| {
                     for i in 0..10 {
-                        region.assign_advice(|| "", a0, i, || Value::known(F::zero()))?;
+                        region.assign_advice(|| "", a0, i, || Value::known(F::ZERO))?;
                     }
                     Ok(())
                 },
@@ -329,7 +337,7 @@ fn test_dimension_measurement() {
                 || "",
                 |mut region| {
                     for i in 0..20 {
-                        region.assign_advice(|| "", a1, i, || Value::known(F::zero()))?;
+                        region.assign_advice(|| "", a1, i, || Value::known(F::ZERO))?;
                     }
                     Ok(())
                 },
@@ -341,7 +349,7 @@ fn test_dimension_measurement() {
                     for i in 0..20 {
                         cell = Some(
                             region
-                                .assign_advice(|| "", a0, i, || Value::known(F::zero()))?
+                                .assign_advice(|| "", a0, i, || Value::known(F::ZERO))?
                                 .cell(),
                         );
                     }

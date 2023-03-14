@@ -7,7 +7,6 @@ edition = "2021"
 [dependencies]
 ecc = { path = "../ecc", default-features = false }
 poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon.git", tag = "v2022_10_22" }
-group = "0.12"
 subtle = { version = "2.3", default-features = false }
 
 [dev-dependencies]

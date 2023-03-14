@@ -1,5 +1,4 @@
 use super::main_gate::{MainGate, MainGateConfig};
-use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::Chip;
 use crate::halo2::circuit::Layouter;
 use crate::halo2::circuit::Value;
@@ -8,6 +7,7 @@ use crate::halo2::plonk::{Selector, TableColumn};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{MainGateInstructions, Term};
 use crate::AssignedValue;
+use halo2wrong::halo2::ff::PrimeField;
 use halo2wrong::halo2::plonk::Advice;
 use halo2wrong::halo2::plonk::Column;
 use halo2wrong::halo2::plonk::Fixed;
@@ -35,19 +35,19 @@ pub struct RangeConfig {
 
 /// ['RangeChip'] applies binary range constraints
 #[derive(Clone, Debug)]
-pub struct RangeChip<F: FieldExt> {
+pub struct RangeChip<F: PrimeField> {
     config: RangeConfig,
     main_gate: MainGate<F>,
     bases: BTreeMap<usize, Vec<F>>,
 }
 
-impl<F: FieldExt> RangeChip<F> {
+impl<F: PrimeField> RangeChip<F> {
     fn main_gate(&self) -> &MainGate<F> {
         &self.main_gate
     }
 }
 
-impl<F: FieldExt> Chip<F> for RangeChip<F> {
+impl<F: PrimeField> Chip<F> for RangeChip<F> {
     type Config = RangeConfig;
     type Loaded = ();
     fn config(&self) -> &Self::Config {
@@ -59,7 +59,7 @@ impl<F: FieldExt> Chip<F> for RangeChip<F> {
 }
 
 /// Generic chip interface for bitwise ranging values
-pub trait RangeInstructions<F: FieldExt>: Chip<F> {
+pub trait RangeInstructions<F: PrimeField>: Chip<F> {
     /// Assigns new witness
     fn assign(
         &self,
@@ -82,7 +82,7 @@ pub trait RangeInstructions<F: FieldExt>: Chip<F> {
     fn load_table(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error>;
 }
 
-impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
+impl<F: PrimeField> RangeInstructions<F> for RangeChip<F> {
     fn assign(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -115,7 +115,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
             .collect();
 
         self.main_gate()
-            .decompose(ctx, &terms[..], F::zero(), |ctx, is_last| {
+            .decompose(ctx, &terms[..], F::ZERO, |ctx, is_last| {
                 let composition_tag =
                     self.config
                         .bit_len_tag
@@ -164,13 +164,13 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
                     || "table tag",
                     self.config.t_tag,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
                 table.assign_cell(
                     || "table value",
                     self.config.t_value,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
                 offset += 1;
 
@@ -202,7 +202,7 @@ impl<F: FieldExt> RangeInstructions<F> for RangeChip<F> {
     }
 }
 
-impl<F: FieldExt> RangeChip<F> {
+impl<F: PrimeField> RangeChip<F> {
     /// Given config creates new chip that implements ranging
     pub fn new(config: RangeConfig) -> Self {
         let main_gate = MainGate::new(config.main_gate_config.clone());
@@ -385,11 +385,11 @@ impl<F: FieldExt> RangeChip<F> {
 mod tests {
 
     use halo2wrong::halo2::circuit::Value;
+    use halo2wrong::halo2::ff::PrimeField;
     use halo2wrong::RegionCtx;
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::curves::pasta::Fp;
-    use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::{Layouter, SimpleFloorPlanner};
     use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
@@ -402,7 +402,7 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn new<F: FieldExt>(
+        fn new<F: PrimeField>(
             meta: &mut ConstraintSystem<F>,
             composition_bit_lens: Vec<usize>,
             overflow_bit_lens: Vec<usize>,
@@ -418,28 +418,28 @@ mod tests {
             Self { range_config }
         }
 
-        fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
+        fn main_gate<F: PrimeField>(&self) -> MainGate<F> {
             MainGate::<F>::new(self.range_config.main_gate_config.clone())
         }
 
-        fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
+        fn range_chip<F: PrimeField>(&self) -> RangeChip<F> {
             RangeChip::<F>::new(self.range_config.clone())
         }
     }
 
     #[derive(Clone, Debug)]
-    struct Input<F: FieldExt> {
+    struct Input<F: PrimeField> {
         bit_len: usize,
         limb_bit_len: usize,
         value: Value<F>,
     }
 
     #[derive(Default, Clone, Debug)]
-    struct TestCircuit<F: FieldExt> {
+    struct TestCircuit<F: PrimeField> {
         inputs: Vec<Input<F>>,
     }
 
-    impl<F: FieldExt> TestCircuit<F> {
+    impl<F: PrimeField> TestCircuit<F> {
         fn composition_bit_lens() -> Vec<usize> {
             vec![8]
         }
@@ -449,7 +449,7 @@ mod tests {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuit<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -495,7 +495,7 @@ mod tests {
                             .zip(range_chip.bases(limb_bit_len))
                             .map(|(limb, base)| Term::Assigned(limb, *base))
                             .collect();
-                        let a_1 = main_gate.compose(ctx, &terms[..], F::zero())?;
+                        let a_1 = main_gate.compose(ctx, &terms[..], F::ZERO)?;
                         main_gate.assert_equal(ctx, &a_0, &a_1)?;
                     }
 
