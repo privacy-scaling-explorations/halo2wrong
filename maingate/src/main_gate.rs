@@ -8,13 +8,13 @@
 //! public_input +
 //! q_constant = 0
 
-use crate::halo2::arithmetic::FieldExt;
 use crate::halo2::circuit::{Chip, Layouter};
 use crate::halo2::plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Instance};
 use crate::halo2::poly::Rotation;
 use crate::instructions::{CombinationOptionCommon, MainGateInstructions, Term};
 use crate::{AssignedCondition, AssignedValue};
 use halo2wrong::halo2::circuit::Value;
+use halo2wrong::halo2::ff::PrimeField;
 use halo2wrong::RegionCtx;
 use std::{iter, marker::PhantomData};
 
@@ -93,12 +93,12 @@ impl MainGateConfig {
 
 /// MainGate implements instructions with [`MainGateConfig`]
 #[derive(Clone, Debug)]
-pub struct MainGate<F: FieldExt> {
+pub struct MainGate<F: PrimeField> {
     config: MainGateConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> Chip<F> for MainGate<F> {
+impl<F: PrimeField> Chip<F> for MainGate<F> {
     type Config = MainGateConfig;
     type Loaded = ();
 
@@ -113,7 +113,7 @@ impl<F: FieldExt> Chip<F> for MainGate<F> {
 
 /// Additional combination customisations for this gate with two multiplication
 #[derive(Clone, Debug)]
-pub enum CombinationOption<F: FieldExt> {
+pub enum CombinationOption<F: PrimeField> {
     /// Wrapper for common combination options
     Common(CombinationOptionCommon<F>),
     /// Activates both of the multiplication gate
@@ -123,13 +123,13 @@ pub enum CombinationOption<F: FieldExt> {
     CombineToNextDoubleMul(F),
 }
 
-impl<F: FieldExt> From<CombinationOptionCommon<F>> for CombinationOption<F> {
+impl<F: PrimeField> From<CombinationOptionCommon<F>> for CombinationOption<F> {
     fn from(option: CombinationOptionCommon<F>) -> Self {
         CombinationOption::Common(option)
     }
 }
 
-impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
+impl<F: PrimeField> MainGateInstructions<F, WIDTH> for MainGate<F> {
     type CombinationOption = CombinationOption<F>;
     type MainGateColumn = MainGateColumn;
 
@@ -212,10 +212,10 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             .zip(b.value())
             .zip(cond.value())
             .map(|((a, b), cond)| {
-                if *cond == F::one() {
+                if *cond == F::ONE {
                     *a
                 } else {
-                    assert_eq!(*cond, F::zero());
+                    assert_eq!(*cond, F::ZERO);
                     *b
                 }
             });
@@ -229,8 +229,8 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 Term::assigned_to_add(b),
                 Term::unassigned_to_sub(res),
             ],
-            F::zero(),
-            CombinationOption::OneLinerDoubleMul(-F::one()),
+            F::ZERO,
+            CombinationOption::OneLinerDoubleMul(-F::ONE),
         )?;
         ctx.constrain_equal(assigned[0].cell(), assigned[2].cell())?;
         Ok(assigned.swap_remove(4))
@@ -258,10 +258,10 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             .map(|(a, cond)| {
                 (
                     *a - b,
-                    if *cond == F::one() {
+                    if *cond == F::ONE {
                         *a
                     } else {
-                        assert_eq!(*cond, F::zero());
+                        assert_eq!(*cond, F::ZERO);
                         b
                     },
                 )
@@ -337,8 +337,8 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 // q_e_next * e +
                 // q_constant = 0
                 CombinationOptionCommon::CombineToNextMul(next) => {
-                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
-                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ONE)?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ZERO)?;
                     ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
                 }
 
@@ -348,7 +348,7 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 // q_constant = 0
                 CombinationOptionCommon::CombineToNextScaleMul(next, n) => {
                     ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, n)?;
-                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ZERO)?;
                     ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
                 }
 
@@ -356,8 +356,8 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 // q_e_next * e +
                 // q_constant = 0
                 CombinationOptionCommon::CombineToNextAdd(next) => {
-                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
-                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ZERO)?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ZERO)?;
                     ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
                 }
 
@@ -365,17 +365,17 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
                 // q_mul_ab * a * b +
                 // q_constant = 0
                 CombinationOptionCommon::OneLinerMul => {
-                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
-                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
-                    ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ONE)?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ZERO)?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, F::ZERO)?;
                 }
 
                 // q_a * a + q_b * b + q_c * c + q_d * d + q_e * e +
                 // q_constant = 0
                 CombinationOptionCommon::OneLinerAdd => {
-                    ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
-                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
-                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
+                    ctx.assign_fixed(|| "se_next", self.config.se_next, F::ZERO)?;
+                    ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ZERO)?;
+                    ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ZERO)?;
                 }
             },
 
@@ -385,8 +385,8 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             // q_e_next * e +
             // q_constant = 0
             CombinationOption::CombineToNextDoubleMul(next) => {
-                ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
-                ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::one())?;
+                ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ONE)?;
+                ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ONE)?;
                 ctx.assign_fixed(|| "se_next", self.config.se_next, next)?;
             }
 
@@ -395,9 +395,9 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
             // q_mul_cd * c * d +
             // q_constant = 0
             CombinationOption::OneLinerDoubleMul(e) => {
-                ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::one())?;
+                ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ONE)?;
                 ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, e)?;
-                ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
+                ctx.assign_fixed(|| "se_next", self.config.se_next, F::ZERO)?;
             }
         };
 
@@ -415,21 +415,21 @@ impl<F: FieldExt> MainGateInstructions<F, WIDTH> for MainGate<F> {
 
     /// Skip this row without any operation
     fn no_operation(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::zero())?;
-        ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::zero())?;
-        ctx.assign_fixed(|| "sc", self.config.sc, F::zero())?;
-        ctx.assign_fixed(|| "sa", self.config.sa, F::zero())?;
-        ctx.assign_fixed(|| "sb", self.config.sb, F::zero())?;
-        ctx.assign_fixed(|| "sd", self.config.sd, F::zero())?;
-        ctx.assign_fixed(|| "se", self.config.se, F::zero())?;
-        ctx.assign_fixed(|| "se_next", self.config.se_next, F::zero())?;
-        ctx.assign_fixed(|| "s_constant", self.config.s_constant, F::zero())?;
+        ctx.assign_fixed(|| "s_mul_ab", self.config.s_mul_ab, F::ZERO)?;
+        ctx.assign_fixed(|| "s_mul_cd", self.config.s_mul_cd, F::ZERO)?;
+        ctx.assign_fixed(|| "sc", self.config.sc, F::ZERO)?;
+        ctx.assign_fixed(|| "sa", self.config.sa, F::ZERO)?;
+        ctx.assign_fixed(|| "sb", self.config.sb, F::ZERO)?;
+        ctx.assign_fixed(|| "sd", self.config.sd, F::ZERO)?;
+        ctx.assign_fixed(|| "se", self.config.se, F::ZERO)?;
+        ctx.assign_fixed(|| "se_next", self.config.se_next, F::ZERO)?;
+        ctx.assign_fixed(|| "s_constant", self.config.s_constant, F::ZERO)?;
         ctx.next();
         Ok(())
     }
 }
 
-impl<F: FieldExt> MainGate<F> {
+impl<F: PrimeField> MainGate<F> {
     /// Create new main gate with given config
     pub fn new(config: MainGateConfig) -> Self {
         MainGate {
@@ -526,13 +526,12 @@ mod tests {
 
     use super::{MainGate, MainGateConfig, Term};
     use crate::curves::pasta::Fp;
-    use crate::halo2::arithmetic::FieldExt;
     use crate::halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use crate::halo2::dev::MockProver;
     use crate::halo2::plonk::{Circuit, ConstraintSystem, Error};
     use crate::main_gate::{CombinationOptionCommon, MainGateInstructions};
     use crate::AssignedCondition;
-    use group::ff::PrimeField;
+    use halo2wrong::halo2::ff::PrimeField;
     use halo2wrong::utils::{big_to_fe, decompose};
     use halo2wrong::RegionCtx;
     use rand_core::OsRng;
@@ -544,7 +543,7 @@ mod tests {
     }
 
     impl TestCircuitConfig {
-        fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
+        fn main_gate<F: PrimeField>(&self) -> MainGate<F> {
             MainGate::<F> {
                 config: self.main_gate_config.clone(),
                 _marker: PhantomData,
@@ -553,12 +552,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitPublicInputs<F: FieldExt> {
+    struct TestCircuitPublicInputs<F: PrimeField> {
         _marker: PhantomData<F>,
         public_input: F,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitPublicInputs<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitPublicInputs<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -611,11 +610,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitCombination<F: FieldExt> {
+    struct TestCircuitCombination<F: PrimeField> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitCombination<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitCombination<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -886,12 +885,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitBitness<F: FieldExt> {
+    struct TestCircuitBitness<F: PrimeField> {
         neg_path: bool,
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitBitness<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitBitness<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -918,11 +917,11 @@ mod tests {
                     let ctx = &mut RegionCtx::new(region, offset);
 
                     if self.neg_path {
-                        let minus_one = -F::one();
+                        let minus_one = -F::ONE;
                         main_gate.assign_bit(ctx, Value::known(minus_one))?;
                     } else {
-                        let one = F::one();
-                        let zero = F::zero();
+                        let one = F::ONE;
+                        let zero = F::ZERO;
 
                         let u = main_gate.assign_bit(ctx, Value::known(one))?;
                         main_gate.assert_bit(ctx, &u)?;
@@ -966,12 +965,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitEquality<F: FieldExt> {
+    struct TestCircuitEquality<F: PrimeField> {
         neg_path: bool,
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitEquality<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitEquality<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1001,8 +1000,8 @@ mod tests {
 
                     if self.neg_path {
                     } else {
-                        let one = F::one();
-                        let zero = F::zero();
+                        let one = F::ONE;
+                        let zero = F::ZERO;
 
                         let assigned_one = &main_gate.assign_bit(ctx, Value::known(one))?;
                         let assigned_zero = &main_gate.assign_bit(ctx, Value::known(zero))?;
@@ -1085,11 +1084,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitArith<F: FieldExt> {
+    struct TestCircuitArith<F: PrimeField> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitArith<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitArith<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1233,11 +1232,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitConditionals<F: FieldExt> {
+    struct TestCircuitConditionals<F: PrimeField> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitConditionals<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitConditionals<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1270,7 +1269,7 @@ mod tests {
 
                     let a = rand();
                     let b = rand();
-                    let cond = F::zero();
+                    let cond = F::ZERO;
 
                     let a = Value::known(a);
                     let b = Value::known(b);
@@ -1284,7 +1283,7 @@ mod tests {
 
                     let a = rand();
                     let b = rand();
-                    let cond = F::one();
+                    let cond = F::ONE;
 
                     let a = Value::known(a);
                     let b = Value::known(b);
@@ -1298,7 +1297,7 @@ mod tests {
 
                     let a = rand();
                     let b_constant = rand();
-                    let cond = F::zero();
+                    let cond = F::ZERO;
 
                     let a = Value::known(a);
                     let b_unassigned = Value::known(b_constant);
@@ -1312,7 +1311,7 @@ mod tests {
 
                     let a = rand();
                     let b_constant = rand();
-                    let cond = F::one();
+                    let cond = F::ONE;
 
                     let a = Value::known(a);
                     let cond = Value::known(cond);
@@ -1347,12 +1346,12 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitDecomposition<F: FieldExt> {
+    struct TestCircuitDecomposition<F: PrimeField> {
         _marker: PhantomData<F>,
         number_of_bits: usize,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitDecomposition<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitDecomposition<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1391,7 +1390,7 @@ mod tests {
                     assert_eq!(decomposed.len(), a_decomposed.len());
 
                     for (assigned, value) in a_decomposed.iter().zip(decomposed.into_iter()) {
-                        if value == F::zero() {
+                        if value == F::ZERO {
                             main_gate.assert_zero(ctx, assigned)?;
                         } else {
                             main_gate.assert_one(ctx, assigned)?;
@@ -1440,11 +1439,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitComposition<F: FieldExt> {
+    struct TestCircuitComposition<F: PrimeField> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitComposition<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitComposition<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -1509,11 +1508,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitSign<F: FieldExt> {
+    struct TestCircuitSign<F: PrimeField> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuitSign<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitSign<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
 

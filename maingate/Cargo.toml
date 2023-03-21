@@ -9,7 +9,6 @@ num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
 rand = "0.8"
-group = "0.12"
 subtle = { version = "2.3", default-features = false }
 halo2wrong = { path = "../halo2wrong", default-features = false }
 

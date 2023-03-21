@@ -4,13 +4,14 @@
 
 use crate::{
     halo2::{
-        arithmetic::{Field, FieldExt},
+        arithmetic::Field,
         circuit::{Chip, Layouter, Value},
         plonk::Error,
     },
     AssignedCondition, AssignedValue, ColumnTags, MainGateColumn,
 };
 use halo2wrong::{
+    halo2::ff::PrimeField,
     utils::{big_to_fe, decompose, fe_to_big, power_of_two},
     RegionCtx,
 };
@@ -27,7 +28,7 @@ use std::iter;
 /// `... + assigned_or_unassigned_witness_0 * fixed_0 +
 /// assigned_or_unassigned_witness_1 * fixed_1 + ... `
 #[derive(Clone)]
-pub enum Term<'a, F: FieldExt> {
+pub enum Term<'a, F: PrimeField> {
     /// Assigned value and fixed scalar
     Assigned(&'a AssignedValue<F>, F),
     /// Unassigned witness and fixed scalar
@@ -36,13 +37,13 @@ pub enum Term<'a, F: FieldExt> {
     Zero,
 }
 
-impl<'a, F: FieldExt> Term<'a, F> {
+impl<'a, F: PrimeField> Term<'a, F> {
     pub(crate) const fn is_zero(&self) -> bool {
         matches!(self, Term::Zero)
     }
 }
 
-impl<'a, F: FieldExt> std::fmt::Debug for Term<'a, F> {
+impl<'a, F: PrimeField> std::fmt::Debug for Term<'a, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Assigned(coeff, base) => f
@@ -61,37 +62,37 @@ impl<'a, F: FieldExt> std::fmt::Debug for Term<'a, F> {
     }
 }
 
-impl<'a, F: FieldExt> Term<'a, F> {
+impl<'a, F: PrimeField> Term<'a, F> {
     /// Wrap an assigned value that is about to be multiplied by other term
     pub fn assigned_to_mul(e: &'a AssignedValue<F>) -> Self {
-        Term::Assigned(e, F::zero())
+        Term::Assigned(e, F::ZERO)
     }
 
     /// Wrap an assigned value that is about to be added to the other terms
     pub fn assigned_to_add(e: &'a AssignedValue<F>) -> Self {
-        Term::Assigned(e, F::one())
+        Term::Assigned(e, F::ONE)
     }
 
     /// Wrap an assigned value that is about to be subtracted from the other
     /// terms
     pub fn assigned_to_sub(e: &'a AssignedValue<F>) -> Self {
-        Term::Assigned(e, -F::one())
+        Term::Assigned(e, -F::ONE)
     }
 
     /// Wrap an unassigned value that is about to be multiplied by other term
     pub fn unassigned_to_mul(e: Value<F>) -> Self {
-        Term::Unassigned(e, F::zero())
+        Term::Unassigned(e, F::ZERO)
     }
 
     /// Wrap an unassigned value that is about to be added to the other terms
     pub fn unassigned_to_add(e: Value<F>) -> Self {
-        Term::Unassigned(e, F::one())
+        Term::Unassigned(e, F::ONE)
     }
 
     /// Wrap an unassigned value that is about to be subtracted from the other
     /// terms
     pub fn unassigned_to_sub(e: Value<F>) -> Self {
-        Term::Unassigned(e, -F::one())
+        Term::Unassigned(e, -F::ONE)
     }
 
     /// Retuns the witness part of this term
@@ -99,7 +100,7 @@ impl<'a, F: FieldExt> Term<'a, F> {
         match self {
             Self::Assigned(assigned, _) => assigned.value().copied(),
             Self::Unassigned(unassigned, _) => *unassigned,
-            Self::Zero => Value::known(F::zero()),
+            Self::Zero => Value::known(F::ZERO),
         }
     }
 
@@ -108,7 +109,7 @@ impl<'a, F: FieldExt> Term<'a, F> {
         match self {
             Self::Assigned(_, base) => *base,
             Self::Unassigned(_, base) => *base,
-            Self::Zero => F::zero(),
+            Self::Zero => F::ZERO,
         }
     }
 
@@ -128,7 +129,7 @@ impl<'a, F: FieldExt> Term<'a, F> {
 /// when it has one multiplication gate one addition gate and one further
 /// rotation gate.
 #[derive(Clone, Debug)]
-pub enum CombinationOptionCommon<F: FieldExt> {
+pub enum CombinationOptionCommon<F: PrimeField> {
     /// Opens only single multiplication gate
     OneLinerMul,
     /// All multiplications gates are closed
@@ -148,7 +149,7 @@ pub enum CombinationOptionCommon<F: FieldExt> {
 /// Instructions covers many basic constaints such as assignments, logical and
 /// arithmetic operations. Also includes general purpose `combine` and  `apply`
 /// functions to let user to build custom constaints using this main gate
-pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
+pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
     /// Options for implementors to implement some more custom functionalities
     type CombinationOption: From<CombinationOptionCommon<F>>;
     /// Position related customisations should be defined as ['MainGateColumn']
@@ -221,7 +222,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 Term::unassigned_to_mul(bit),
                 Term::unassigned_to_sub(bit),
             ],
-            F::zero(),
+            F::ZERO,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
@@ -245,7 +246,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 Term::assigned_to_mul(bit),
                 Term::assigned_to_sub(bit),
             ],
-            F::zero(),
+            F::ZERO,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
@@ -266,7 +267,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.apply(
             ctx,
             [Term::assigned_to_sub(a), Term::assigned_to_sub(b)],
-            F::one(),
+            F::ONE,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
@@ -296,7 +297,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::assigned_to_sub(c2),
                     Term::unassigned_to_add(c),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
             .swap_remove(2);
@@ -323,7 +324,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::assigned_to_mul(c2),
                     Term::unassigned_to_sub(c),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
             .swap_remove(2))
@@ -336,13 +337,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         c: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
-        let not_c = c.value().map(|c| F::one() - c);
+        let not_c = c.value().map(|c| F::ONE - c);
 
         Ok(self
             .apply(
                 ctx,
                 [Term::assigned_to_add(c), Term::unassigned_to_add(not_c)],
-                -F::one(),
+                -F::ONE,
                 CombinationOptionCommon::OneLinerAdd.into(),
             )?
             .swap_remove(1))
@@ -361,7 +362,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             // Non inversion case will never be verified
             Option::<F>::from(b.invert())
                 .map(|b_inverted| *a * b_inverted)
-                .unwrap_or_else(F::zero)
+                .unwrap_or(F::ZERO)
         });
 
         Ok(self
@@ -372,7 +373,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::unassigned_to_mul(c),
                     Term::assigned_to_add(a),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
             .swap_remove(1))
@@ -401,14 +402,14 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     ) -> Result<AssignedValue<F>, Error> {
         let inverse = a.value().map(|a| {
             // Non inversion case will never be verified.
-            a.invert().unwrap_or_else(F::zero)
+            a.invert().unwrap_or(F::ZERO)
         });
 
         Ok(self
             .apply(
                 ctx,
                 [Term::assigned_to_mul(a), Term::unassigned_to_mul(inverse)],
-                -F::one(),
+                -F::ONE,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
             .swap_remove(1))
@@ -421,7 +422,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedValue<F>,
     ) -> Result<(AssignedValue<F>, AssignedCondition<F>), Error> {
-        let (one, zero) = (F::one(), F::zero());
+        let (one, zero) = (F::ONE, F::ZERO);
 
         // Returns 'r' as a condition bit that defines if inversion successful or not
         // First enfoce 'r' to be a bit
@@ -511,7 +512,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.apply(
             ctx,
             [Term::assigned_to_add(a), Term::assigned_to_sub(b)],
-            F::zero(),
+            F::ZERO,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
@@ -526,7 +527,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         b: &AssignedValue<F>,
     ) -> Result<(), Error> {
         // (a - b) must have an inverse
-        let c = self.sub_with_constant(ctx, a, b, F::zero())?;
+        let c = self.sub_with_constant(ctx, a, b, F::ZERO)?;
         self.assert_not_zero(ctx, &c)
     }
 
@@ -537,7 +538,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedCondition<F>, Error> {
-        let (one, zero) = (F::one(), F::zero());
+        let (one, zero) = (F::ONE, F::ZERO);
 
         // Given a and b equation below is enforced
         // 0 = (a - b) * (r * (1 - x) + x) + r - 1
@@ -605,7 +606,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
     /// Enforces that assigned value is zero % w
     fn assert_zero(&self, ctx: &mut RegionCtx<'_, F>, a: &AssignedValue<F>) -> Result<(), Error> {
-        self.assert_equal_to_constant(ctx, a, F::zero())
+        self.assert_equal_to_constant(ctx, a, F::ZERO)
     }
 
     /// Enforces that assigned value is not zero.
@@ -619,13 +620,13 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         let w = a.value().map(|a| {
             // Non inversion case will never be verified.
-            a.invert().unwrap_or_else(F::zero)
+            a.invert().unwrap_or(F::ZERO)
         });
 
         self.apply(
             ctx,
             [Term::assigned_to_mul(a), Term::unassigned_to_mul(w)],
-            -F::one(),
+            -F::ONE,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
 
@@ -646,7 +647,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Assigns new bit flag `1` if given value eqauls to `1` otherwise assigns
     /// `0`
     fn assert_one(&self, ctx: &mut RegionCtx<'_, F>, a: &AssignedValue<F>) -> Result<(), Error> {
-        self.assert_equal_to_constant(ctx, a, F::one())
+        self.assert_equal_to_constant(ctx, a, F::ONE)
     }
 
     /// Assigns a new witness `r` as:
@@ -676,7 +677,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        self.sub_with_constant(ctx, a, b, F::zero())
+        self.sub_with_constant(ctx, a, b, F::ZERO)
     }
 
     /// Assigns a new witness `r` as:
@@ -740,7 +741,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::assigned_to_add(a),
                     Term::unassigned_to_sub(c),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerAdd.into(),
             )?
             .swap_remove(2))
@@ -763,7 +764,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::assigned_to_add(a),
                     Term::unassigned_to_sub(c),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerAdd.into(),
             )?
             .swap_remove(3))
@@ -787,7 +788,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::assigned_to_mul(b),
                     Term::unassigned_to_sub(c),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
             .swap_remove(2))
@@ -817,7 +818,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                     Term::assigned_to_add(to_add),
                     Term::unassigned_to_sub(c),
                 ],
-                F::zero(),
+                F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
             .swap_remove(3))
@@ -859,7 +860,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         self.apply(
             ctx,
             [Term::assigned_to_mul(a), Term::assigned_to_mul(b)],
-            F::zero(),
+            F::ZERO,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
         Ok(())
@@ -873,7 +874,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         a: &AssignedValue<F>,
         b: &AssignedValue<F>,
     ) -> Result<AssignedValue<F>, Error> {
-        self.add_with_constant(ctx, a, b, F::zero())
+        self.add_with_constant(ctx, a, b, F::ZERO)
     }
 
     /// Assigns a new witness `r` as:
@@ -954,10 +955,10 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             ctx,
             [
                 Term::Unassigned(w.map(|w| w.1), F::from(2)),
-                Term::Assigned(&sign, F::one()),
-                Term::Assigned(a, -F::one()),
+                Term::Assigned(&sign, F::ONE),
+                Term::Assigned(a, -F::ONE),
             ],
-            F::zero(),
+            F::ZERO,
             CombinationOptionCommon::OneLinerAdd.into(),
         )?;
 
@@ -994,7 +995,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             .zip(bases.into_iter())
             .map(|(bit, base)| Term::Assigned(bit, base))
             .collect::<Vec<_>>();
-        let result = self.compose(ctx, &terms, F::zero())?;
+        let result = self.compose(ctx, &terms, F::ZERO)?;
         self.assert_equal(ctx, &result, composed)?;
         Ok(bits)
     }
@@ -1027,8 +1028,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
 
         let mut assigned: Vec<AssignedValue<F>> = vec![];
         for (i, chunk) in terms.chunks(chunk_width).enumerate() {
-            let intermediate = Term::Unassigned(remaining, -F::one());
-            let constant = if i == 0 { constant } else { F::zero() };
+            let intermediate = Term::Unassigned(remaining, -F::ONE);
+            let constant = if i == 0 { constant } else { F::ZERO };
             let mut chunk = chunk.to_vec();
 
             let composed = Term::compose(&chunk[..], constant);
@@ -1050,7 +1051,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                 CombinationOptionCommon::OneLinerAdd
             // Intermediate round should accumulate the sum
             } else {
-                CombinationOptionCommon::CombineToNextAdd(F::one())
+                CombinationOptionCommon::CombineToNextAdd(F::ONE)
             };
 
             enable_lookup(ctx, is_final)?;
@@ -1122,7 +1123,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
             if one_liner {
                 CombinationOptionCommon::OneLinerAdd
             } else {
-                CombinationOptionCommon::CombineToNextAdd(-F::one())
+                CombinationOptionCommon::CombineToNextAdd(-F::ONE)
             }
             .into(),
         )?;
@@ -1141,24 +1142,24 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
                         .iter()
                         .cloned()
                         .chain(iter::repeat(Term::Zero).take(WIDTH - chunk.len() - 1))
-                        .chain(iter::once(Term::Unassigned(intermediate_sum, F::one()))),
-                    F::zero(),
+                        .chain(iter::once(Term::Unassigned(intermediate_sum, F::ONE))),
+                    F::ZERO,
                     if i == number_of_chunks - 1 {
                         CombinationOptionCommon::OneLinerAdd
                     } else {
-                        CombinationOptionCommon::CombineToNextAdd(-F::one())
+                        CombinationOptionCommon::CombineToNextAdd(-F::ONE)
                     }
                     .into(),
                 )?;
 
                 intermediate_sum = intermediate_sum
-                    .zip(Term::compose(chunk, F::zero()))
+                    .zip(Term::compose(chunk, F::ZERO))
                     .map(|(cur, result)| cur + result);
 
                 // // Sanity check for prover
                 // if i == number_of_chunks - 1 {
                 //     if let Some(value) = intermediate_sum {
-                //         assert_eq!(value, F::zero())
+                //         assert_eq!(value, F::ZERO)
                 //     };
                 // }
             }
@@ -1182,12 +1183,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     /// Intentionally introduce not to be satisfied witnesses. Use only for
     /// debug purposes.
     fn break_here(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        self.apply(
-            ctx,
-            [],
-            F::one(),
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?;
+        self.apply(ctx, [], F::ONE, CombinationOptionCommon::OneLinerAdd.into())?;
         Ok(())
     }
 }
