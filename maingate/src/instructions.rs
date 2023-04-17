@@ -256,6 +256,20 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         Ok(())
     }
 
+    /// Enforces given witness value is `-1` or `1`
+    /// `val * val - 1  = 0`
+    fn assert_sign(&self, ctx: &mut RegionCtx<'_, F>, bit: &AssignedValue<F>) -> Result<(), Error> {
+        let assigned = self.apply(
+            ctx,
+            [Term::assigned_to_mul(bit), Term::assigned_to_mul(bit)],
+            -F::ONE,
+            CombinationOptionCommon::OneLinerMul.into(),
+        )?;
+
+        ctx.constrain_equal(assigned[0].cell(), assigned[1].cell())?;
+
+        Ok(())
+    }
     /// Enforces one of given two values is `1`
     /// `(a-1) * (b-1)  = 0`
     fn one_or_one(
@@ -933,7 +947,7 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         cond: &AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    /// Assignes new value equals to `1` if first bit of `a` is `1` or assigns
+    /// Assigns new value equals to `1` if first bit of `a` is `1` or assigns
     /// `0` if first bit of `a` is `0`
     fn sign(
         &self,
