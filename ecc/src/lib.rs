@@ -18,6 +18,7 @@ pub use integer::maingate;
 
 #[cfg(test)]
 use halo2::halo2curves as curves;
+use integer::maingate::AssignedValue;
 
 use crate::halo2::arithmetic::CurveAffine;
 use crate::integer::chip::IntegerConfig;
@@ -29,6 +30,9 @@ use num_bigint::BigUint as big_uint;
 use num_traits::One;
 use std::fmt;
 use std::rc::Rc;
+
+/// Assigned decomposition of a scalar of field F into 2: 128 bit vals + sign
+type AssignedDecompScalar<F> = [(AssignedValue<F>, AssignedValue<F>); 2];
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
@@ -154,13 +158,18 @@ impl EccConfig {
 ///
 /// Computes AuxFin from AuxInit for batch multiplication
 /// see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
-fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pairs: usize) -> C {
+fn make_mul_aux<C: CurveAffine>(
+    aux_to_add: C,
+    window_size: usize,
+    number_of_pairs: usize,
+    n_bits: usize,
+) -> C {
     assert!(window_size > 0);
     assert!(number_of_pairs > 0);
+    assert!((n_bits == 128) | (n_bits == C::Scalar::NUM_BITS as usize));
 
-    let n = C::Scalar::NUM_BITS as usize;
-    let mut number_of_selectors = n / window_size;
-    if n % window_size != 0 {
+    let mut number_of_selectors = n_bits / window_size;
+    if n_bits % window_size != 0 {
         number_of_selectors += 1;
     }
     let mut k0 = big_uint::one();

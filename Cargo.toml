@@ -9,8 +9,8 @@ members = [
 ]
 
 
-# remove once
-# https://github.com/privacy-scaling-explorations/halo2/pull/162
-# is merged
 [patch."https://github.com/privacy-scaling-explorations/halo2.git"]
-halo2_proofs = { git = "https://github.com/scroll-tech/halo2.git", branch = "halo2-ecc-snark-verifier-0220" }
+halo2_proofs = { git = "https://github.com/davidnevadoc/halo2.git",  branch = "test/feat-curve-endo" }
+
+[patch."https://github.com/privacy-scaling-explorations/halo2curves.git"]
+halo2curves = { git = "https://github.com/davidnevadoc/halo2curves.git", branch = "test/endo-export" }

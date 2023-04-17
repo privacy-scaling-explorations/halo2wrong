@@ -1,10 +1,14 @@
-use super::{AssignedPoint, BaseFieldEccChip};
+use super::{AssignedPoint, BaseFieldEccChip, BaseFieldEndoEccChip};
 use crate::maingate::{AssignedCondition, AssignedValue, MainGateInstructions};
-use crate::{halo2, Selector, Table, Windowed};
+use crate::{halo2, AssignedDecompScalar, Selector, Table, Windowed};
 use halo2::arithmetic::CurveAffine;
+use halo2::arithmetic::CurveEndo;
 use halo2::plonk::Error;
-use integer::halo2::ff::{Field, PrimeField};
-use integer::maingate::RegionCtx;
+use integer::halo2::curves::CurveExt;
+use integer::halo2::ff::{Field, PrimeField, WithSmallOrderMulGroup};
+use integer::maingate::{CombinationOption, RegionCtx, Term};
+use integer::rns::Integer;
+use integer::{IntegerInstructions, Range};
 
 impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -16,7 +20,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         bits: &mut Vec<AssignedCondition<C::Scalar>>,
         window_size: usize,
     ) -> Result<(), Error> {
-        assert_eq!(bits.len(), C::Scalar::NUM_BITS as usize);
+        // assert_eq!(bits.len(), C::Scalar::NUM_BITS as usize);
 
         // TODO: This is a tmp workaround. Instead of padding with zeros we can use a
         // shorter ending window.
@@ -191,5 +195,183 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         }
 
         self.add(ctx, &acc, &aux.to_sub)
+    }
+}
+
+impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    BaseFieldEndoEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    // type Scalar = <C as CurveExt>::CurveAffineExt::Scalar;
+    /// Split a scalar k in 128-bit scalars k1, k2 such that:
+    /// k = k1 + C::lambda * k2
+    fn split_scalar(
+        &self,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
+        scalar: &AssignedValue<C::Scalar>,
+    ) -> Result<AssignedDecompScalar<C::Scalar>, Error> {
+        //
+        // assert!(C::Scalar::CAPACITY <= 256);
+        // TODO Remove .not() workaround
+        let maingate = self.ecc_chip.main_gate();
+        let sig = |neg: bool| if neg { -C::Scalar::ONE } else { C::Scalar::ONE };
+        let decomposed = scalar.value().map(|v| C::decompose_scalar(v));
+
+        let k1 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.0));
+        let k1_sig = decomposed.map(|decomp| sig(decomp.1));
+        let k2 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.2));
+        let k2_sig = decomposed.map(|decomp| sig(decomp.3));
+
+        // let k1 = maingate.assign_value(ctx, k1)?;
+        // let k1_sig = maingate.assign_value(ctx, k1_sig)?;
+        // let k2 = maingate.assign_value(ctx, k2)?;
+        // let k2_sig = maingate.assign_value(ctx, k2_sig)?;
+
+        // Add decomoposition constraint
+        // k1 * k1_sig + C::LAMBDA * k2 * k2_sig - k = 0
+        // k1_sig i {-1, 1}
+        // k2_sig i {-1, 1}
+        // Maingate can be used directly, C::Scalar is the native field
+
+        // Sanity check
+        scalar.value().map(|s| dbg!(s));
+        decomposed.map(|(k1, k1_neg, k2, k2_neg)| {
+            let k1 = C::Scalar::from_u128(k1);
+            let k2 = C::Scalar::from_u128(k2);
+            let k1_sig = sig(k1_neg);
+            let k2_sig = sig(k2_neg);
+            dbg!(k1, k2, k1_sig, k2_sig);
+            scalar
+                .value()
+                .map(|k| assert_eq!(k1 * k1_sig - C::ScalarExt::ZETA * k2 * k2_sig, *k));
+        });
+        let assigned = maingate.apply(
+            ctx,
+            [
+                Term::unassigned_to_mul(k1),
+                Term::unassigned_to_mul(k1_sig),
+                Term::unassigned_to_mul(k2),
+                Term::unassigned_to_mul(k2_sig),
+                Term::assigned_to_sub(scalar),
+            ],
+            C::Scalar::ZERO,
+            CombinationOption::OneLinerDoubleMul(-C::ScalarExt::ZETA),
+        )?;
+        let (k1, k1_sig, k2, k2_sig) = (&assigned[0], &assigned[1], &assigned[2], &assigned[3]);
+        maingate.assert_sign(ctx, &k1_sig)?;
+        maingate.assert_sign(ctx, &k2_sig)?;
+
+        Ok([(k1.clone(), k1_sig.clone()), (k2.clone(), k2_sig.clone())])
+    }
+
+    /// Scalar multiplication of a point in the EC
+    /// Performed with the sliding-window algorithm
+    pub fn glv_mul(
+        &self,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
+        point: &AssignedPoint<
+            <<C as CurveExt>::AffineExt as CurveAffine>::Base,
+            <<C as CurveExt>::AffineExt as CurveAffine>::ScalarExt,
+            NUMBER_OF_LIMBS,
+            BIT_LEN_LIMB,
+        >,
+        scalar: &AssignedValue<C::Scalar>,
+        window_size: usize,
+    ) -> Result<
+        AssignedPoint<
+            <<C as CurveExt>::AffineExt as CurveAffine>::Base,
+            <<C as CurveExt>::AffineExt as CurveAffine>::ScalarExt,
+            NUMBER_OF_LIMBS,
+            BIT_LEN_LIMB,
+        >,
+        Error,
+    > {
+        assert!(window_size > 0);
+        let ecc = &self.ecc_chip;
+        let int = self.ecc_chip.integer_chip();
+        let aux = ecc.get_mul_aux(window_size, 2)?;
+
+        // 1. Decompose scalar k -> k1, k2
+        let split = self.split_scalar(ctx, scalar)?;
+
+        // 2. Decompose scalars into AssignedCondition
+        let main_gate = ecc.main_gate();
+        let decomp_k1 = &mut main_gate.to_bits(ctx, &split[0].0, 128usize)?;
+        let decomp_k2 = &mut main_gate.to_bits(ctx, &split[1].0, 128usize)?;
+
+        // 2.1 Convert signs into Integers
+        let mut limbs = [C::Scalar::ZERO; NUMBER_OF_LIMBS];
+        let k1_sig: &AssignedValue<C::ScalarExt> = &split[0].1;
+        let k1_sig_int = k1_sig.value().map(|v| {
+            limbs[0] = *v;
+            Integer::from_limbs(&limbs, ecc.rns())
+        });
+        let k1_sig_int = int.assign_integer(ctx, k1_sig_int.into(), Range::Operand)?;
+
+        let k2_sig: &AssignedValue<C::ScalarExt> = &split[1].1;
+        let k2_sig_int = k2_sig.value().map(|v| {
+            limbs[0] = -*v;
+            Integer::from_limbs(&limbs, ecc.rns())
+        });
+        let k2_sig_int = int.assign_integer(ctx, k2_sig_int.into(), Range::Operand)?;
+
+        // 3. Pad to window size and chunk in windows
+        ecc.pad(ctx, decomp_k1, window_size)?;
+        ecc.pad(ctx, decomp_k2, window_size)?;
+        dbg!(decomp_k1.len(), decomp_k2.len());
+
+        let windowed_k1 = BaseFieldEccChip::<C::AffineExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::window(
+            decomp_k1.to_vec(),
+            window_size,
+        );
+        let windowed_k2 = BaseFieldEccChip::<C::AffineExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::window(
+            decomp_k2.to_vec(),
+            window_size,
+        );
+        let number_of_windows = windowed_k1.0.len();
+
+        // 4. Generate aux acc point + Generate table
+        // let zeta_point = ecc.endo(ctx, point)?;
+        let k1_point = ecc.sign_point(ctx, point, &k1_sig_int)?;
+        let point_2 = ecc.sign_point(ctx, point, &k2_sig_int)?;
+        //TODO modify
+        let k2_point = ecc.endo(ctx, &point_2)?;
+        // dbg!(k1_point.clone(), point_2.clone());
+        // main_gate.break_here(ctx)?;
+
+        // let pairs = vec![(k1_point, decomp_k1), (k1_point, decomp_k2)];
+        let mut binary_aux = aux.to_add.clone();
+        let tables: Vec<Table<_, _, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = vec![k1_point, k2_point]
+            .iter()
+            .enumerate()
+            .map(|(i, point)| {
+                let table = ecc.make_incremental_table(ctx, &binary_aux, point, window_size);
+                if i != 1 {
+                    binary_aux = ecc.double(ctx, &binary_aux)?;
+                }
+                table
+            })
+            .collect::<Result<_, Error>>()?;
+
+        // 5. Mul double-and-add algorithm
+        let windowed_scalars = vec![windowed_k1, windowed_k2];
+
+        let mut acc = ecc.select_multi(ctx, &windowed_scalars[0].0[0], &tables[0])?;
+        // add first contributions other point scalar
+        for (table, windowed) in tables.iter().skip(1).zip(windowed_scalars.iter().skip(1)) {
+            let selector = &windowed.0[0];
+            let to_add = ecc.select_multi(ctx, selector, table)?;
+            acc = ecc.add(ctx, &acc, &to_add)?;
+        }
+
+        dbg!(number_of_windows);
+        for i in 1..number_of_windows {
+            acc = ecc.double_n(ctx, &acc, window_size)?;
+            for (table, windowed) in tables.iter().zip(windowed_scalars.iter()) {
+                let selector = &windowed.0[i];
+                let to_add = ecc.select_multi(ctx, selector, table)?;
+                acc = ecc.add(ctx, &acc, &to_add)?;
+            }
+        }
+        ecc.add(ctx, &acc, &aux.to_sub)
     }
 }

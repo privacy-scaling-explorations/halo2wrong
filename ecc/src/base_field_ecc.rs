@@ -2,12 +2,13 @@ use super::{make_mul_aux, AssignedPoint, EccConfig, MulAux, Point};
 use crate::integer::chip::IntegerChip;
 use crate::integer::rns::{Integer, Rns};
 use crate::{halo2, maingate};
-use halo2::arithmetic::CurveAffine;
+use halo2::arithmetic::{CurveAffine, CurveEndo};
 use halo2::circuit::Layouter;
 use halo2::plonk::Error;
 use integer::halo2::circuit::Value;
+use integer::halo2::ff::WithSmallOrderMulGroup;
 use integer::maingate::{MainGateInstructions, RegionCtx};
-use integer::{IntegerInstructions, Range};
+use integer::{AssignedInteger, IntegerInstructions, Range};
 use maingate::{AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -24,15 +25,67 @@ pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const 
 {
     /// `IntegerChip` for the base field of the EC
     integer_chip: IntegerChip<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+
     /// Auxiliary point for optimized multiplication algorithm
     aux_generator: Option<(
         AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         Value<C>,
     )>,
-    /// Auxiliary points for optimized multiplication for each (window_size,
-    /// n_pairs) pairs
+
+    /// Auxiliary points for optimized multiplication for each
+    /// (window_size, n_pairs) pairs
     aux_registry:
         BTreeMap<(usize, usize), AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+}
+
+/// TODO Elliptic Curve operations using the efficient endomorphism
+#[derive(Debug, Clone)]
+pub struct BaseFieldEndoEccChip<
+    C: CurveEndo,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    ecc_chip: BaseFieldEccChip<C::AffineExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+}
+
+impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    BaseFieldEndoEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    /// Return `EndoEccChip` from `EccChip`
+    pub fn new(ecc_chip: BaseFieldEccChip<C::AffineExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
+        Self { ecc_chip }
+    }
+}
+
+// TODO These function should be moved to ecc, it works for base and general
+// It should also makes more sense to have this in EccChip
+// Maybe all can be done in ecc chip... no need for EndoEccChip
+impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    /// TODO
+    pub fn endo(
+        &self,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
+        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let integer_chip = self.integer_chip();
+        let zeta = Integer::from_fe(C::Base::ZETA, self.rns());
+        let x = integer_chip.mul_constant(ctx, point.x(), &zeta)?;
+        Ok(AssignedPoint::new(x, point.y().clone()))
+    }
+
+    /// TODO
+    pub fn sign_point(
+        &self,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
+        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        sign: &AssignedInteger<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let integer_chip = self.integer_chip();
+        let y = integer_chip.mul(ctx, point.y(), sign)?;
+        Ok(AssignedPoint::new(point.x().clone(), y))
+    }
 }
 
 impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
@@ -101,11 +154,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
         Ok(MulAux::new(to_add, to_sub))
     }
-}
 
-impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-    BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
-{
     /// Expose `AssignedPoint` as Public Input
     pub fn expose_public(
         &self,
@@ -182,10 +231,12 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         ctx: &mut RegionCtx<'_, C::Scalar>,
         window_size: usize,
         number_of_pairs: usize,
+        n_bits: usize, // number of bits of the scalar
     ) -> Result<(), Error> {
         match self.aux_generator {
             Some((_, point)) => {
-                let aux = point.map(|point| make_mul_aux(point, window_size, number_of_pairs));
+                let aux =
+                    point.map(|point| make_mul_aux(point, window_size, number_of_pairs, n_bits));
                 let aux = self.assign_point(ctx, aux)?;
                 self.aux_registry
                     .insert((window_size, number_of_pairs), aux);
@@ -341,6 +392,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 #[cfg(test)]
 mod tests {
     use super::BaseFieldEccChip;
+    use super::BaseFieldEndoEccChip;
     use super::{AssignedPoint, EccConfig, Point};
     use crate::curves::bn256::G1Affine as Bn256;
     use crate::curves::pasta::{EpAffine as Pallas, EqAffine as Vesta};
@@ -351,6 +403,7 @@ mod tests {
     use halo2::arithmetic::CurveAffine;
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
+    use integer::halo2::curves::CurveEndo;
     use integer::halo2::ff::{Field, FromUniformBytes, PrimeField};
     use integer::halo2::group::Curve;
     use integer::halo2::group::Group;
@@ -651,7 +704,7 @@ mod tests {
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
+                    ecc_chip.assign_aux(ctx, self.window_size, 1, C::Scalar::NUM_BITS as usize)?;
                     ecc_chip.get_mul_aux(self.window_size, 1)?;
                     Ok(())
                 },
@@ -742,7 +795,12 @@ mod tests {
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
+                    ecc_chip.assign_aux(
+                        ctx,
+                        self.window_size,
+                        self.number_of_pairs,
+                        C::Scalar::NUM_BITS as usize,
+                    )?;
                     ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
                     Ok(())
                 },
@@ -810,4 +868,131 @@ mod tests {
     test_base_field_ecc_mul_batch_circuit!(Bn256);
     test_base_field_ecc_mul_batch_circuit!(Pallas);
     test_base_field_ecc_mul_batch_circuit!(Vesta);
+
+    #[derive(Default, Clone, Debug)]
+    struct TestEccEndoMul<C: CurveEndo> {
+        window_size: usize,
+        aux_generator: C::AffineExt,
+    }
+
+    impl<C: CurveEndo> Circuit<<C::AffineExt as CurveAffine>::ScalarExt> for TestEccEndoMul<C> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            unimplemented!();
+        }
+
+        fn configure(
+            meta: &mut ConstraintSystem<<C::AffineExt as CurveAffine>::ScalarExt>,
+        ) -> Self::Config {
+            TestCircuitConfig::new::<C::AffineExt>(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<<C::AffineExt as CurveAffine>::ScalarExt>,
+        ) -> Result<(), Error> {
+            let ecc_chip_config = config.ecc_chip_config();
+            let mut ecc_endo_chip =
+                BaseFieldEndoEccChip::<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::new(BaseFieldEccChip::<
+                    C::AffineExt,
+                    NUMBER_OF_LIMBS,
+                    BIT_LEN_LIMB,
+                >::new(
+                    ecc_chip_config
+                ));
+            // let ecc_chip = &mut ecc_endo_chip.ecc_chip;
+
+            let main_gate = MainGate::<C::ScalarExt>::new(config.main_gate_config.clone());
+
+            layouter.assign_region(
+                || "assign aux values",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+                    ecc_endo_chip
+                        .ecc_chip
+                        .assign_aux_generator(ctx, Value::known(self.aux_generator))?;
+                    ecc_endo_chip
+                        .ecc_chip
+                        .assign_aux(ctx, self.window_size, 2, 128)?;
+                    ecc_endo_chip.ecc_chip.get_mul_aux(self.window_size, 2)?;
+                    Ok(())
+                },
+            )?;
+
+            layouter.assign_region(
+                || "region 0",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+
+                    let base = C::random(OsRng);
+
+                    // let scale = C::ScalarExt::from(2u64).pow_vartime(&[64, 0, 0, 0]);
+                    // let l1 = C::ScalarExt::from(0x100e1bb7339fe397) * scale * scale * scale;
+                    // let l2 = C::ScalarExt::from(0xc4eb676dbc8196ee) * scale * scale;
+                    // let l3 = C::ScalarExt::from(0x2d3f02ab0bd21126) * scale;
+                    // let l4 = C::ScalarExt::from(0xb6b4497629d8be1c);
+                    // let s = l1 + l2 + l3 + l4;
+
+                    let s = C::ScalarExt::random(OsRng);
+                    // let s = C::ScalarExt::from(1000_0000_0000_0000_0000u64) * C::ScalarExt::ZETA
+                    //     + C::ScalarExt::from(1000_0000_0000_0000_0000u64);
+                    // let aux = C::ScalarExt::from(0x95b806bca6f338ed);
+                    // let s = C::ScalarExt::ZETA + C::ScalarExt::ONE;
+                    let (k1, k1_sig, k2, k2_sig) = C::decompose_scalar(&s);
+                    dbg!(s, k1, k1_sig, k2, k2_sig);
+                    let result = base * s;
+
+                    let base = ecc_endo_chip
+                        .ecc_chip
+                        .assign_point(ctx, Value::known(base.into()))?;
+                    let s = main_gate.assign_value(ctx, Value::known(s))?;
+
+                    let result_0 = ecc_endo_chip
+                        .ecc_chip
+                        .assign_point(ctx, Value::known(result.into()))?;
+
+                    let result_1 = ecc_endo_chip.glv_mul(ctx, &base, &s, self.window_size)?;
+                    ecc_endo_chip.ecc_chip.main_gate().break_here(ctx)?;
+                    // let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
+                    ecc_endo_chip
+                        .ecc_chip
+                        .assert_equal(ctx, &result_0, &result_1)?;
+
+                    Ok(())
+                },
+            )?;
+
+            config.config_range(&mut layouter)?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_base_field_ecc_endo_mul_circuit() {
+        fn run<C: CurveEndo>()
+        where
+            // C::ScalarExt: FromUniformBytes<64>,
+            <C::AffineExt as CurveAffine>::ScalarExt: FromUniformBytes<64> + Ord,
+        {
+            for window_size in 8..9 {
+                let aux_generator = C::random(OsRng).to_affine();
+
+                let circuit = TestEccEndoMul::<C> {
+                    aux_generator,
+                    window_size,
+                };
+                let instance: Vec<Vec<<C::AffineExt as CurveAffine>::ScalarExt>> = vec![vec![]];
+                mock_prover_verify(&circuit, instance);
+            }
+        }
+        // run::<crate::curves::bn256::G1>();
+        // run::<crate::curves::pasta::Eq>(); // Vesta
+        run::<crate::curves::pasta::Ep>(); // Pallas
+    }
 }
