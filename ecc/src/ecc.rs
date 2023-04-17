@@ -12,8 +12,12 @@ use std::rc::Rc;
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
-pub struct Point<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-{
+pub struct Point<
+    W: PrimeField,
+    N: PrimeField,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
     x: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     y: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
@@ -67,8 +71,8 @@ pub struct AssignedPoint<
     pub(crate) y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
-    for AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    fmt::Debug for AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AssignedPoint")
@@ -204,8 +208,8 @@ pub(crate) struct Table<
     const BIT_LEN_LIMB: usize,
 >(pub(crate) Vec<AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
-impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
-    for Table<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    fmt::Debug for Table<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Table");

@@ -245,7 +245,14 @@ impl<
     ) -> Result<(), Error> {
         match self.aux_generator {
             Some((_, point)) => {
-                let aux = point.map(|point| make_mul_aux(point, window_size, number_of_pairs));
+                let aux = point.map(|point| {
+                    make_mul_aux(
+                        point,
+                        window_size,
+                        number_of_pairs,
+                        Emulated::Scalar::NUM_BITS as usize,
+                    )
+                });
                 let aux = self.assign_point(ctx, aux)?;
                 self.aux_registry
                     .insert((window_size, number_of_pairs), aux);
@@ -830,7 +837,7 @@ mod tests {
     fn test_general_ecc_mul_circuit() {
         fn run<
             C: CurveAffine,
-            N:  FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
+            N: FromUniformBytes<64> + WithSmallOrderMulGroup<3> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
