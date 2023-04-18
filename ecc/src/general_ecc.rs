@@ -6,8 +6,10 @@ use crate::maingate;
 use halo2::arithmetic::CurveAffine;
 use halo2::circuit::{Layouter, Value};
 use halo2::plonk::Error;
-use integer::halo2::ff::PrimeField;
+use integer::halo2::curves::CurveEndo;
+use integer::halo2::ff::{PrimeField, WithSmallOrderMulGroup};
 use integer::maingate::RegionCtx;
+use integer::AssignedInteger;
 use maingate::{AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -38,6 +40,66 @@ pub struct GeneralEccChip<
     /// n_pairs) pairs
     aux_registry:
         BTreeMap<(usize, usize), AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+}
+
+/// Elliptic Curve instructions that use the emulated curve efficient endomorphism.
+#[derive(Debug, Clone)]
+pub struct GeneralEndoEccChip<
+    Emulated: CurveEndo,
+    N: PrimeField,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
+    ecc_chip: GeneralEccChip<Emulated::AffineExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+}
+
+impl<
+        Emulated: CurveEndo,
+        N: PrimeField,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > GeneralEndoEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    /// Return `EndoEccChip` from `EccChip`
+    pub fn new(
+        ecc_chip: GeneralEccChip<Emulated::AffineExt, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Self {
+        Self { ecc_chip }
+    }
+}
+
+impl<
+        Emulated: CurveAffine,
+        N: PrimeField,
+        const NUMBER_OF_LIMBS: usize,
+        const BIT_LEN_LIMB: usize,
+    > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+{
+    /// Computes the endomorphism of a given point using one base field multplication.
+    pub fn endo(
+        &self,
+        ctx: &mut RegionCtx<'_, N>,
+        point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let integer_chip = self.base_field_chip();
+        let zeta = Integer::from_fe(Emulated::Base::ZETA, integer_chip.rns());
+        let x = integer_chip.mul_constant(ctx, point.x(), &zeta)?;
+        Ok(AssignedPoint::new(x, point.y().clone()))
+    }
+
+    // TODO Could be moved to `EccChip` (not related to the endomorphism really)
+    /// Applies a given a sign {-1, 1} as an `AssignedInteger` to a point using one base field
+    /// multplication.
+    pub fn sign_point(
+        &self,
+        ctx: &mut RegionCtx<'_, N>,
+        point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        sign: &AssignedInteger<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+    ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+        let integer_chip = self.base_field_chip();
+        let y = integer_chip.mul(ctx, point.y(), sign)?;
+        Ok(AssignedPoint::new(point.x().clone(), y))
+    }
 }
 
 impl<
