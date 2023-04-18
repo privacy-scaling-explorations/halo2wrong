@@ -201,7 +201,6 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
 impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     BaseFieldEndoEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    // type Scalar = <C as CurveExt>::CurveAffineExt::Scalar;
     /// Split a scalar k in 128-bit scalars k1, k2 such that:
     /// k = k1 + C::lambda * k2
     fn split_scalar(
@@ -209,9 +208,6 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         ctx: &mut RegionCtx<'_, C::Scalar>,
         scalar: &AssignedValue<C::Scalar>,
     ) -> Result<AssignedDecompScalar<C::Scalar>, Error> {
-        //
-        // assert!(C::Scalar::CAPACITY <= 256);
-        // TODO Remove .not() workaround
         let maingate = self.ecc_chip.main_gate();
         let sig = |neg: bool| if neg { -C::Scalar::ONE } else { C::Scalar::ONE };
         let decomposed = scalar.value().map(|v| C::decompose_scalar(v));
@@ -220,17 +216,6 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let k1_sig = decomposed.map(|decomp| sig(decomp.1));
         let k2 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.2));
         let k2_sig = decomposed.map(|decomp| sig(decomp.3));
-
-        // let k1 = maingate.assign_value(ctx, k1)?;
-        // let k1_sig = maingate.assign_value(ctx, k1_sig)?;
-        // let k2 = maingate.assign_value(ctx, k2)?;
-        // let k2_sig = maingate.assign_value(ctx, k2_sig)?;
-
-        // Add decomoposition constraint
-        // k1 * k1_sig + C::LAMBDA * k2 * k2_sig - k = 0
-        // k1_sig i {-1, 1}
-        // k2_sig i {-1, 1}
-        // Maingate can be used directly, C::Scalar is the native field
 
         // Sanity check
         scalar.value().map(|s| dbg!(s));
@@ -244,6 +229,13 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
                 .value()
                 .map(|k| assert_eq!(k1 * k1_sig - C::ScalarExt::ZETA * k2 * k2_sig, *k));
         });
+
+        // Add decomoposition constraint
+        // k1 * k1_sig - C::LAMBDA * k2 * k2_sig - k = 0
+        // k1_sig i {-1, 1}
+        // k2_sig i {-1, 1}
+
+        // Maingate can be used directly, C::Scalar is the native field
         let assigned = maingate.apply(
             ctx,
             [
@@ -308,16 +300,20 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let k1_sig_int = int.assign_integer(ctx, k1_sig_int.into(), Range::Operand)?;
 
         let k2_sig: &AssignedValue<C::ScalarExt> = &split[1].1;
+        //TODO Fix this:  Constraint missing
         let k2_sig_int = k2_sig.value().map(|v| {
-            limbs[0] = -*v;
-            Integer::from_limbs(&limbs, ecc.rns())
+            if *v == C::ScalarExt::ONE {
+                Integer::from_limbs(&self.ecc_chip.rns().wrong_modulus_minus_one, ecc.rns())
+            } else {
+                limbs[0] = C::Scalar::ONE;
+                Integer::from_limbs(&limbs, ecc.rns())
+            }
         });
         let k2_sig_int = int.assign_integer(ctx, k2_sig_int.into(), Range::Operand)?;
 
         // 3. Pad to window size and chunk in windows
         ecc.pad(ctx, decomp_k1, window_size)?;
         ecc.pad(ctx, decomp_k2, window_size)?;
-        dbg!(decomp_k1.len(), decomp_k2.len());
 
         let windowed_k1 = BaseFieldEccChip::<C::AffineExt, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::window(
             decomp_k1.to_vec(),
@@ -330,15 +326,10 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let number_of_windows = windowed_k1.0.len();
 
         // 4. Generate aux acc point + Generate table
-        // let zeta_point = ecc.endo(ctx, point)?;
+        let zeta_point = ecc.endo(ctx, point)?;
         let k1_point = ecc.sign_point(ctx, point, &k1_sig_int)?;
-        let point_2 = ecc.sign_point(ctx, point, &k2_sig_int)?;
-        //TODO modify
-        let k2_point = ecc.endo(ctx, &point_2)?;
-        // dbg!(k1_point.clone(), point_2.clone());
-        // main_gate.break_here(ctx)?;
+        let k2_point = ecc.sign_point(ctx, &zeta_point, &k2_sig_int)?;
 
-        // let pairs = vec![(k1_point, decomp_k1), (k1_point, decomp_k2)];
         let mut binary_aux = aux.to_add.clone();
         let tables: Vec<Table<_, _, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = vec![k1_point, k2_point]
             .iter()
@@ -363,7 +354,6 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
             acc = ecc.add(ctx, &acc, &to_add)?;
         }
 
-        dbg!(number_of_windows);
         for i in 1..number_of_windows {
             acc = ecc.double_n(ctx, &acc, window_size)?;
             for (table, windowed) in tables.iter().zip(windowed_scalars.iter()) {

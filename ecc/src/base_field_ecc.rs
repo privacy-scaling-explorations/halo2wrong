@@ -38,7 +38,7 @@ pub struct BaseFieldEccChip<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const 
         BTreeMap<(usize, usize), AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
 }
 
-/// TODO Elliptic Curve operations using the efficient endomorphism
+/// Elliptic Curve instructions that use the emulated curve efficient endomorphism.
 #[derive(Debug, Clone)]
 pub struct BaseFieldEndoEccChip<
     C: CurveEndo,
@@ -57,13 +57,10 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     }
 }
 
-// TODO These function should be moved to ecc, it works for base and general
-// It should also makes more sense to have this in EccChip
-// Maybe all can be done in ecc chip... no need for EndoEccChip
 impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    /// TODO
+    /// Computes the endomorphism of a given point using one base field multplication.
     pub fn endo(
         &self,
         ctx: &mut RegionCtx<'_, C::Scalar>,
@@ -75,7 +72,9 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         Ok(AssignedPoint::new(x, point.y().clone()))
     }
 
-    /// TODO
+    // TODO Could be moved to `EccChip` (not related to the endomorphism really)
+    /// Applies a given a sign {-1, 1} as an `AssignedInteger` to a point using one base field
+    /// multplication.
     pub fn sign_point(
         &self,
         ctx: &mut RegionCtx<'_, C::Scalar>,
@@ -903,7 +902,6 @@ mod tests {
                 >::new(
                     ecc_chip_config
                 ));
-            // let ecc_chip = &mut ecc_endo_chip.ecc_chip;
 
             let main_gate = MainGate::<C::ScalarExt>::new(config.main_gate_config.clone());
 
@@ -915,6 +913,7 @@ mod tests {
                     ecc_endo_chip
                         .ecc_chip
                         .assign_aux_generator(ctx, Value::known(self.aux_generator))?;
+                    // we set n_pairs=2 because the scalar is split into 2 128-bit scalars
                     ecc_endo_chip
                         .ecc_chip
                         .assign_aux(ctx, self.window_size, 2, 128)?;
@@ -930,21 +929,7 @@ mod tests {
                     let ctx = &mut RegionCtx::new(region, offset);
 
                     let base = C::random(OsRng);
-
-                    // let scale = C::ScalarExt::from(2u64).pow_vartime(&[64, 0, 0, 0]);
-                    // let l1 = C::ScalarExt::from(0x100e1bb7339fe397) * scale * scale * scale;
-                    // let l2 = C::ScalarExt::from(0xc4eb676dbc8196ee) * scale * scale;
-                    // let l3 = C::ScalarExt::from(0x2d3f02ab0bd21126) * scale;
-                    // let l4 = C::ScalarExt::from(0xb6b4497629d8be1c);
-                    // let s = l1 + l2 + l3 + l4;
-
                     let s = C::ScalarExt::random(OsRng);
-                    // let s = C::ScalarExt::from(1000_0000_0000_0000_0000u64) * C::ScalarExt::ZETA
-                    //     + C::ScalarExt::from(1000_0000_0000_0000_0000u64);
-                    // let aux = C::ScalarExt::from(0x95b806bca6f338ed);
-                    // let s = C::ScalarExt::ZETA + C::ScalarExt::ONE;
-                    let (k1, k1_sig, k2, k2_sig) = C::decompose_scalar(&s);
-                    dbg!(s, k1, k1_sig, k2, k2_sig);
                     let result = base * s;
 
                     let base = ecc_endo_chip
@@ -957,8 +942,6 @@ mod tests {
                         .assign_point(ctx, Value::known(result.into()))?;
 
                     let result_1 = ecc_endo_chip.glv_mul(ctx, &base, &s, self.window_size)?;
-                    ecc_endo_chip.ecc_chip.main_gate().break_here(ctx)?;
-                    // let result_1 = ecc_chip.mul(ctx, &base, &s, self.window_size)?;
                     ecc_endo_chip
                         .ecc_chip
                         .assert_equal(ctx, &result_0, &result_1)?;
@@ -977,10 +960,9 @@ mod tests {
     fn test_base_field_ecc_endo_mul_circuit() {
         fn run<C: CurveEndo>()
         where
-            // C::ScalarExt: FromUniformBytes<64>,
             <C::AffineExt as CurveAffine>::ScalarExt: FromUniformBytes<64> + Ord,
         {
-            for window_size in 8..9 {
+            for window_size in 2..4 {
                 let aux_generator = C::random(OsRng).to_affine();
 
                 let circuit = TestEccEndoMul::<C> {
@@ -991,8 +973,9 @@ mod tests {
                 mock_prover_verify(&circuit, instance);
             }
         }
-        // run::<crate::curves::bn256::G1>();
-        // run::<crate::curves::pasta::Eq>(); // Vesta
+
+        run::<crate::curves::bn256::G1>(); // G1
+        run::<crate::curves::pasta::Eq>(); // Vesta
         run::<crate::curves::pasta::Ep>(); // Pallas
     }
 }
