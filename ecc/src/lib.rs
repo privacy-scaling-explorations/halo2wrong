@@ -31,8 +31,8 @@ use num_traits::One;
 use std::fmt;
 use std::rc::Rc;
 
-/// Assigned decomposition of a scalar of field F into 2: 128 bit vals + sign
-type AssignedDecompScalar<F> = [(AssignedValue<F>, AssignedValue<F>); 2];
+/// Assigned decomposition of a scalar of field F into 2: 128 bit vals  + sign_flag (0 pos, 1 neg)
+type AssignedDecompScalar<F> = [(AssignedValue<F>, AssignedCondition<F>); 2];
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]

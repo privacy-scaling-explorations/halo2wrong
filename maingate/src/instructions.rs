@@ -258,10 +258,14 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
 
     /// Enforces given witness value is `-1` or `1`
     /// `val * val - 1  = 0`
-    fn assert_sign(&self, ctx: &mut RegionCtx<'_, F>, bit: &AssignedValue<F>) -> Result<(), Error> {
+    fn assert_sign(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        sign: &AssignedValue<F>,
+    ) -> Result<(), Error> {
         let assigned = self.apply(
             ctx,
-            [Term::assigned_to_mul(bit), Term::assigned_to_mul(bit)],
+            [Term::assigned_to_mul(sign), Term::assigned_to_mul(sign)],
             -F::ONE,
             CombinationOptionCommon::OneLinerMul.into(),
         )?;
@@ -270,6 +274,30 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
 
         Ok(())
     }
+
+    /// Maps an assigned sign {`-1`, `1` } to {0, 1})
+    /// ` res * 2 - 1 - sign = 0
+    fn sign_to_cond(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        sign: &AssignedValue<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
+        let result = sign
+            .value()
+            .map(|v| if *v == F::ONE { F::ONE } else { F::ZERO });
+        let two_res = Term::Unassigned(result, F::from(2));
+        let assigned = self
+            .apply(
+                ctx,
+                [two_res, Term::assigned_to_sub(sign)],
+                -F::ONE,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(0);
+
+        Ok(assigned)
+    }
+
     /// Enforces one of given two values is `1`
     /// `(a-1) * (b-1)  = 0`
     fn one_or_one(

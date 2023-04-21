@@ -210,11 +210,16 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ) -> Result<AssignedDecompScalar<C::Scalar>, Error> {
         let maingate = self.ecc_chip.main_gate();
         let sig = |neg: bool| if neg { -C::Scalar::ONE } else { C::Scalar::ONE };
+        let positive = |neg: bool| if neg { C::Scalar::ZERO } else { C::Scalar::ONE };
+
         let decomposed = scalar.value().map(|v| C::decompose_scalar(v));
 
         let k1 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.0));
+        // let k1_pos = decomposed.map(|decomp| positive(decomp.1));
         let k1_sig = decomposed.map(|decomp| sig(decomp.1));
+
         let k2 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.2));
+        // let k2_pos = decomposed.map(|decomp| positive(decomp.3));
         let k2_sig = decomposed.map(|decomp| sig(decomp.3));
 
         // Sanity check
@@ -252,7 +257,10 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         maingate.assert_sign(ctx, &k1_sig)?;
         maingate.assert_sign(ctx, &k2_sig)?;
 
-        Ok([(k1.clone(), k1_sig.clone()), (k2.clone(), k2_sig.clone())])
+        let k1_pos = maingate.sign_to_cond(ctx, k1_sig)?;
+        let k2_pos = maingate.sign_to_cond(ctx, k2_sig)?;
+
+        Ok([(k1.clone(), k1_pos.clone()), (k2.clone(), k2_pos.clone())])
     }
 
     /// Scalar multiplication of a point in the EC
@@ -261,8 +269,8 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         &self,
         ctx: &mut RegionCtx<'_, C::Scalar>,
         point: &AssignedPoint<
-            <<C as CurveExt>::AffineExt as CurveAffine>::Base,
-            <<C as CurveExt>::AffineExt as CurveAffine>::ScalarExt,
+            <C::AffineExt as CurveAffine>::Base,
+            <C::AffineExt as CurveAffine>::ScalarExt,
             NUMBER_OF_LIMBS,
             BIT_LEN_LIMB,
         >,
@@ -270,8 +278,8 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         window_size: usize,
     ) -> Result<
         AssignedPoint<
-            <<C as CurveExt>::AffineExt as CurveAffine>::Base,
-            <<C as CurveExt>::AffineExt as CurveAffine>::ScalarExt,
+            <C::AffineExt as CurveAffine>::Base,
+            <C::AffineExt as CurveAffine>::ScalarExt,
             NUMBER_OF_LIMBS,
             BIT_LEN_LIMB,
         >,
@@ -279,7 +287,6 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     > {
         assert!(window_size > 0);
         let ecc = &self.ecc_chip;
-        let int = self.ecc_chip.integer_chip();
         let aux = ecc.get_mul_aux(window_size, 2)?;
 
         // 1. Decompose scalar k -> k1, k2
@@ -291,25 +298,10 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let decomp_k2 = &mut main_gate.to_bits(ctx, &split[1].0, 128usize)?;
 
         // 2.1 Convert signs into Integers
-        let mut limbs = [C::Scalar::ZERO; NUMBER_OF_LIMBS];
-        let k1_sig: &AssignedValue<C::ScalarExt> = &split[0].1;
-        let k1_sig_int = k1_sig.value().map(|v| {
-            limbs[0] = *v;
-            Integer::from_limbs(&limbs, ecc.rns())
-        });
-        let k1_sig_int = int.assign_integer(ctx, k1_sig_int.into(), Range::Operand)?;
-
-        let k2_sig: &AssignedValue<C::ScalarExt> = &split[1].1;
-        //TODO Fix this:  Constraint missing
-        let k2_sig_int = k2_sig.value().map(|v| {
-            if *v == C::ScalarExt::ONE {
-                Integer::from_limbs(&self.ecc_chip.rns().wrong_modulus_minus_one, ecc.rns())
-            } else {
-                limbs[0] = C::Scalar::ONE;
-                Integer::from_limbs(&limbs, ecc.rns())
-            }
-        });
-        let k2_sig_int = int.assign_integer(ctx, k2_sig_int.into(), Range::Operand)?;
+        let minus_point = ecc.neg(ctx, point)?;
+        let k1_point = ecc.select(ctx, &split[0].1, point, &minus_point)?;
+        let k2_point = ecc.select(ctx, &split[1].1, &minus_point, point)?;
+        let k2_point = ecc.endo(ctx, &k2_point)?;
 
         // 3. Pad to window size and chunk in windows
         ecc.pad(ctx, decomp_k1, window_size)?;
@@ -326,10 +318,6 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let number_of_windows = windowed_k1.0.len();
 
         // 4. Generate aux acc point + Generate table
-        let zeta_point = ecc.endo(ctx, point)?;
-        let k1_point = ecc.sign_point(ctx, point, &k1_sig_int)?;
-        let k2_point = ecc.sign_point(ctx, &zeta_point, &k2_sig_int)?;
-
         let mut binary_aux = aux.to_add.clone();
         let tables: Vec<Table<_, _, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = vec![k1_point, k2_point]
             .iter()
