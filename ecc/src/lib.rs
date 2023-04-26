@@ -18,12 +18,12 @@ pub use integer::maingate;
 #[cfg(test)]
 use halo2::halo2curves as curves;
 
-use crate::halo2::arithmetic::{CurveAffine, FieldExt};
+use crate::halo2::arithmetic::CurveAffine;
 use crate::integer::chip::IntegerConfig;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::AssignedInteger;
 use crate::maingate::{big_to_fe, AssignedCondition, MainGateConfig, RangeConfig};
-use group::Curve;
+use halo2::halo2curves::{ff::PrimeField, group::Curve};
 use num_bigint::BigUint as big_uint;
 use num_traits::One;
 use std::fmt;
@@ -31,13 +31,17 @@ use std::rc::Rc;
 
 /// Represent a Point in affine coordinates
 #[derive(Clone, Debug)]
-pub struct Point<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-{
+pub struct Point<
+    W: PrimeField,
+    N: PrimeField,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
     x: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     y: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Returns `Point` form a point in a EC with W as its base field
@@ -77,8 +81,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 #[derive(Clone)]
 /// point that is assumed to be on curve and not infinity
 pub struct AssignedPoint<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -86,8 +90,8 @@ pub struct AssignedPoint<
     pub(crate) y: AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
-    for AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    fmt::Debug for AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("AssignedPoint")
@@ -98,7 +102,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
     }
 }
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Returns a new `AssignedPoint` given its coordinates as `AssignedInteger`
@@ -152,7 +156,6 @@ impl EccConfig {
 fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pairs: usize) -> C {
     assert!(window_size > 0);
     assert!(number_of_pairs > 0);
-    use group::ff::PrimeField;
 
     let n = C::Scalar::NUM_BITS as usize;
     let mut number_of_selectors = n / window_size;
@@ -176,9 +179,9 @@ fn make_mul_aux<C: CurveAffine>(aux_to_add: C, window_size: usize, number_of_pai
 /// Allows to select values of precomputed table in efficient multiplication
 /// algorithm
 #[derive(Default)]
-pub(crate) struct Selector<F: FieldExt>(Vec<AssignedCondition<F>>);
+pub(crate) struct Selector<F: PrimeField>(Vec<AssignedCondition<F>>);
 
-impl<F: FieldExt> fmt::Debug for Selector<F> {
+impl<F: PrimeField> fmt::Debug for Selector<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Selector");
         for (i, bit) in self.0.iter().enumerate() {
@@ -191,9 +194,9 @@ impl<F: FieldExt> fmt::Debug for Selector<F> {
 
 /// Vector of `Selectors` which represent the binary representation of a scalar
 /// split in window sized selectors.
-pub(crate) struct Windowed<F: FieldExt>(Vec<Selector<F>>);
+pub(crate) struct Windowed<F: PrimeField>(Vec<Selector<F>>);
 
-impl<F: FieldExt> fmt::Debug for Windowed<F> {
+impl<F: PrimeField> fmt::Debug for Windowed<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Window");
         for (i, selector) in self.0.iter().enumerate() {
@@ -208,14 +211,14 @@ impl<F: FieldExt> fmt::Debug for Windowed<F> {
 
 /// Table of precomputed values for efficient multiplication algorithm.
 pub(crate) struct Table<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 >(pub(crate) Vec<AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>);
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> fmt::Debug
-    for Table<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+    fmt::Debug for Table<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut debug = f.debug_struct("Table");
@@ -232,13 +235,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
 /// Auxiliary points for efficient multiplication algorithm
 /// See: https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg
-struct MulAux<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> {
+struct MulAux<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+{
     to_add: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     to_sub: AssignedPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
 
 /// Constructs `MulAux`
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     MulAux<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn new(

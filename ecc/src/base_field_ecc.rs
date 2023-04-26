@@ -351,9 +351,12 @@ mod tests {
     use crate::integer::rns::Rns;
     use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
     use crate::maingate;
-    use group::{Curve as _, Group};
-    use halo2::arithmetic::{CurveAffine, FieldExt};
+    use halo2::arithmetic::CurveAffine;
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
+    use halo2::halo2curves::{
+        ff::{Field, FromUniformBytes, PrimeField},
+        group::{Curve as _, Group},
+    };
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::maingate::RegionCtx;
     use maingate::mock_prover_verify;
@@ -419,7 +422,10 @@ mod tests {
             }
         }
 
-        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
+        fn config_range<N: PrimeField>(
+            &self,
+            layouter: &mut impl Layouter<N>,
+        ) -> Result<(), Error> {
             let range_chip = RangeChip::<N>::new(self.range_config.clone());
             range_chip.load_table(layouter)?;
 
@@ -505,7 +511,10 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_addition_circuit() {
-        fn run<C: CurveAffine>() {
+        fn run<C: CurveAffine>()
+        where
+            C::Scalar: FromUniformBytes<64>,
+        {
             let circuit = TestEccAddition::<C>::default();
             let instance = vec![vec![]];
             mock_prover_verify(&circuit, instance);
@@ -580,7 +589,10 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_public_input() {
-        fn run<C: CurveAffine>() {
+        fn run<C: CurveAffine>()
+        where
+            C::Scalar: FromUniformBytes<64>,
+        {
             let (rns, _) = setup::<C>(20);
             let rns = Rc::new(rns);
 
@@ -650,7 +662,6 @@ mod tests {
             layouter.assign_region(
                 || "region 0",
                 |region| {
-                    use group::ff::Field;
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
@@ -677,7 +688,10 @@ mod tests {
 
     #[test]
     fn test_base_field_ecc_mul_circuit() {
-        fn run<C: CurveAffine>() {
+        fn run<C: CurveAffine>()
+        where
+            C::Scalar: FromUniformBytes<64>,
+        {
             for window_size in 1..5 {
                 let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
 
@@ -739,7 +753,6 @@ mod tests {
             layouter.assign_region(
                 || "region 0",
                 |region| {
-                    use group::ff::Field;
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 

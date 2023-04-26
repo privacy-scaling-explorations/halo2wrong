@@ -3,8 +3,9 @@ use crate::halo2;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::{IntegerChip, IntegerInstructions, Range, UnassignedInteger};
 use crate::maingate;
-use halo2::arithmetic::{CurveAffine, FieldExt};
+use halo2::arithmetic::CurveAffine;
 use halo2::circuit::{Layouter, Value};
+use halo2::halo2curves::ff::PrimeField;
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 use maingate::{AssignedCondition, MainGate};
@@ -20,7 +21,7 @@ mod mul;
 #[allow(clippy::type_complexity)]
 pub struct GeneralEccChip<
     Emulated: CurveAffine,
-    N: FieldExt,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -41,7 +42,7 @@ pub struct GeneralEccChip<
 
 impl<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -158,7 +159,7 @@ impl<
 
 impl<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -396,12 +397,15 @@ mod tests {
 
     use super::{AssignedPoint, EccConfig, GeneralEccChip, Point};
     use crate::halo2;
+    use crate::halo2::halo2curves::{
+        ff::{Field, FromUniformBytes, PrimeField},
+        group::{prime::PrimeCurveAffine, Curve as _, Group},
+    };
     use crate::integer::rns::Rns;
     use crate::integer::NUMBER_OF_LOOKUP_LIMBS;
     use crate::integer::{AssignedInteger, IntegerInstructions};
     use crate::maingate;
-    use group::{prime::PrimeCurveAffine, Curve as _, Group};
-    use halo2::arithmetic::{CurveAffine, FieldExt};
+    use halo2::arithmetic::CurveAffine;
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::rns::Integer;
@@ -425,7 +429,7 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn setup<
         C: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     >(
@@ -462,7 +466,7 @@ mod tests {
     impl TestCircuitConfig {
         fn new<
             C: CurveAffine,
-            N: FieldExt,
+            N: PrimeField,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >(
@@ -490,7 +494,10 @@ mod tests {
             }
         }
 
-        fn config_range<N: FieldExt>(&self, layouter: &mut impl Layouter<N>) -> Result<(), Error> {
+        fn config_range<N: PrimeField>(
+            &self,
+            layouter: &mut impl Layouter<N>,
+        ) -> Result<(), Error> {
             let range_chip = RangeChip::<N>::new(self.range_config.clone());
             range_chip.load_table(layouter)?;
 
@@ -501,15 +508,19 @@ mod tests {
     #[derive(Clone, Debug, Default)]
     struct TestEccAddition<
         C: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > {
         _marker: PhantomData<(C, N)>,
     }
 
-    impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-        Circuit<N> for TestEccAddition<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    impl<
+            C: CurveAffine,
+            N: PrimeField,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        > Circuit<N> for TestEccAddition<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
@@ -585,7 +596,7 @@ mod tests {
     fn test_general_ecc_addition_circuit() {
         fn run<
             C: CurveAffine,
-            N: FieldExt,
+            N: FromUniformBytes<64> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
@@ -614,7 +625,7 @@ mod tests {
     #[derive(Default, Clone, Debug)]
     struct TestEccPublicInput<
         C: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > {
@@ -623,8 +634,12 @@ mod tests {
         _marker: PhantomData<N>,
     }
 
-    impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-        Circuit<N> for TestEccPublicInput<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    impl<
+            C: CurveAffine,
+            N: PrimeField,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        > Circuit<N> for TestEccPublicInput<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
@@ -686,7 +701,7 @@ mod tests {
     fn test_general_ecc_public_input() {
         fn run<
             C: CurveAffine,
-            N: FieldExt,
+            N: FromUniformBytes<64> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
@@ -731,7 +746,7 @@ mod tests {
     #[derive(Default, Clone, Debug)]
     struct TestEccMul<
         C: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > {
@@ -740,8 +755,12 @@ mod tests {
         _marker: PhantomData<N>,
     }
 
-    impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-        Circuit<N> for TestEccMul<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    impl<
+            C: CurveAffine,
+            N: PrimeField,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        > Circuit<N> for TestEccMul<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
@@ -780,7 +799,6 @@ mod tests {
             layouter.assign_region(
                 || "region mul",
                 |region| {
-                    use group::ff::Field;
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
@@ -814,7 +832,7 @@ mod tests {
     fn test_general_ecc_mul_circuit() {
         fn run<
             C: CurveAffine,
-            N: FieldExt,
+            N: FromUniformBytes<64> + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
@@ -851,7 +869,7 @@ mod tests {
     #[derive(Default, Clone, Debug)]
     struct TestEccBatchMul<
         C: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > {
@@ -861,8 +879,12 @@ mod tests {
         _marker: PhantomData<N>,
     }
 
-    impl<C: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-        Circuit<N> for TestEccBatchMul<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
+    impl<
+            C: CurveAffine,
+            N: PrimeField,
+            const NUMBER_OF_LIMBS: usize,
+            const BIT_LEN_LIMB: usize,
+        > Circuit<N> for TestEccBatchMul<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
     {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
@@ -902,7 +924,6 @@ mod tests {
             layouter.assign_region(
                 || "region mul",
                 |region| {
-                    use group::ff::Field;
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
