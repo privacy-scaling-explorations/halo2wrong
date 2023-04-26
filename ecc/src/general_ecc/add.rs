@@ -1,14 +1,15 @@
 use super::AssignedPoint;
 use super::GeneralEccChip;
 use crate::halo2;
-use halo2::arithmetic::{CurveAffine, FieldExt};
+use halo2::arithmetic::CurveAffine;
+use halo2::halo2curves::ff::PrimeField;
 use halo2::plonk::Error;
 use integer::maingate::RegionCtx;
 use integer::IntegerInstructions;
 
 impl<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>

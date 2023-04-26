@@ -1,12 +1,12 @@
 use crate::chip::IntegerChip;
 use crate::rns::Integer;
-use crate::{AssignedInteger, AssignedLimb, Common, FieldExt};
+use crate::{AssignedInteger, AssignedLimb, Common, PrimeField};
 use halo2::plonk::Error;
 use maingate::{fe_to_big, halo2, MainGateInstructions, RegionCtx, Term};
 use num_bigint::BigUint as big_uint;
 use std::rc::Rc;
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn add_generic(
@@ -56,7 +56,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                         Term::assigned_to_add(&b_limb_0.into()),
                         Term::assigned_to_add(&b_limb_1.into()),
                     ],
-                    N::zero(),
+                    N::ZERO,
                 )?;
                 Ok(AssignedLimb::from(c_limb, c_max))
             })
@@ -70,7 +70,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
                 Term::assigned_to_add(b_0.native()),
                 Term::assigned_to_add(b_1.native()),
             ],
-            N::zero(),
+            N::ZERO,
         )?;
         Ok(self.new_assigned_integer(&c_limbs, c_native))
     }

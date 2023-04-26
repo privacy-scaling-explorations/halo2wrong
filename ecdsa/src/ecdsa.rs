@@ -2,10 +2,10 @@ use super::integer::{IntegerChip, IntegerConfig};
 use crate::halo2;
 use crate::integer;
 use crate::maingate;
-use ecc::maingate::MainGateInstructions;
 use ecc::maingate::RegionCtx;
 use ecc::{AssignedPoint, EccConfig, GeneralEccChip};
-use halo2::arithmetic::{CurveAffine, FieldExt};
+use halo2::arithmetic::CurveAffine;
+use halo2::halo2curves::ff::PrimeField;
 use halo2::{circuit::Value, plonk::Error};
 use integer::rns::Integer;
 use integer::{AssignedInteger, IntegerInstructions};
@@ -36,8 +36,8 @@ impl EcdsaConfig {
 
 #[derive(Clone, Debug)]
 pub struct EcdsaSig<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -46,8 +46,8 @@ pub struct EcdsaSig<
 }
 
 pub struct AssignedEcdsaSig<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -56,8 +56,8 @@ pub struct AssignedEcdsaSig<
 }
 
 pub struct AssignedPublicKey<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -66,12 +66,12 @@ pub struct AssignedPublicKey<
 
 pub struct EcdsaChip<
     E: CurveAffine,
-    N: FieldExt,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 >(GeneralEccChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>);
 
-impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<E: CurveAffine, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     EcdsaChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn new(ecc_chip: GeneralEccChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>) -> Self {
@@ -89,7 +89,7 @@ impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LI
     }
 }
 
-impl<E: CurveAffine, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<E: CurveAffine, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     EcdsaChip<E, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn verify(
@@ -148,11 +148,12 @@ mod tests {
     use ecc::maingate::fe_to_big;
     use ecc::maingate::RegionCtx;
     use ecc::{EccConfig, GeneralEccChip};
-    use group::ff::Field;
-    use group::{Curve, Group};
     use halo2::arithmetic::CurveAffine;
-    use halo2::arithmetic::FieldExt;
     use halo2::circuit::{Layouter, SimpleFloorPlanner, Value};
+    use halo2::halo2curves::{
+        ff::{Field, FromUniformBytes, PrimeField},
+        group::{Curve, Group},
+    };
     use halo2::plonk::{Circuit, ConstraintSystem, Error};
     use integer::IntegerInstructions;
     use maingate::mock_prover_verify;
@@ -170,7 +171,7 @@ mod tests {
     }
 
     impl TestCircuitEcdsaVerifyConfig {
-        pub fn new<C: CurveAffine, N: FieldExt>(meta: &mut ConstraintSystem<N>) -> Self {
+        pub fn new<C: CurveAffine, N: PrimeField>(meta: &mut ConstraintSystem<N>) -> Self {
             let (rns_base, rns_scalar) =
                 GeneralEccChip::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>::rns();
             let main_gate_config = MainGate::<N>::configure(meta);
@@ -195,7 +196,7 @@ mod tests {
             EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
         }
 
-        pub fn config_range<N: FieldExt>(
+        pub fn config_range<N: PrimeField>(
             &self,
             layouter: &mut impl Layouter<N>,
         ) -> Result<(), Error> {
@@ -207,7 +208,7 @@ mod tests {
     }
 
     #[derive(Default, Clone)]
-    struct TestCircuitEcdsaVerify<E: CurveAffine, N: FieldExt> {
+    struct TestCircuitEcdsaVerify<E: CurveAffine, N: PrimeField> {
         public_key: Value<E>,
         signature: Value<(E::Scalar, E::Scalar)>,
         msg_hash: Value<E::Scalar>,
@@ -217,9 +218,11 @@ mod tests {
         _marker: PhantomData<N>,
     }
 
-    impl<E: CurveAffine, N: FieldExt> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
+    impl<E: CurveAffine, N: PrimeField> Circuit<N> for TestCircuitEcdsaVerify<E, N> {
         type Config = TestCircuitEcdsaVerifyConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -296,7 +299,7 @@ mod tests {
             big_to_fe(x_big)
         }
 
-        fn run<C: CurveAffine, N: FieldExt>() {
+        fn run<C: CurveAffine, N: FromUniformBytes<64> + Ord>() {
             let g = C::generator();
 
             // Generate a key pair

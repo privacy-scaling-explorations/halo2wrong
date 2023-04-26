@@ -1,5 +1,5 @@
 use halo2::{
-    arithmetic::FieldExt,
+    arithmetic::Field,
     circuit::{AssignedCell, Cell, Region, Value},
     plonk::{Advice, Column, Error, Fixed, Selector},
 };
@@ -9,12 +9,12 @@ pub use halo2;
 pub use halo2::halo2curves as curves;
 
 #[derive(Debug)]
-pub struct RegionCtx<'a, F: FieldExt> {
+pub struct RegionCtx<'a, F: Field> {
     region: Region<'a, F>,
     offset: usize,
 }
 
-impl<'a, F: FieldExt> RegionCtx<'a, F> {
+impl<'a, F: Field> RegionCtx<'a, F> {
     pub fn new(region: Region<'a, F>, offset: usize) -> RegionCtx<'a, F> {
         RegionCtx { region, offset }
     }

@@ -1,18 +1,18 @@
 use crate::{
-    halo2::{arithmetic::FieldExt, plonk::Error},
+    halo2::{halo2curves::ff::PrimeField, plonk::Error},
     maingate::{AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RegionCtx, Term},
 };
 use poseidon::{SparseMDSMatrix, Spec, State};
 
 /// `AssignedState` is composed of `T` sized assigned values
 #[derive(Debug, Clone)]
-pub struct AssignedState<F: FieldExt, const T: usize>(pub(super) [AssignedValue<F>; T]);
+pub struct AssignedState<F: PrimeField, const T: usize>(pub(super) [AssignedValue<F>; T]);
 
 /// `HasherChip` is basically responsible for contraining permutation part of
 /// transcript pipeline
 #[derive(Debug, Clone)]
 pub struct HasherChip<
-    F: FieldExt,
+    F: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN: usize,
     const T: usize,
@@ -25,7 +25,7 @@ pub struct HasherChip<
 }
 
 impl<
-        F: FieldExt,
+        F: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN: usize,
         const T: usize,
@@ -63,7 +63,7 @@ impl<
 }
 
 impl<
-        F: FieldExt,
+        F: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN: usize,
         const T: usize,
@@ -109,7 +109,7 @@ impl<
 }
 
 impl<
-        F: FieldExt,
+        F: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN: usize,
         const T: usize,
@@ -185,7 +185,7 @@ impl<
                 word,
                 if i == 0 {
                     // Mark
-                    *constant + F::one()
+                    *constant + F::ONE
                 } else {
                     *constant
                 },
@@ -210,7 +210,7 @@ impl<
                     .map(|(e, word)| Term::Assigned(e, *word))
                     .collect::<Vec<Term<F>>>();
 
-                self.main_gate().compose(ctx, &terms[..], F::zero())
+                self.main_gate().compose(ctx, &terms[..], F::ZERO)
             })
             .collect::<Result<Vec<AssignedValue<F>>, Error>>()?;
 
@@ -236,7 +236,7 @@ impl<
             .zip(mds.row().iter())
             .map(|(e, word)| Term::Assigned(e, *word))
             .collect::<Vec<Term<F>>>();
-        let mut new_state = vec![self.main_gate().compose(ctx, &terms[..], F::zero())?];
+        let mut new_state = vec![self.main_gate().compose(ctx, &terms[..], F::ZERO)?];
 
         // Rest of the trainsition ie the sparse part
         for (e, word) in mds.col_hat().iter().zip(self.state.0.iter().skip(1)) {
@@ -244,9 +244,9 @@ impl<
                 ctx,
                 &[
                     Term::Assigned(&self.state.0[0], *e),
-                    Term::Assigned(word, F::one()),
+                    Term::Assigned(word, F::ONE),
                 ],
-                F::zero(),
+                F::ZERO,
             )?);
         }
 
@@ -292,7 +292,7 @@ impl<
             self.sbox_full(ctx, constants)?;
             self.apply_mds(ctx, &mds)?;
         }
-        self.sbox_full(ctx, &[F::zero(); T])?;
+        self.sbox_full(ctx, &[F::ZERO; T])?;
         self.apply_mds(ctx, &mds)?;
 
         Ok(())

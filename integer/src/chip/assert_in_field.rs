@@ -1,11 +1,11 @@
 use super::{IntegerChip, Range};
-use crate::{AssignedInteger, FieldExt};
+use crate::{AssignedInteger, PrimeField};
 use halo2::plonk::Error;
 use maingate::{
     halo2, AssignedValue, CombinationOptionCommon, MainGateInstructions, RegionCtx, Term,
 };
 
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     IntegerChip<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub(super) fn assert_in_field_generic(
@@ -35,13 +35,13 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         let borrow = comparision_witness.as_ref().map(|r| r.borrow);
         let borrow = (0..NUMBER_OF_LIMBS - 1)
             .map(|i| {
-                let b_i = borrow.map(|borrow| if borrow[i] { N::one() } else { N::zero() });
+                let b_i = borrow.map(|borrow| if borrow[i] { N::ONE } else { N::ZERO });
                 main_gate.assign_bit(ctx, b_i)
             })
             .collect::<Result<Vec<AssignedValue<N>>, Error>>()?;
 
         let left_shifter = self.rns.left_shifter(1);
-        let one = N::one();
+        let one = N::ONE;
 
         // Witness layout:
         // | A   | B   | C   | D       |
