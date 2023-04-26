@@ -292,6 +292,8 @@ fn test_dimension_measurement() {
     impl<F: PrimeField> Circuit<F> for TestCircuit<F> {
         type Config = (Column<Instance>, Column<Fixed>, [Column<Advice>; 2]);
         type FloorPlanner = V1;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()

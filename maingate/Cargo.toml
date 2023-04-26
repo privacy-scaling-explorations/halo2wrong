@@ -14,3 +14,7 @@ halo2wrong = { path = "../halo2wrong", default-features = false }
 
 [dev-dependencies]
 rand_core = { version = "0.6", default-features = false }
+
+[features]
+default = []
+circuit-params = ["halo2wrong/circuit-params"]

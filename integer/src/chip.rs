@@ -735,6 +735,8 @@ mod tests {
             impl<W: PrimeField, N: PrimeField,  const BIT_LEN_LIMB: usize> Circuit<N> for $circuit_name<W, N, BIT_LEN_LIMB> {
                 type Config = TestCircuitConfig;
                 type FloorPlanner = SimpleFloorPlanner;
+                #[cfg(feature = "circuit-params")]
+                type Params = ();
 
                 fn without_witnesses(&self) -> Self {
                     unimplemented!();

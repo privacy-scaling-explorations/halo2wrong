@@ -559,6 +559,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitPublicInputs<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -616,6 +618,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitCombination<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -892,6 +896,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitBitness<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -972,6 +978,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitEquality<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -1090,6 +1098,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitArith<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -1238,6 +1248,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitConditionals<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -1353,6 +1365,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitDecomposition<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -1445,6 +1459,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitComposition<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -1514,6 +1530,8 @@ mod tests {
     impl<F: PrimeField> Circuit<F> for TestCircuitSign<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
