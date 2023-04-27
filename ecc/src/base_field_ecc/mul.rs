@@ -202,7 +202,7 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     BaseFieldEndoEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Split a scalar k in 128-bit scalars k1, k2 such that:
-    /// k = k1 + C::lambda * k2
+    /// k = k1 - C::lambda * k2
     fn split_scalar(
         &self,
         ctx: &mut RegionCtx<'_, C::Scalar>,
@@ -210,16 +210,13 @@ impl<C: CurveEndo, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ) -> Result<AssignedDecompScalar<C::Scalar>, Error> {
         let maingate = self.ecc_chip.main_gate();
         let sig = |neg: bool| if neg { -C::Scalar::ONE } else { C::Scalar::ONE };
-        let positive = |neg: bool| if neg { C::Scalar::ZERO } else { C::Scalar::ONE };
 
         let decomposed = scalar.value().map(|v| C::decompose_scalar(v));
 
         let k1 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.0));
-        // let k1_pos = decomposed.map(|decomp| positive(decomp.1));
         let k1_sig = decomposed.map(|decomp| sig(decomp.1));
 
         let k2 = decomposed.map(|decomp| C::Scalar::from_u128(decomp.2));
-        // let k2_pos = decomposed.map(|decomp| positive(decomp.3));
         let k2_sig = decomposed.map(|decomp| sig(decomp.3));
 
         // Sanity check
