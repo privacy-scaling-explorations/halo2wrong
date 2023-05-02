@@ -247,7 +247,12 @@ mod tests {
                     let ctx = &mut RegionCtx::new(region, offset);
 
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 2)?;
+                    ecc_chip.assign_aux(
+                        ctx,
+                        self.window_size,
+                        2,
+                        E::ScalarExt::NUM_BITS as usize,
+                    )?;
                     Ok(())
                 },
             )?;
@@ -298,10 +303,7 @@ mod tests {
             big_to_fe(x_big)
         }
 
-        fn run<
-            C: CurveAffine,
-            N: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
-        >() {
+        fn run<C: CurveAffine, N: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord>() {
             let g = C::generator();
 
             // Generate a key pair
