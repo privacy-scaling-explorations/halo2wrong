@@ -8,7 +8,7 @@ use halo2::plonk::Error;
 use integer::halo2::circuit::Value;
 use integer::halo2::ff::WithSmallOrderMulGroup;
 use integer::maingate::{MainGateInstructions, RegionCtx};
-use integer::{AssignedInteger, IntegerInstructions, Range};
+use integer::{IntegerInstructions, Range};
 use maingate::{AssignedCondition, MainGate};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -70,20 +70,6 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
         let zeta = Integer::from_fe(C::Base::ZETA, self.rns());
         let x = integer_chip.mul_constant(ctx, point.x(), &zeta)?;
         Ok(AssignedPoint::new(x, point.y().clone()))
-    }
-
-    // TODO Could be moved to `EccChip` (not related to the endomorphism really)
-    /// Applies a given a sign {-1, 1} as an `AssignedInteger` to a point using one base field
-    /// multplication.
-    pub fn sign_point(
-        &self,
-        ctx: &mut RegionCtx<'_, C::Scalar>,
-        point: &AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-        sign: &AssignedInteger<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
-    ) -> Result<AssignedPoint<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        let integer_chip = self.integer_chip();
-        let y = integer_chip.mul(ctx, point.y(), sign)?;
-        Ok(AssignedPoint::new(point.x().clone(), y))
     }
 }
 

@@ -4,11 +4,8 @@ use crate::{halo2, AssignedDecompScalar, Selector, Table, Windowed};
 use halo2::arithmetic::CurveAffine;
 use halo2::arithmetic::CurveEndo;
 use halo2::plonk::Error;
-use integer::halo2::curves::CurveExt;
 use integer::halo2::ff::{Field, PrimeField, WithSmallOrderMulGroup};
 use integer::maingate::{CombinationOption, RegionCtx, Term};
-use integer::rns::Integer;
-use integer::{IntegerInstructions, Range};
 
 impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     BaseFieldEccChip<C, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
