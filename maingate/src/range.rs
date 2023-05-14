@@ -384,9 +384,9 @@ impl<F: PrimeField> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
+    use halo2wrong::halo2::arithmetic::Field;
     use halo2wrong::halo2::circuit::Value;
     use halo2wrong::RegionCtx;
-    use num_bigint::BigUint;
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::curves::{ff::PrimeField, pasta::Fp};
@@ -511,18 +511,6 @@ mod tests {
         }
     }
 
-    fn split_biguint(v: BigUint) -> [u64; 4] {
-        let digits = v.to_u64_digits();
-        let mut result = [0; 4];
-        for (i, &digit) in digits.iter().enumerate() {
-            if i >= 4 {
-                break;
-            }
-            result[i] = digit;
-        }
-        result
-    }
-
     #[test]
     fn test_range_circuit() {
         const LIMB_BIT_LEN: usize = 8;
@@ -532,9 +520,9 @@ mod tests {
         let inputs = (2..20)
             .map(|number_of_limbs| {
                 let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
-                let value = BigUint::from(1u32) << 16 - 1;
+                let value = Fp::from(2).pow(&[bit_len as u64, 0, 0, 0]) - Fp::one();
                 Input {
-                    value: Value::known(Fp::from_raw(split_biguint(value))),
+                    value: Value::known(value),
                     limb_bit_len: LIMB_BIT_LEN,
                     bit_len,
                 }
