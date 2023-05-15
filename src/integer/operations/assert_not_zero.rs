@@ -1,11 +1,11 @@
 use crate::integer::{chip::IntegerChip, Integer};
-use halo2::halo2curves::FieldExt;
+use halo2curves::ff::PrimeField;
 use num_bigint::BigUint as Big;
 
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

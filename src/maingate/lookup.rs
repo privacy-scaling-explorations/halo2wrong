@@ -1,17 +1,12 @@
-use std::collections::BTreeMap;
-
-use super::config::LookupGate;
-use crate::Composable;
-use crate::RegionCtx;
-use crate::Witness;
-use halo2::circuit::AssignedCell;
-use halo2::{
-    circuit::{Layouter, Value},
-    halo2curves::FieldExt,
+use crate::{maingate::config::LookupGate, Composable, RegionCtx, Witness};
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter, Value},
+    halo2curves::ff::PrimeField,
     plonk::Error,
 };
+use std::collections::BTreeMap;
 
-impl<F: FieldExt, const W: usize> LookupGate<F, W> {
+impl<F: PrimeField, const W: usize> LookupGate<F, W> {
     pub(crate) fn assign(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -73,13 +68,13 @@ impl<F: FieldExt, const W: usize> LookupGate<F, W> {
                     || "table tag",
                     self.tag_table,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
                 table.assign_cell(
                     || "table value",
                     self.value_table,
                     offset,
-                    || Value::known(F::zero()),
+                    || Value::known(F::ZERO),
                 )?;
                 offset += 1;
 

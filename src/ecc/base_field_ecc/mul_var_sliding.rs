@@ -1,8 +1,12 @@
-use super::BaseFieldEccChip;
-use crate::{ecc::Point, utils::big_to_fe, Witness};
-use group::ff::PrimeField;
-use group::Curve;
-use halo2::halo2curves::{CurveAffine, FieldExt};
+use crate::{
+    ecc::{base_field_ecc::BaseFieldEccChip, Point},
+    utils::big_to_fe,
+    Witness,
+};
+use halo2curves::{
+    group::{ff::PrimeField, Curve},
+    CurveAffine,
+};
 use num_bigint::BigUint;
 use num_traits::One;
 
@@ -26,8 +30,8 @@ fn make_mul_aux<C: CurveAffine>(generator: C, window_size: usize, number_of_pair
 }
 #[derive(Debug, Clone)]
 pub(crate) struct MulAux<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {

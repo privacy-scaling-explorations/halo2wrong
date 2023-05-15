@@ -6,12 +6,12 @@ use crate::{
     utils::decompose,
     Scaled, Witness,
 };
-use halo2::{circuit::Value, halo2curves::FieldExt};
+use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField};
 
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -61,7 +61,7 @@ impl<
             .zip(self.rns.left_shifters.iter())
             .map(|(limb, base)| Scaled::new(limb, *base))
             .collect::<Vec<Scaled<N>>>();
-        let native = self.o.compose(&terms[..], N::zero(), N::one());
+        let native = self.o.compose(&terms[..], N::ZERO, N::ONE);
         // range limbs
         let (max_values, bit_lenghts) = self.rns.max_values(range);
 

@@ -1,8 +1,12 @@
+use crate::{
+    integer::{rns::Rns, ConstantInteger, Integer, Limb},
+    maingate::operations::Collector,
+    Witness,
+};
+use halo2curves::ff::PrimeField;
+
 #[cfg(test)]
-use super::tests::Report;
-use super::{rns::Rns, ConstantInteger, Integer, Limb};
-use crate::{maingate::operations::Collector, Witness};
-use halo2::halo2curves::FieldExt;
+use crate::integer::tests::Report;
 
 #[derive(Debug)]
 pub enum Range {
@@ -14,8 +18,8 @@ pub enum Range {
 #[derive(Debug)]
 pub struct IntegerChip<
     'a,
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
@@ -27,8 +31,8 @@ pub struct IntegerChip<
 }
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -42,8 +46,8 @@ impl<
         o: &'a mut Collector<N>,
         rns: &'a Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB, NUMBER_OF_SUBLIMBS>,
     ) -> Self {
-        o.get_constant(N::one());
-        o.get_constant(N::zero());
+        o.get_constant(N::ONE);
+        o.get_constant(N::ZERO);
         Self {
             o,
             rns,
@@ -54,8 +58,8 @@ impl<
 }
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

@@ -1,11 +1,14 @@
-use super::{AssignmentsInternal, ColumnID, ComplexAssignements};
 use crate::{
-    maingate::{config::MainGate, operations::ComplexOperation},
+    maingate::{
+        assignments::{AssignmentsInternal, ColumnID, ComplexAssignements},
+        config::MainGate,
+        operations::ComplexOperation,
+    },
     Composable, RegionCtx, Scaled, SecondDegreeScaled, Term, Witness,
 };
-use halo2::{circuit::Value, halo2curves::FieldExt, plonk::Error};
+use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField, plonk::Error};
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     fn assign_with_horizontal_offset(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -29,7 +32,9 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     }
 }
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
+    for MainGate<F, LOOKUP_WIDTH>
+{
     fn select(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -43,7 +48,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
         self.disable_next(ctx)?;
         self.disable_constant(ctx)?;
         self.simple_gate.enable_mul(ctx)?;
-        self.extended_gate.enable_scaled_mul(ctx, -F::one())?;
+        self.extended_gate.enable_scaled_mul(ctx, -F::ONE)?;
         // c*w0 - c*w1 + w1 - res = 0
         // simple gate
         self.simple_gate
@@ -104,14 +109,14 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
         let number_of_chunks = (number_of_terms - 1) / CHUNK_SIZE + 1;
         let mut remaining = result.value();
         for (i, chunk) in terms.chunks(CHUNK_SIZE).enumerate() {
-            let constant = if i == 0 { constant } else { F::zero() };
+            let constant = if i == 0 { constant } else { F::ZERO };
             self.set_constant(ctx, constant)?;
             // assign intermediate value
             // first one is the composition result
             let intermediate = if i == 0 {
                 result.neg()
             } else {
-                Scaled::no_copy(remaining, -F::one())
+                Scaled::no_copy(remaining, -F::ONE)
             };
             self.assign_with_horizontal_offset(ctx, &intermediate, CHUNK_SIZE)?;
             // calculate running subtraction
@@ -126,7 +131,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
                     self.disable_next(ctx)?;
                     #[cfg(feature = "sanity-check")]
                     remaining.map(|remaining_should_be_zero| {
-                        assert_eq!(remaining_should_be_zero, F::zero())
+                        assert_eq!(remaining_should_be_zero, F::ZERO)
                     });
                 } else {
                     self.enable_next(ctx)?;
@@ -187,7 +192,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
             .zip(first_degree_terms_padded.windows(3))
             .enumerate()
             .map(|(i, (second_degree_terms, first_degree_terms))| {
-                let constant = if i == 0 { constant } else { F::zero() };
+                let constant = if i == 0 { constant } else { F::ZERO };
                 self.set_constant(ctx, constant)?;
                 // fix the shape of the gate
                 {
@@ -201,7 +206,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
                 let intermediate = if i == 0 {
                     result.neg()
                 } else {
-                    Scaled::no_copy(remaining, -F::one())
+                    Scaled::no_copy(remaining, -F::ONE)
                 };
                 // running subtraction, first one is the sum
                 self.extended_gate.assign(ctx, ColumnID::C, &intermediate)?;
@@ -227,7 +232,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
                         .assign(ctx, ColumnID::A, &first_degree_terms[1])?;
                     self.extended_gate
                         .assign(ctx, ColumnID::B, &first_degree_terms[2])?;
-                    Scaled::compose(first_degree_terms, F::zero())
+                    Scaled::compose(first_degree_terms, F::ZERO)
                 };
                 // calculate new remaning
                 remaining = SecondDegreeScaled::compose(second_degree_terms, constant)
@@ -238,7 +243,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
                 #[cfg(feature = "sanity-check")]
                 if i == number_of_sd_chunks - 1 && remaining_fd_terms == 0 {
                     remaining.map(|remaining_should_be_zero| {
-                        assert_eq!(remaining_should_be_zero, F::zero())
+                        assert_eq!(remaining_should_be_zero, F::ZERO)
                     });
                 }
                 Ok(remaining)
@@ -249,14 +254,14 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F> for MainGate
             self.compose(
                 ctx,
                 &first_degree_terms[first_degree_terms.len() - remaining_fd_terms..],
-                &Scaled::no_copy(*remaining, F::one()),
-                F::zero(),
+                &Scaled::no_copy(*remaining, F::ONE),
+                F::ZERO,
             )?;
         }
         Ok(())
     }
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     pub(crate) fn assign_complex_operation(
         &self,
         ctx: &mut RegionCtx<'_, F>,

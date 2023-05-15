@@ -1,12 +1,17 @@
-use super::{Assignments, AssignmentsInternal, ColumnID};
-use crate::{maingate::config::SimpleGate, RegionCtx};
-use halo2::{
-    halo2curves::FieldExt,
+use crate::{
+    maingate::{
+        assignments::{Assignments, AssignmentsInternal, ColumnID},
+        config::SimpleGate,
+    },
+    RegionCtx,
+};
+use halo2_proofs::{
+    halo2curves::ff::PrimeField,
     plonk::{Advice, Column, Error, Fixed},
 };
 
-impl<F: FieldExt> Assignments<F> for SimpleGate<F> {}
-impl<F: FieldExt> AssignmentsInternal<F> for SimpleGate<F> {
+impl<F: PrimeField> Assignments<F> for SimpleGate<F> {}
+impl<F: PrimeField> AssignmentsInternal<F> for SimpleGate<F> {
     fn enable_scaled_mul(&self, ctx: &mut RegionCtx<'_, F>, factor: F) -> Result<(), Error> {
         ctx.assign_fixed(|| "", self.s_mul, factor).map(|_| ())
     }
@@ -30,9 +35,9 @@ impl<F: FieldExt> AssignmentsInternal<F> for SimpleGate<F> {
     fn no_op(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         self.disable_constant(ctx)?;
         self.disable_mul(ctx)?;
-        ctx.assign_fixed(|| "", self.sa, F::zero())?;
-        ctx.assign_fixed(|| "", self.sb, F::zero())?;
-        ctx.assign_fixed(|| "", self.sc, F::zero())?;
+        ctx.assign_fixed(|| "", self.sa, F::ZERO)?;
+        ctx.assign_fixed(|| "", self.sb, F::ZERO)?;
+        ctx.assign_fixed(|| "", self.sc, F::ZERO)?;
         Ok(())
     }
 }

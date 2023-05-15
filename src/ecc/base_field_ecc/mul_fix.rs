@@ -1,11 +1,15 @@
-use super::{BaseFieldEccChip, Point};
-use crate::ecc::ConstantPoint;
-use crate::utils::big_to_fe;
-use crate::Witness;
-use group::ff::PrimeField;
-use group::Curve;
-use group::Group;
-use halo2::halo2curves::CurveAffine;
+use crate::{
+    ecc::{
+        base_field_ecc::{BaseFieldEccChip, Point},
+        ConstantPoint,
+    },
+    utils::big_to_fe,
+    Witness,
+};
+use halo2curves::{
+    group::{ff::PrimeField, Curve, Group},
+    CurveAffine,
+};
 use num_bigint::BigUint;
 use num_traits::One;
 

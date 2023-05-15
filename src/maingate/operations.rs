@@ -1,10 +1,10 @@
 use crate::{Composable, Scaled, Term, Witness};
-use halo2::{circuit::Value, halo2curves::FieldExt};
+use halo2_proofs::{circuit::Value, halo2curves::group::ff::PrimeField};
 use num_integer::Integer;
 use std::{collections::BTreeMap, fmt::Debug};
 
 #[derive(Debug, Clone)]
-pub enum Operation<F: FieldExt> {
+pub enum Operation<F: PrimeField> {
     #[cfg(test)]
     AssertEqual {
         w0: Witness<F>,
@@ -78,7 +78,7 @@ pub enum Operation<F: FieldExt> {
     },
 }
 #[derive(Debug, Clone)]
-pub(crate) enum ConstantOperation<F: FieldExt> {
+pub(crate) enum ConstantOperation<F: PrimeField> {
     AddConstant {
         w0: Witness<F>,
         constant: F,
@@ -108,7 +108,7 @@ pub(crate) enum ConstantOperation<F: FieldExt> {
     },
 }
 #[derive(Debug, Clone)]
-pub(crate) enum ComplexOperation<F: FieldExt> {
+pub(crate) enum ComplexOperation<F: PrimeField> {
     Select {
         cond: Witness<F>,
         w0: Witness<F>,
@@ -133,7 +133,7 @@ pub(crate) enum ComplexOperation<F: FieldExt> {
     },
 }
 #[derive(Clone, Debug, Default)]
-pub struct Collector<F: FieldExt> {
+pub struct Collector<F: PrimeField> {
     pub(crate) number_of_witnesses: u32,
     pub(crate) simple_operations: Vec<Operation<F>>,
     pub(crate) constant_operations: Vec<ConstantOperation<F>>,
@@ -143,13 +143,13 @@ pub struct Collector<F: FieldExt> {
     bases: BTreeMap<usize, Vec<F>>,
     pub(crate) lookups: BTreeMap<usize, Vec<Witness<F>>>,
 }
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField> Collector<F> {
     pub fn equal(&mut self, w0: &Witness<F>, w1: &Witness<F>) {
         self.copies.push((w0.id(), w1.id()))
     }
 }
 #[cfg(test)]
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField + Ord> Collector<F> {
     pub fn assign(&mut self, value: Value<F>) -> Witness<F> {
         let w = self.new_witness(value);
         self.simple_operations.push(Operation::Assign { w });
@@ -160,7 +160,7 @@ impl<F: FieldExt> Collector<F> {
             .push(Operation::AssertEqual { w0: *w0, w1: *w1 });
     }
 }
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField + Ord> Collector<F> {
     pub fn register_constant(&mut self, constant: F) -> Witness<F> {
         match self.constants.get(&constant) {
             Some(constant) => *constant,
@@ -175,7 +175,7 @@ impl<F: FieldExt> Collector<F> {
         self.register_constant(constant)
     }
 }
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField + Ord> Collector<F> {
     pub(crate) fn new_witness(&mut self, value: Value<F>) -> Witness<F> {
         self.number_of_witnesses += 1;
         Witness {
@@ -188,7 +188,7 @@ impl<F: FieldExt> Collector<F> {
             .entry(bit_len)
             .or_insert_with(|| {
                 (0..F::NUM_BITS as usize / bit_len)
-                    .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
+                    .map(|i| F::from(2).pow([(bit_len * i) as u64]))
                     .collect()
             })
             .clone()
@@ -261,7 +261,7 @@ impl<F: FieldExt> Collector<F> {
     pub fn inv_unsafe(&mut self, w: &Witness<F>) -> Witness<F> {
         let u = w.value().map(|w| w.invert().unwrap());
         let u = self.new_witness(u);
-        let one = self.get_constant(F::one());
+        let one = self.get_constant(F::ONE);
         self.simple_operations
             .push(Operation::InvUnsafe { w: *w, one, u });
         u
@@ -271,24 +271,24 @@ impl<F: FieldExt> Collector<F> {
             .value()
             .map(|w0| {
                 Option::from(w0.invert())
-                    .map(|inverted| (F::zero(), inverted))
-                    .unwrap_or_else(|| (F::one(), F::one()))
+                    .map(|inverted| (F::ZERO, inverted))
+                    .unwrap_or_else(|| (F::ONE, F::ONE))
             })
             .unzip();
         let sign = self.new_witness(sign);
         let inv = self.new_witness(inv);
         self.assert_bit(&sign);
         self.assert_one_xor_any(&sign, &inv);
-        self.mul_add_constant_scaled(-F::one(), w, &inv, F::one());
+        self.mul_add_constant_scaled(-F::ONE, w, &inv, F::ONE);
         (inv, sign)
     }
     pub fn assert_not_zero(&mut self, w: &Witness<F>) {
         let inv: Value<F> = w.value().map(|a| {
             // With non inversion case valid proof cannot be produced
-            a.invert().unwrap_or_else(F::zero)
+            a.invert().unwrap_or(F::ZERO)
         });
         let inv = self.new_witness(inv);
-        let one = self.get_constant(F::one());
+        let one = self.get_constant(F::ONE);
         self.simple_operations
             .push(Operation::AssertNotZero { w: *w, inv, one });
     }
@@ -337,15 +337,15 @@ impl<F: FieldExt> Collector<F> {
             .map(|(w0, w1)| {
                 let c = w0 - w1;
                 Option::from(c.invert())
-                    .map(|c_inverted| (c_inverted, F::zero()))
-                    .unwrap_or_else(|| (F::one(), F::one()))
+                    .map(|c_inverted| (c_inverted, F::ZERO))
+                    .unwrap_or_else(|| (F::ONE, F::ONE))
             })
             .unzip();
         let r0 = &self.assign_bit(r);
         let dif = &self.sub(w0, w1);
         let x = &self.new_witness(x);
         let u = &self.or(r0, x);
-        let r1 = self.mul_add_constant_scaled(-F::one(), u, dif, F::one());
+        let r1 = self.mul_add_constant_scaled(-F::ONE, u, dif, F::ONE);
         self.equal(r0, &r1);
         r1
     }
@@ -412,10 +412,10 @@ impl<F: FieldExt> Collector<F> {
             .push(ConstantOperation::EqualToConstant { w0: *w0, constant })
     }
     pub fn assert_zero(&mut self, w0: &Witness<F>) {
-        self.equal_to_constant(w0, F::zero())
+        self.equal_to_constant(w0, F::ZERO)
     }
     pub fn assert_one(&mut self, w0: &Witness<F>) {
-        self.equal_to_constant(w0, F::one())
+        self.equal_to_constant(w0, F::ONE)
     }
     pub fn select(&mut self, cond: &Witness<F>, w0: &Witness<F>, w1: &Witness<F>) -> Witness<F> {
         let selected = w0
@@ -423,12 +423,12 @@ impl<F: FieldExt> Collector<F> {
             .zip(w1.value())
             .zip(cond.value())
             .map(|((w0, w1), cond)| {
-                if cond == F::one() {
+                if cond == F::ONE {
                     w0
                 } else {
                     #[cfg(feature = "sanity-check")]
                     {
-                        assert_eq!(cond, F::zero());
+                        assert_eq!(cond, F::ZERO);
                     }
                     w1
                 }
@@ -449,12 +449,12 @@ impl<F: FieldExt> Collector<F> {
         constant: F,
     ) -> Witness<F> {
         let selected = w.value().zip(cond.value()).map(|(w, cond)| {
-            if cond == F::one() {
+            if cond == F::ONE {
                 w
             } else {
                 #[cfg(feature = "sanity-check")]
                 {
-                    assert_eq!(cond, F::zero());
+                    assert_eq!(cond, F::ZERO);
                 }
                 constant
             }
@@ -472,8 +472,8 @@ impl<F: FieldExt> Collector<F> {
     pub fn select_constant(&mut self, cond: &Witness<F>, c0: F, c1: F) -> Witness<F> {
         let selected = cond
             .value()
-            .map(|cond| if cond == F::one() { c0 } else { c1 });
-        let one = self.get_constant(F::one());
+            .map(|cond| if cond == F::ONE { c0 } else { c1 });
+        let one = self.get_constant(F::ONE);
         let selected = self.new_witness(selected);
         self.simple_operations.push(Operation::SelectConstant {
             cond: *cond,
@@ -494,9 +494,9 @@ impl<F: FieldExt> Collector<F> {
             _ => {
                 #[cfg(feature = "sanity-check")]
                 {
-                    assert_eq!(remaining, F::zero());
+                    assert_eq!(remaining, F::ZERO);
                 }
-                F::zero()
+                F::ZERO
             }
         });
         let result = self.new_witness(result);
@@ -522,9 +522,9 @@ impl<F: FieldExt> Collector<F> {
             _ => {
                 #[cfg(feature = "sanity-check")]
                 {
-                    assert_eq!(remaining, F::zero());
+                    assert_eq!(remaining, F::ZERO);
                 }
-                F::zero()
+                F::ZERO
             }
         });
         let result = self.new_witness(result);
@@ -537,7 +537,7 @@ impl<F: FieldExt> Collector<F> {
         result
     }
 }
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField + Ord> Collector<F> {
     pub fn decompose(
         &mut self,
         w0: &Witness<F>,
@@ -569,7 +569,7 @@ impl<F: FieldExt> Collector<F> {
             .zip(bases.iter())
             .map(|(coeff, base)| Scaled::new(coeff, *base))
             .collect();
-        let w1 = &self.compose(&terms[..], F::zero(), F::one());
+        let w1 = &self.compose(&terms[..], F::ZERO, F::ONE);
         self.equal(w0, w1);
         decomposed
     }

@@ -4,13 +4,13 @@ use self::{
     operations::Collector,
 };
 use crate::{maingate::operations::Operation, RegionCtx};
-use halo2::{
+use halo2_proofs::{
     circuit::Layouter,
-    halo2curves::FieldExt,
+    halo2curves::ff::PrimeField,
     plonk::{ConstraintSystem, Error},
 };
 
-pub trait Gate<F: FieldExt>: Clone {
+pub trait Gate<F: PrimeField>: Clone {
     fn layout(&self, ly: &mut impl Layouter<F>, collector: &Collector<F>) -> Result<(), Error>;
     fn configure(
         meta: &mut ConstraintSystem<F>,
@@ -26,7 +26,7 @@ pub mod operations;
 #[cfg(test)]
 mod tests;
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     #[allow(dead_code)]
     pub(crate) fn empty_extended_gate(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
         self.extended_gate.no_op(ctx)?;
@@ -72,7 +72,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
         self.extended_gate.disable_constant(ctx)
     }
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> Gate<F> for MainGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> Gate<F> for MainGate<F, LOOKUP_WIDTH> {
     fn configure(
         meta: &mut ConstraintSystem<F>,
         composition_bit_lenghts: Vec<usize>,
@@ -152,7 +152,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> Gate<F> for MainGate<F, LOOKUP_WIDT
         Ok(())
     }
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> Gate<F> for ExtendedGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> Gate<F> for ExtendedGate<F, LOOKUP_WIDTH> {
     fn configure(
         meta: &mut ConstraintSystem<F>,
         composition_bit_lenghts: Vec<usize>,
@@ -189,4 +189,4 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> Gate<F> for ExtendedGate<F, LOOKUP_
     }
 }
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> LookupGate<F, LOOKUP_WIDTH> {}
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> LookupGate<F, LOOKUP_WIDTH> {}

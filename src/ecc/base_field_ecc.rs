@@ -1,5 +1,5 @@
-use super::{ConstantPoint, Point};
 use crate::{
+    ecc::{ConstantPoint, Point},
     integer::{
         chip::{IntegerChip, Range},
         rns::Rns,
@@ -8,7 +8,8 @@ use crate::{
     maingate::operations::Collector,
     Scaled, Witness,
 };
-use halo2::{arithmetic::Field, circuit::Value, halo2curves::CurveAffine};
+use halo2_proofs::{circuit::Value, halo2curves::CurveAffine};
+use halo2curves::ff::Field;
 
 mod add;
 mod mul_fix;
@@ -239,7 +240,7 @@ impl<
             .collect();
         let index = self
             .operations
-            .compose(&slice[..], C::Scalar::zero(), C::Scalar::one());
+            .compose(&slice[..], C::Scalar::ZERO, C::Scalar::ONE);
         for (j, bucket) in table.iter_mut().take(1 << slice.len()).enumerate() {
             let j = self.operations.get_constant(C::Scalar::from(j as u64));
             let cond = self.operations.is_equal(&index, &j);
@@ -305,27 +306,25 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    // fn from_str<C: CurveAffine>(x: &str, y: &str) -> C {
-    //     let x = C::Base::from_str_vartime(x).unwrap();
-    //     let y = C::Base::from_str_vartime(y).unwrap();
-    //     C::from_xy(x, y).unwrap()
-    // }
-    use super::{BaseFieldEccChip, Point};
-    use crate::ecc::multiexp_naive_var;
-    use crate::Witness;
     use crate::{
+        ecc::{
+            base_field_ecc::{BaseFieldEccChip, Point},
+            multiexp_naive_var,
+        },
         integer::{chip::IntegerChip, rns::Rns},
         maingate::{config::MainGate, operations::Collector, Gate},
+        Witness,
     };
-    use group::Curve;
-    use group::Group;
-    use halo2::dev::MockProver;
-    use halo2::{
-        arithmetic::Field,
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
-        halo2curves::CurveAffine,
+        dev::MockProver,
+        halo2curves::{
+            group::{Curve, Group},
+            CurveAffine,
+        },
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use halo2curves::ff::Field;
     use rand_core::OsRng;
     use std::marker::PhantomData;
 
@@ -497,7 +496,7 @@ mod tests {
         // const NUMBER_OF_LIMBS: usize = 4;
         // const LOOKUP_WIDTH: usize = 2;
         // const NUMBER_OF_SUBLIMBS: usize = 4;
-        use halo2::halo2curves::pasta::EpAffine;
+        use halo2curves::pasta::EpAffine;
         let circuit = MyCircuit::<
             EpAffine,
             NUMBER_OF_LIMBS,

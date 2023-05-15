@@ -1,11 +1,13 @@
-use super::{chip::Range, ConstantInteger};
-use crate::utils::{big_to_fe, compose_big, decompose, decompose_big, fe_to_big, modulus};
-use halo2::{circuit::Value, halo2curves::FieldExt};
+use crate::{
+    integer::{chip::Range, ConstantInteger},
+    utils::{big_to_fe, compose_big, decompose, decompose_big, fe_to_big, modulus},
+};
+use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField};
 use num_bigint::BigUint as Big;
 use num_traits::{One, Zero};
 use std::marker::PhantomData;
 
-pub trait Common<F: FieldExt> {
+pub trait Common<F: PrimeField> {
     fn big(&self) -> Big;
     fn native(&self) -> F {
         let native_value = self.big() % modulus::<F>();
@@ -18,8 +20,8 @@ pub trait Common<F: FieldExt> {
 
 #[derive(Debug, Clone)]
 pub struct Rns<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
@@ -44,8 +46,8 @@ pub struct Rns<
 }
 
 impl<
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -53,7 +55,7 @@ impl<
 {
     fn calculate_base_aux() -> [Big; NUMBER_OF_LIMBS] {
         let two = N::from(2);
-        let r = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
+        let r = &fe_to_big(two.pow([BIT_LEN_LIMB as u64]));
         let wrong_modulus = modulus::<W>();
         let wrong_modulus: Vec<N> = decompose_big(wrong_modulus, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
 
@@ -313,7 +315,7 @@ impl<
         let two = N::from(2);
         // Left shifts field element by `u * BIT_LEN_LIMB` bits
         let left_shifters = (0..NUMBER_OF_LIMBS)
-            .map(|i| two.pow(&[(i * BIT_LEN_LIMB) as u64, 0, 0, 0]))
+            .map(|i| two.pow([(i * BIT_LEN_LIMB) as u64]))
             .collect::<Vec<N>>()
             .try_into()
             .unwrap();

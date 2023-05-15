@@ -2,7 +2,7 @@ use crate::{
     utils::{compose, compose_big, decompose_big, fe_to_big, modulus},
     Composable, Witness,
 };
-use halo2::{circuit::Value, halo2curves::FieldExt};
+use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField};
 use num_bigint::BigUint as Big;
 use std::marker::PhantomData;
 pub mod chip;
@@ -12,11 +12,11 @@ pub mod rns;
 pub mod tests;
 
 #[derive(Debug, Clone)]
-pub struct Limb<F: FieldExt> {
+pub struct Limb<F: PrimeField> {
     witness: Witness<F>,
     max: Big,
 }
-impl<F: FieldExt> Limb<F> {
+impl<F: PrimeField> Limb<F> {
     pub(crate) fn new(limb: &Witness<F>, max: Big) -> Self {
         #[cfg(feature = "sanity-check")]
         {
@@ -40,15 +40,15 @@ impl<F: FieldExt> Limb<F> {
         self.value().map(|e| fe_to_big(e))
     }
 }
-impl<F: FieldExt> AsRef<Witness<F>> for Limb<F> {
+impl<F: PrimeField> AsRef<Witness<F>> for Limb<F> {
     fn as_ref(&self) -> &Witness<F> {
         &self.witness
     }
 }
 #[derive(Clone)]
 pub struct Integer<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -56,7 +56,7 @@ pub struct Integer<
     native: Witness<N>,
     _marker: PhantomData<W>,
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn new(limbs: &[Limb<N>; NUMBER_OF_LIMBS], native: Witness<N>) -> Self {
@@ -107,7 +107,7 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
             .unwrap()
     }
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     std::fmt::Debug for Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -133,8 +133,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 }
 #[derive(Debug, Clone)]
 pub struct ConstantInteger<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -142,7 +142,7 @@ pub struct ConstantInteger<
     native: N,
     _marker: PhantomData<W>,
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> From<W>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> From<W>
     for ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn from(e: W) -> Self {
@@ -153,14 +153,14 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         Self::new(&limbs)
     }
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> From<&W>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize> From<&W>
     for ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     fn from(e: &W) -> Self {
         (*e).into()
     }
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn new(limbs: &[N; NUMBER_OF_LIMBS]) -> Self {

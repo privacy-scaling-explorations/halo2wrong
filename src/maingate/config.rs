@@ -1,5 +1,5 @@
-use halo2::{
-    halo2curves::FieldExt,
+use halo2_proofs::{
+    halo2curves::ff::PrimeField,
     plonk::{Advice, Column, ConstraintSystem, Fixed, Selector, TableColumn},
     poly::Rotation,
 };
@@ -8,7 +8,7 @@ use std::{
     marker::PhantomData,
 };
 #[derive(Clone, Debug)]
-pub struct MainGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
+pub struct MainGate<F: PrimeField, const LOOKUP_WIDTH: usize> {
     pub(crate) simple_gate: SimpleGate<F>,
     pub(crate) extended_gate: ExtendedGate<F, LOOKUP_WIDTH>,
     pub(crate) q_isolate_simple: Selector,
@@ -17,7 +17,7 @@ pub struct MainGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
 }
 
 #[derive(Clone, Debug)]
-pub struct SimpleGate<F: FieldExt> {
+pub struct SimpleGate<F: PrimeField> {
     pub(crate) a: Column<Advice>,
     pub(crate) b: Column<Advice>,
     pub(crate) c: Column<Advice>,
@@ -30,7 +30,7 @@ pub struct SimpleGate<F: FieldExt> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ExtendedGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
+pub struct ExtendedGate<F: PrimeField, const LOOKUP_WIDTH: usize> {
     pub(crate) a: Column<Advice>,
     pub(crate) b: Column<Advice>,
     pub(crate) c: Column<Advice>,
@@ -46,7 +46,7 @@ pub struct ExtendedGate<F: FieldExt, const LOOKUP_WIDTH: usize> {
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
     pub fn _configure(
         meta: &mut ConstraintSystem<F>,
         composition_bit_lenghts: Vec<usize>,
@@ -114,7 +114,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
     }
 }
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     pub fn _configure(
         meta: &mut ConstraintSystem<F>,
         composition_bit_lenghts: Vec<usize>,
@@ -234,7 +234,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> MainGate<F, LOOKUP_WIDTH> {
     }
 }
 #[derive(Debug, Clone)]
-pub struct LookupGate<F: FieldExt, const W: usize> {
+pub struct LookupGate<F: PrimeField, const W: usize> {
     pub(super) bit_len_tag: BTreeMap<usize, usize>,
     pub(super) tag_table: TableColumn,
     pub(super) tag: Column<Fixed>,
@@ -243,7 +243,7 @@ pub struct LookupGate<F: FieldExt, const W: usize> {
     pub(super) selector: Selector,
     _marker: PhantomData<F>,
 }
-impl<F: FieldExt, const W: usize> LookupGate<F, W> {
+impl<F: PrimeField, const W: usize> LookupGate<F, W> {
     pub fn configure(meta: &mut ConstraintSystem<F>, bit_lenghts: Vec<usize>) -> LookupGate<F, W> {
         let mut bit_lengths: Vec<usize> = bit_lenghts
             .iter()

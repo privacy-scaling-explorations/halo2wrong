@@ -1,5 +1,5 @@
-use super::{ConstantPoint, Point};
 use crate::{
+    ecc::{ConstantPoint, Point},
     integer::{
         chip::{IntegerChip, Range},
         rns::Rns,
@@ -8,9 +8,9 @@ use crate::{
     maingate::operations::Collector,
     Scaled, Witness,
 };
-use halo2::{
+use halo2_proofs::{
     circuit::Value,
-    halo2curves::{CurveAffine, FieldExt},
+    halo2curves::{group::ff::PrimeField, CurveAffine},
 };
 
 mod add;
@@ -23,7 +23,7 @@ mod mul_var_sliding;
 pub struct GeneralEccChip<
     'a,
     Emulated: CurveAffine,
-    N: FieldExt,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
@@ -37,7 +37,7 @@ pub struct GeneralEccChip<
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -97,7 +97,7 @@ impl<
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -174,7 +174,7 @@ impl<
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -283,7 +283,7 @@ impl<
             .enumerate()
             .map(|(i, bit)| Scaled::new(bit, N::from(1 << i)))
             .collect();
-        let index = self.operations.compose(&slice[..], N::zero(), N::one());
+        let index = self.operations.compose(&slice[..], N::ZERO, N::ONE);
         for (j, bucket) in table.iter_mut().take(1 << slice.len()).enumerate() {
             let j = self.operations.get_constant(N::from(j as u64));
             let cond = self.operations.is_equal(&index, &j);
@@ -349,37 +349,32 @@ impl<
 
 #[cfg(test)]
 mod tests {
-
-    // fn from_str<C: CurveAffine>(x: &str, y: &str) -> C {
-    //     let x = C::Base::from_str_vartime(x).unwrap();
-    //     let y = C::Base::from_str_vartime(y).unwrap();
-    //     C::from_xy(x, y).unwrap()
-    // }
-
-    use super::{GeneralEccChip, Point};
-    use crate::ecc::multiexp_naive_var;
-    use crate::integer::Integer;
     use crate::{
-        integer::{chip::IntegerChip, rns::Rns},
+        ecc::{
+            general_ecc::{GeneralEccChip, Point},
+            multiexp_naive_var,
+        },
+        integer::{chip::IntegerChip, rns::Rns, Integer},
         maingate::{config::MainGate, operations::Collector, Gate},
     };
-    use group::Curve;
-    use group::Group;
-    use halo2::dev::MockProver;
-    use halo2::halo2curves::FieldExt;
-    use halo2::{
-        arithmetic::Field,
+    use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
-        halo2curves::CurveAffine,
+        dev::MockProver,
+        halo2curves::{
+            ff::PrimeField,
+            group::{Curve, Group},
+            CurveAffine,
+        },
         plonk::{Circuit, ConstraintSystem, Error},
     };
+    use halo2curves::ff::Field;
     use rand_core::OsRng;
     use std::marker::PhantomData;
 
     #[derive(Clone)]
     struct TestConfig<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -393,7 +388,7 @@ mod tests {
     #[derive(Default)]
     struct MyCircuit<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -403,7 +398,7 @@ mod tests {
     }
     impl<
             Emulated: CurveAffine,
-            N: FieldExt,
+            N: PrimeField + Ord,
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
             const NUMBER_OF_SUBLIMBS: usize,
@@ -566,10 +561,11 @@ mod tests {
         // const NUMBER_OF_LIMBS: usize = 4;
         // const LOOKUP_WIDTH: usize = 2;
         // const NUMBER_OF_SUBLIMBS: usize = 4;
-        use halo2::halo2curves::bn256::G1Affine as Bn256;
-        use halo2::halo2curves::pasta::EpAffine as Pallas;
-        use halo2::halo2curves::pasta::EqAffine as Vesta;
-        use halo2::halo2curves::secp256k1::Secp256k1Affine as Secp256k1;
+        use halo2curves::{
+            bn256::G1Affine as Bn256,
+            pasta::{EpAffine as Pallas, EqAffine as Vesta},
+            secp256k1::Secp256k1Affine as Secp256k1,
+        };
 
         let circuit = MyCircuit::<
             Bn256,

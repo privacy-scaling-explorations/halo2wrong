@@ -1,13 +1,15 @@
-use super::{GeneralEccChip, Point};
-use crate::ecc::ConstantPoint;
-use crate::integer::chip::IntegerChip;
-use crate::integer::Integer;
-use crate::utils::big_to_fe;
-use group::ff::PrimeField;
-use group::Curve;
-use group::Group;
-use halo2::halo2curves::CurveAffine;
-use halo2::halo2curves::FieldExt;
+use crate::{
+    ecc::{
+        general_ecc::{GeneralEccChip, Point},
+        ConstantPoint,
+    },
+    integer::{chip::IntegerChip, Integer},
+    utils::big_to_fe,
+};
+use halo2curves::{
+    group::{ff::PrimeField, Curve, Group},
+    CurveAffine,
+};
 use num_bigint::BigUint;
 use num_traits::One;
 
@@ -55,7 +57,7 @@ fn window<C: CurveAffine>(point: C, window: usize, aux: C) -> Vec<Vec<C::CurveEx
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

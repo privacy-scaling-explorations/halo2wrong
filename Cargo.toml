@@ -8,17 +8,15 @@ edition = "2021"
 num-bigint = { version = "0.4", features = ["rand"] }
 num-integer = "0.1"
 num-traits = "0.2"
-# halo2 = { package = "halo2_proofs", git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_09_10" }
-halo2 = { package = "halo2_proofs", path = "../halo2/halo2_proofs" }
-group = "0.12"
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2023_04_20" }
+halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "0.3.2" }
 subtle = { version = "2.3", default-features = false }
-
 
 [dev-dependencies]
 rand = "0.8"
 rand_core = { version = "0.6", default-features = false }
 
 [features]
+default = ["sanity-check"]
 sanity-check = []
 info = []
-default = ["sanity-check"]

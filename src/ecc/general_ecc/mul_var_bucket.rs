@@ -1,13 +1,12 @@
-use super::GeneralEccChip;
-use super::Point;
-use crate::integer::chip::IntegerChip;
-use crate::integer::Integer;
-use crate::Witness;
-use group::ff::PrimeField;
-use group::Curve;
-use group::Group;
-use halo2::halo2curves::CurveAffine;
-use halo2::halo2curves::FieldExt;
+use crate::{
+    ecc::general_ecc::{GeneralEccChip, Point},
+    integer::{chip::IntegerChip, Integer},
+    Witness,
+};
+use halo2curves::{
+    group::{ff::PrimeField, Curve, Group},
+    CurveAffine,
+};
 
 macro_rules! div_ceil {
     ($a:expr, $b:expr) => {
@@ -17,7 +16,7 @@ macro_rules! div_ceil {
 #[derive(Clone, Debug)]
 pub(crate) struct Buckets<
     Emulated: CurveAffine,
-    N: FieldExt,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -26,7 +25,7 @@ pub(crate) struct Buckets<
 }
 impl<
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
     > Buckets<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
@@ -49,7 +48,7 @@ impl<
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

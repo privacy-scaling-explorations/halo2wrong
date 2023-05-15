@@ -1,19 +1,20 @@
-use super::GeneralEccChip;
 use crate::{
-    ecc::Point,
+    ecc::{general_ecc::GeneralEccChip, Point},
     integer::{chip::IntegerChip, Integer},
     utils::big_to_fe,
     Witness,
 };
-use group::Curve;
-use halo2::halo2curves::{CurveAffine, FieldExt};
+use halo2curves::{
+    group::{ff::PrimeField, Curve},
+    CurveAffine,
+};
 use num_bigint::BigUint;
 use num_traits::One;
 
 fn make_mul_aux<C: CurveAffine>(generator: C, window_size: usize, number_of_pairs: usize) -> C {
     assert!(window_size > 0);
     assert!(number_of_pairs > 0);
-    use group::ff::PrimeField;
+
     let n = C::Scalar::NUM_BITS as usize;
     let mut number_of_selectors = n / window_size;
     if n % window_size != 0 {
@@ -31,8 +32,8 @@ fn make_mul_aux<C: CurveAffine>(generator: C, window_size: usize, number_of_pair
 }
 #[derive(Debug, Clone)]
 pub(crate) struct MulAux<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
@@ -42,7 +43,7 @@ pub(crate) struct MulAux<
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

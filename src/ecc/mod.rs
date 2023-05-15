@@ -1,19 +1,22 @@
 use crate::integer::{ConstantInteger, Integer, Limb};
-use halo2::{
+use halo2_proofs::{
     circuit::Value,
-    halo2curves::{CurveAffine, FieldExt},
+    halo2curves::{ff::PrimeField, CurveAffine},
 };
 pub mod base_field_ecc;
 pub mod general_ecc;
-#[cfg(test)]
-mod tests;
+
 #[derive(Clone, Debug)]
-pub struct Point<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
-{
+pub struct Point<
+    W: PrimeField,
+    N: PrimeField,
+    const NUMBER_OF_LIMBS: usize,
+    const BIT_LEN_LIMB: usize,
+> {
     x: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     y: Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     Point<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn new(
@@ -52,15 +55,15 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
 
 #[derive(Clone, Debug)]
 pub struct ConstantPoint<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
 > {
     x: ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     y: ConstantInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
 }
-impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
+impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ConstantPoint<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     pub fn new<Emulated: CurveAffine>(
@@ -92,10 +95,9 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         C::from_xy(x, y).unwrap()
     }
 }
+
 #[cfg(test)]
-use group::ff::PrimeField;
-#[cfg(test)]
-use halo2::arithmetic::CurveExt;
+use halo2_proofs::arithmetic::CurveExt;
 #[cfg(test)]
 pub(crate) fn multiexp_naive_var<C: CurveExt>(point: &[C], scalar: &[C::ScalarExt]) -> C
 where

@@ -1,6 +1,8 @@
-use super::{chip::IntegerChip, ConstantInteger, Integer};
-use crate::utils::{big_to_fe, decompose_big, fe_to_big};
-use halo2::{circuit::Value, halo2curves::FieldExt};
+use crate::{
+    integer::{chip::IntegerChip, ConstantInteger, Integer},
+    utils::{big_to_fe, decompose_big, fe_to_big},
+};
+use halo2_proofs::{circuit::Value, halo2curves::ff::PrimeField};
 use num_bigint::BigUint as Big;
 use num_integer::Integer as _;
 use num_traits::{One, Zero};
@@ -13,8 +15,8 @@ mod reduce;
 
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

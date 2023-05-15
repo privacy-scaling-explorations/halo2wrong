@@ -3,13 +3,13 @@ use crate::{
     utils::fe_to_big,
     Scaled,
 };
-use halo2::halo2curves::FieldExt;
+use halo2curves::ff::PrimeField;
 use std::marker::PhantomData;
 
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

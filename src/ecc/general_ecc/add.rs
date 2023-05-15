@@ -1,11 +1,13 @@
-use super::GeneralEccChip;
-use crate::{ecc::Point, integer::chip::IntegerChip};
-use halo2::halo2curves::{CurveAffine, FieldExt};
+use crate::{
+    ecc::{general_ecc::GeneralEccChip, Point},
+    integer::chip::IntegerChip,
+};
+use halo2curves::{group::ff::PrimeField, CurveAffine};
 
 impl<
         'a,
         Emulated: CurveAffine,
-        N: FieldExt,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

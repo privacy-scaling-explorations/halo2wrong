@@ -1,6 +1,6 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{AssignedCell, Region, Value},
-    halo2curves::FieldExt,
+    halo2curves::group::ff::PrimeField,
     plonk::{Advice, Column, Error, Fixed, Selector},
 };
 use std::collections::BTreeMap;
@@ -11,12 +11,12 @@ pub mod maingate;
 pub mod utils;
 
 #[derive(Debug)]
-pub struct RegionCtx<'a, F: FieldExt> {
+pub struct RegionCtx<'a, F: PrimeField> {
     region: Region<'a, F>,
     offset: usize,
     cell_map: BTreeMap<u32, AssignedCell<F, F>>,
 }
-impl<'a, F: FieldExt> RegionCtx<'a, F> {
+impl<'a, F: PrimeField> RegionCtx<'a, F> {
     pub fn new(region: Region<'a, F>) -> RegionCtx<'a, F> {
         RegionCtx {
             region,
@@ -101,7 +101,7 @@ impl<'a, F: FieldExt> RegionCtx<'a, F> {
         self.offset += offset;
     }
 }
-pub trait Composable<F: FieldExt>: Sized {
+pub trait Composable<F: PrimeField>: Sized {
     fn value(&self) -> Value<F>;
     fn compose(terms: &[Self], constant: F) -> Value<F> {
         terms.iter().fold(Value::known(constant), |acc, term| {
@@ -109,17 +109,17 @@ pub trait Composable<F: FieldExt>: Sized {
         })
     }
 }
-impl<F: FieldExt> Composable<F> for Witness<F> {
+impl<F: PrimeField> Composable<F> for Witness<F> {
     fn value(&self) -> Value<F> {
         self.value
     }
 }
-impl<F: FieldExt> Composable<F> for Scaled<F> {
+impl<F: PrimeField> Composable<F> for Scaled<F> {
     fn value(&self) -> Value<F> {
         self.witness.value().map(|value| value * self.factor)
     }
 }
-impl<F: FieldExt> Composable<F> for SecondDegreeScaled<F> {
+impl<F: PrimeField> Composable<F> for SecondDegreeScaled<F> {
     fn value(&self) -> Value<F> {
         self.w0
             .value()
@@ -128,28 +128,28 @@ impl<F: FieldExt> Composable<F> for SecondDegreeScaled<F> {
     }
 }
 #[derive(Debug, Clone, Copy)]
-pub struct Witness<F: FieldExt> {
+pub struct Witness<F: PrimeField> {
     pub(crate) id: u32,
     pub(crate) value: Value<F>,
 }
 #[derive(Debug, Clone, Copy)]
-pub struct Scaled<F: FieldExt> {
+pub struct Scaled<F: PrimeField> {
     pub(crate) witness: Witness<F>,
     pub(crate) factor: F,
 }
 #[derive(Debug, Clone, Copy)]
-pub struct SecondDegreeScaled<F: FieldExt> {
+pub struct SecondDegreeScaled<F: PrimeField> {
     pub(crate) w0: Witness<F>,
     pub(crate) w1: Witness<F>,
     pub(crate) factor: F,
 }
 #[derive(Debug, Clone)]
-pub enum Term<F: FieldExt> {
+pub enum Term<F: PrimeField> {
     First(Scaled<F>),
     Second(SecondDegreeScaled<F>),
     Zero,
 }
-impl<F: FieldExt> Witness<F> {
+impl<F: PrimeField> Witness<F> {
     pub fn id(&self) -> u32 {
         self.id
     }
@@ -158,13 +158,13 @@ impl<F: FieldExt> Witness<F> {
             .map(|value| decompose(value, number_of_limbs, sublimb_bit_len))
     }
     pub fn dummy() -> Self {
-        Self::no_copy(Value::known(F::zero()))
+        Self::no_copy(Value::known(F::ZERO))
     }
     pub fn no_copy(value: Value<F>) -> Self {
         Witness { id: 0, value }
     }
 }
-impl<F: FieldExt> Scaled<F> {
+impl<F: PrimeField> Scaled<F> {
     pub fn new(witness: &Witness<F>, factor: F) -> Self {
         Self {
             witness: *witness,
@@ -174,26 +174,26 @@ impl<F: FieldExt> Scaled<F> {
     pub fn dummy() -> Self {
         Scaled {
             witness: Witness::dummy(),
-            factor: F::zero(),
+            factor: F::ZERO,
         }
     }
     pub fn no_copy(value: Value<F>, factor: F) -> Self {
         Self::new(&Witness::no_copy(value), factor)
     }
     pub fn is_empty(&self) -> bool {
-        self.factor == F::zero()
+        self.factor == F::ZERO
     }
     pub fn mul(witness: &Witness<F>) -> Self {
-        Self::new(witness, F::zero())
+        Self::new(witness, F::ZERO)
     }
     pub fn add(witness: &Witness<F>) -> Self {
-        Self::new(witness, F::one())
+        Self::new(witness, F::ONE)
     }
     pub fn neg(&self) -> Self {
         Self::new(&self.witness(), -self.factor())
     }
     pub fn sub(witness: &Witness<F>) -> Self {
-        Self::new(witness, -F::one())
+        Self::new(witness, -F::ONE)
     }
     pub fn result(witness: &Witness<F>) -> Self {
         Self::sub(witness)
@@ -208,7 +208,7 @@ impl<F: FieldExt> Scaled<F> {
         self.witness.value().map(|e| e * self.factor())
     }
 }
-impl<F: FieldExt> SecondDegreeScaled<F> {
+impl<F: PrimeField> SecondDegreeScaled<F> {
     pub fn new(w0: &Witness<F>, w1: &Witness<F>, factor: F) -> Self {
         Self {
             w0: *w0,
@@ -217,7 +217,7 @@ impl<F: FieldExt> SecondDegreeScaled<F> {
         }
     }
     pub fn is_empty(&self) -> bool {
-        self.factor == F::zero()
+        self.factor == F::ZERO
     }
     pub fn factor(&self) -> F {
         self.factor
@@ -229,27 +229,27 @@ impl<F: FieldExt> SecondDegreeScaled<F> {
         self.w1
     }
 }
-impl<F: FieldExt> From<Scaled<F>> for Term<F> {
+impl<F: PrimeField> From<Scaled<F>> for Term<F> {
     fn from(e: Scaled<F>) -> Self {
         Self::First(e)
     }
 }
-impl<F: FieldExt> From<SecondDegreeScaled<F>> for Term<F> {
+impl<F: PrimeField> From<SecondDegreeScaled<F>> for Term<F> {
     fn from(e: SecondDegreeScaled<F>) -> Self {
         Self::Second(e)
     }
 }
-impl<F: FieldExt> From<&Scaled<F>> for Term<F> {
+impl<F: PrimeField> From<&Scaled<F>> for Term<F> {
     fn from(e: &Scaled<F>) -> Self {
         Self::First(*e)
     }
 }
-impl<F: FieldExt> From<&SecondDegreeScaled<F>> for Term<F> {
+impl<F: PrimeField> From<&SecondDegreeScaled<F>> for Term<F> {
     fn from(e: &SecondDegreeScaled<F>) -> Self {
         Self::Second(*e)
     }
 }
-impl<F: FieldExt> Term<F> {
+impl<F: PrimeField> Term<F> {
     pub fn compose(terms: &[Self], constant: F) -> Value<F> {
         terms.iter().fold(Value::known(constant), |acc, term| {
             acc.zip(term.value()).map(|(acc, coeff)| acc + coeff)
@@ -263,12 +263,12 @@ impl<F: FieldExt> Term<F> {
         }
     }
 }
-impl<F: FieldExt> Composable<F> for Term<F> {
+impl<F: PrimeField> Composable<F> for Term<F> {
     fn value(&self) -> Value<F> {
         match self {
             Self::First(e) => e.value(),
             Self::Second(e) => e.value(),
-            Self::Zero => Value::known(F::zero()),
+            Self::Zero => Value::known(F::ZERO),
         }
     }
 }

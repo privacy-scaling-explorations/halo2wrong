@@ -1,23 +1,23 @@
-use super::{config::MainGate, operations::Collector, Gate};
 use crate::{
     maingate::{
-        config::ExtendedGate,
-        operations::{ComplexOperation, ConstantOperation, Operation},
+        config::{ExtendedGate, MainGate},
+        operations::{Collector, ComplexOperation, ConstantOperation, Operation},
+        Gate,
     },
     utils::compose,
     Composable, Scaled, SecondDegreeScaled, Term, Witness,
 };
-use halo2::{
+use halo2_proofs::{
     circuit::{floor_planner::V1, Layouter, Value},
     dev::MockProver,
-    halo2curves::{pasta::Fp, FieldExt},
+    halo2curves::{group::ff::PrimeField, pasta::Fp},
     plonk::{Circuit, ConstraintSystem, Error},
 };
 use rand::Rng;
 use rand_core::OsRng;
 use std::marker::PhantomData;
 
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField + Ord> Collector<F> {
     pub(crate) fn rand_witness(&mut self) -> Witness<F> {
         self.number_of_witnesses += 1;
         Witness {
@@ -48,16 +48,16 @@ impl<F: FieldExt> Collector<F> {
     }
 }
 #[derive(Clone)]
-struct TestConfig1<F: FieldExt, G: Gate<F> + Clone> {
+struct TestConfig1<F: PrimeField, G: Gate<F> + Clone> {
     gate: G,
     _marker: PhantomData<F>,
 }
 #[derive(Default)]
-// struct MyCircuit1<F: FieldExt> {
-struct MyCircuit1<F: FieldExt, G: Gate<F>> {
+// struct MyCircuit1<F: PrimeField> {
+struct MyCircuit1<F: PrimeField, G: Gate<F>> {
     _marker: PhantomData<(F, G)>,
 }
-impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
+impl<F: PrimeField + Ord, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
     type Config = TestConfig1<F, G>;
     type FloorPlanner = V1;
 
@@ -78,8 +78,8 @@ impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
         let value = |e: F| Value::known(e);
         let rand_fe = || F::random(OsRng);
         let rand_value = || value(rand_fe());
-        let one = &o.register_constant(F::one());
-        let zero = &o.register_constant(F::zero());
+        let one = &o.register_constant(F::ONE);
+        let zero = &o.register_constant(F::ZERO);
         o.assert_one(one);
         o.assert_zero(zero);
         o.assert_bit(one);
@@ -164,10 +164,10 @@ impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
             o.assert_bit(one);
             o.assert_bit(zero);
             // unassigned
-            let w0 = &o.new_witness(value(F::one()));
+            let w0 = &o.new_witness(value(F::ONE));
             o.assert_bit(w0);
             o.assert_one(w0);
-            let w0 = &o.new_witness(value(F::zero()));
+            let w0 = &o.new_witness(value(F::ZERO));
             o.assert_bit(w0);
             o.assert_zero(w0);
         }
@@ -237,7 +237,7 @@ impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit1<F, G> {
             let result = Scaled::compose(&terms[..], constant);
             let result = o.assign(result);
             terms.push(Scaled::sub(&result));
-            let result_base = F::zero();
+            let result_base = F::ZERO;
             let result = &o.compose(&terms[..], constant, result_base);
             o.assert_zero(result)
         }
@@ -321,22 +321,22 @@ fn test_arithmetic() {
     };
     prover.assert_satisfied();
 }
-impl<F: FieldExt, G: Gate<F>> MyCircuit2<F, G> {
+impl<F: PrimeField, G: Gate<F>> MyCircuit2<F, G> {
     fn bit_lenghts() -> Vec<usize> {
         vec![4, 5, 6, 7]
     }
 }
 #[derive(Clone)]
-struct TestConfig2<F: FieldExt, G: Gate<F> + Clone> {
+struct TestConfig2<F: PrimeField, G: Gate<F> + Clone> {
     gate: G,
     _marker: PhantomData<F>,
 }
 #[derive(Default)]
-struct MyCircuit2<F: FieldExt, G: Gate<F>> {
+struct MyCircuit2<F: PrimeField, G: Gate<F>> {
     _marker: PhantomData<(F, G)>,
 }
 
-impl<F: FieldExt, G: Gate<F> + Clone> Circuit<F> for MyCircuit2<F, G> {
+impl<F: PrimeField + Ord, G: Gate<F> + Clone> Circuit<F> for MyCircuit2<F, G> {
     type Config = TestConfig2<F, G>;
     type FloorPlanner = V1;
 
@@ -414,13 +414,13 @@ fn test_lookup() {
     prover.assert_satisfied();
 }
 #[derive(Clone)]
-struct TestConfig3<F: FieldExt, G: Gate<F> + Clone> {
+struct TestConfig3<F: PrimeField, G: Gate<F> + Clone> {
     gate: G,
     _marker: PhantomData<F>,
 }
 #[derive(Default)]
 struct MyCircuit3<
-    F: FieldExt,
+    F: PrimeField,
     G: Gate<F> + Clone,
     const W: usize,
     const LIMB_BIT_LEN: usize,
@@ -429,7 +429,7 @@ struct MyCircuit3<
     _marker: PhantomData<(F, G)>,
 }
 impl<
-        F: FieldExt,
+        F: PrimeField + Ord,
         G: Gate<F> + Clone,
         const W: usize,
         const LIMB_BIT_LEN: usize,
@@ -546,7 +546,7 @@ fn test_decomposition() {
     prover.assert_satisfied();
 }
 
-impl<F: FieldExt> Collector<F> {
+impl<F: PrimeField> Collector<F> {
     pub(crate) fn info(&self) {
         let mut add = 0;
         let mut add_scaled = 0;

@@ -1,6 +1,8 @@
-use super::BaseFieldEccChip;
-use crate::{ecc::Point, integer::chip::IntegerChip};
-use halo2::halo2curves::CurveAffine;
+use crate::{
+    ecc::{base_field_ecc::BaseFieldEccChip, Point},
+    integer::chip::IntegerChip,
+};
+use halo2curves::CurveAffine;
 
 impl<
         'a,

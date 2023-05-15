@@ -5,12 +5,12 @@ use crate::{
     },
     Scaled, SecondDegreeScaled, Term,
 };
-use halo2::halo2curves::FieldExt;
+use halo2curves::ff::PrimeField;
 
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -75,17 +75,17 @@ impl<
                 .chain(vec![&carry].into_iter())
                 .cloned()
                 .collect::<Vec<Term<N>>>();
-            let residue = self.o.compose_second_degree(&terms[..], N::zero(), base);
+            let residue = self.o.compose_second_degree(&terms[..], N::ZERO, base);
             carry = Scaled::add(&residue).into();
             self.range_limb(&residue, self.rns.mul_v_bit_len);
         }
         // constrain native value
-        let w0w1: Term<N> = SecondDegreeScaled::new(w0.native(), w1.native(), N::one()).into();
+        let w0w1: Term<N> = SecondDegreeScaled::new(w0.native(), w1.native(), N::ONE).into();
         let qp: Term<N> =
             Scaled::new(quotient.native(), -self.rns.wrong_modulus_in_native_modulus).into();
-        let r = Scaled::new(result.native(), -N::one()).into();
+        let r = Scaled::new(result.native(), -N::ONE).into();
         self.o
-            .compose_second_degree(&[w0w1, qp, r], N::zero(), N::zero());
+            .compose_second_degree(&[w0w1, qp, r], N::ZERO, N::ZERO);
 
         result
     }
@@ -146,15 +146,15 @@ impl<
                 .chain(vec![&carry].into_iter())
                 .cloned()
                 .collect::<Vec<Scaled<N>>>();
-            let residue = self.o.compose(&terms[..], N::zero(), base);
+            let residue = self.o.compose(&terms[..], N::ZERO, base);
             carry = Scaled::add(&residue);
             self.range_limb(&residue, self.rns.mul_v_bit_len);
         }
         // constrain native value
         let w0w1 = Scaled::new(w0.native(), constant.native());
         let qp = Scaled::new(quotient.native(), -self.rns.wrong_modulus_in_native_modulus);
-        let r = Scaled::new(result.native(), -N::one());
-        self.o.compose(&[w0w1, qp, r], N::zero(), N::zero());
+        let r = Scaled::new(result.native(), -N::ONE);
+        self.o.compose(&[w0w1, qp, r], N::ZERO, N::ZERO);
 
         result
     }
@@ -193,7 +193,7 @@ impl<
                                 SecondDegreeScaled::new(
                                     w0.limb(j),
                                     w0.limb(k),
-                                    base * if j == k { N::one() } else { N::from(2) },
+                                    base * if j == k { N::ONE } else { N::from(2) },
                                 )
                                 .into()
                             })
@@ -225,17 +225,17 @@ impl<
                 .chain(vec![&carry].into_iter())
                 .cloned()
                 .collect::<Vec<Term<N>>>();
-            let residue = self.o.compose_second_degree(&terms[..], N::zero(), base);
+            let residue = self.o.compose_second_degree(&terms[..], N::ZERO, base);
             carry = Scaled::add(&residue).into();
             self.range_limb(&residue, self.rns.mul_v_bit_len);
         }
         // constrain native value
-        let w0w0: Term<N> = SecondDegreeScaled::new(w0.native(), w0.native(), N::one()).into();
+        let w0w0: Term<N> = SecondDegreeScaled::new(w0.native(), w0.native(), N::ONE).into();
         let qp: Term<N> =
             Scaled::new(quotient.native(), -self.rns.wrong_modulus_in_native_modulus).into();
-        let r = Scaled::new(result.native(), -N::one()).into();
+        let r = Scaled::new(result.native(), -N::ONE).into();
         self.o
-            .compose_second_degree(&[w0w0, qp, r], N::zero(), N::zero());
+            .compose_second_degree(&[w0w0, qp, r], N::ZERO, N::ZERO);
         result
     }
     pub(crate) fn _div_incomplete(
@@ -301,18 +301,18 @@ impl<
                 .chain(vec![&carry].into_iter())
                 .cloned()
                 .collect::<Vec<Term<N>>>();
-            let residue = self.o.compose_second_degree(&terms[..], N::zero(), base);
+            let residue = self.o.compose_second_degree(&terms[..], N::ZERO, base);
             carry = Scaled::add(&residue).into();
             self.range_limb(&residue, self.rns.mul_v_bit_len);
         }
         // constrain native value
         let w1_result: Term<N> =
-            SecondDegreeScaled::new(result.native(), w1.native(), N::one()).into();
+            SecondDegreeScaled::new(result.native(), w1.native(), N::ONE).into();
         let qp: Term<N> =
             Scaled::new(quotient.native(), -self.rns.wrong_modulus_in_native_modulus).into();
-        let w0 = Scaled::new(w0.native(), -N::one()).into();
+        let w0 = Scaled::new(w0.native(), -N::ONE).into();
         self.o
-            .compose_second_degree(&[w1_result, qp, w0], N::zero(), N::zero());
+            .compose_second_degree(&[w1_result, qp, w0], N::ZERO, N::ZERO);
 
         result
     }

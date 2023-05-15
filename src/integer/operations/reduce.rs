@@ -5,11 +5,11 @@ use crate::{
     },
     Scaled,
 };
-use halo2::halo2curves::FieldExt;
+use halo2curves::ff::PrimeField;
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -65,15 +65,15 @@ impl<
                 self.rns.left_shifter(2)
             };
             // find the round residue
-            let residue = self.o.compose(&terms[..], N::zero(), carry_base);
+            let residue = self.o.compose(&terms[..], N::ZERO, carry_base);
             // range residue
             self.range_limb(&residue, self.rns.red_v_bit_len);
             // update carry
-            carry = Some(Scaled::new(&residue, N::one()));
+            carry = Some(Scaled::new(&residue, N::ONE));
         }
         // constrain in native modulus
         let integer_native = self.o.add_scaled(
-            &Scaled::new(result.native(), N::one()),
+            &Scaled::new(result.native(), N::ONE),
             &Scaled::new(&quotient, self.rns.wrong_modulus_in_native_modulus),
         );
         self.o.equal(integer.native(), &integer_native);
@@ -128,11 +128,11 @@ impl<
                 self.rns.left_shifter(2)
             };
             // find the round residue
-            let residue = self.o.compose(&terms[..], N::zero(), carry_base);
+            let residue = self.o.compose(&terms[..], N::ZERO, carry_base);
             // range residue
             self.range_limb(&residue, self.rns.red_v_bit_len);
             // update carry
-            carry = Some(Scaled::new(&residue, N::one()));
+            carry = Some(Scaled::new(&residue, N::ONE));
         }
         // TODO: consider twice if native check is required
     }

@@ -1,20 +1,19 @@
-use super::{
-    chip::{IntegerChip, Range},
-    rns::Rns,
-    ConstantInteger, Integer,
-};
 use crate::{
-    integer::Limb,
+    integer::{
+        chip::{IntegerChip, Range},
+        rns::Rns,
+        ConstantInteger, Integer, Limb,
+    },
     maingate::{config::MainGate, operations::Collector, Gate},
     utils::{big_to_fe, modulus},
     Scaled, Witness,
 };
-use halo2::{
+use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::MockProver,
     halo2curves::{
+        group::ff::PrimeField,
         pasta::{Fp, Fq},
-        FieldExt,
     },
     plonk::{Circuit, ConstraintSystem, Error},
 };
@@ -45,8 +44,8 @@ pub(crate) struct Report {
 }
 impl<
         'a,
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -78,7 +77,7 @@ impl<
             .zip(self.rns.left_shifters.iter())
             .map(|(limb, base)| Scaled::new(limb, *base))
             .collect::<Vec<Scaled<N>>>();
-        let native = self.o.compose(&terms[..], N::zero(), N::one());
+        let native = self.o.compose(&terms[..], N::ZERO, N::ONE);
         let (max_values, _) = self.rns.max_values(range);
         let limbs: Vec<Limb<N>> = limbs
             .iter()
@@ -98,8 +97,8 @@ impl<
     }
 }
 impl<
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField,
+        N: PrimeField,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,
@@ -151,8 +150,8 @@ impl<
 
 #[derive(Clone)]
 pub struct TestConfig<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
@@ -164,8 +163,8 @@ pub struct TestConfig<
 }
 #[derive(Default)]
 struct MyCircuit<
-    W: FieldExt,
-    N: FieldExt,
+    W: PrimeField,
+    N: PrimeField,
     const NUMBER_OF_LIMBS: usize,
     const BIT_LEN_LIMB: usize,
     const NUMBER_OF_SUBLIMBS: usize,
@@ -174,8 +173,8 @@ struct MyCircuit<
     _marker: PhantomData<(W, N)>,
 }
 impl<
-        W: FieldExt,
-        N: FieldExt,
+        W: PrimeField + Ord,
+        N: PrimeField + Ord,
         const NUMBER_OF_LIMBS: usize,
         const BIT_LEN_LIMB: usize,
         const NUMBER_OF_SUBLIMBS: usize,

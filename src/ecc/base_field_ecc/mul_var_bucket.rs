@@ -1,9 +1,11 @@
-use super::{BaseFieldEccChip, Point};
-use crate::Witness;
-use group::ff::PrimeField;
-use group::Curve;
-use group::Group;
-use halo2::halo2curves::CurveAffine;
+use crate::{
+    ecc::base_field_ecc::{BaseFieldEccChip, Point},
+    Witness,
+};
+use halo2curves::{
+    group::{ff::PrimeField, Curve, Group},
+    CurveAffine,
+};
 
 macro_rules! div_ceil {
     ($a:expr, $b:expr) => {

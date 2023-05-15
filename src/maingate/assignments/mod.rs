@@ -1,8 +1,10 @@
-use super::operations::Operation;
-use crate::{Composable, RegionCtx, Scaled, SecondDegreeScaled, Term, Witness};
-use halo2::{
+use crate::{
+    maingate::operations::Operation, Composable, RegionCtx, Scaled, SecondDegreeScaled, Term,
+    Witness,
+};
+use halo2_proofs::{
     circuit::Value,
-    halo2curves::FieldExt,
+    halo2curves::ff::PrimeField,
     plonk::{Advice, Column, Error, Fixed},
 };
 mod extended_gate;
@@ -14,7 +16,7 @@ pub enum ColumnID {
     C,
     NEXT,
 }
-pub trait AssignmentsInternal<F: FieldExt> {
+pub trait AssignmentsInternal<F: PrimeField> {
     fn column(&self, id: ColumnID) -> (Column<Fixed>, Column<Advice>);
     fn enable_scaled_mul(&self, ctx: &mut RegionCtx<'_, F>, factor: F) -> Result<(), Error>;
     fn assign(
@@ -37,8 +39,8 @@ pub trait AssignmentsInternal<F: FieldExt> {
     }
     fn empty_cell(&self, ctx: &mut RegionCtx<'_, F>, column: ColumnID) -> Result<(), Error> {
         let (fixed, advice) = self.column(column);
-        ctx.assign_fixed(|| "", fixed, F::zero())?;
-        ctx.assign_advice(|| "", advice, Value::known(F::zero()))?;
+        ctx.assign_fixed(|| "", fixed, F::ZERO)?;
+        ctx.assign_advice(|| "", advice, Value::known(F::ZERO))?;
         Ok(())
     }
     fn no_op(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error>;
@@ -63,19 +65,19 @@ pub trait AssignmentsInternal<F: FieldExt> {
         Ok(())
     }
     fn enable_mul(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        self.enable_scaled_mul(ctx, F::one())
+        self.enable_scaled_mul(ctx, F::ONE)
     }
     fn disable_mul(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        self.enable_scaled_mul(ctx, F::zero())
+        self.enable_scaled_mul(ctx, F::ZERO)
     }
     fn enable_next(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error>;
     fn disable_next(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error>;
     fn set_constant(&self, ctx: &mut RegionCtx<'_, F>, constant: F) -> Result<(), Error>;
     fn disable_constant(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        self.set_constant(ctx, F::zero())
+        self.set_constant(ctx, F::ZERO)
     }
 }
-pub trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
+pub trait Assignments<F: PrimeField>: AssignmentsInternal<F> {
     #[cfg(test)]
     // arithmetic equality constrait. only for testing.
     fn assert_equal(
@@ -294,7 +296,7 @@ pub trait Assignments<F: FieldExt>: AssignmentsInternal<F> {
         }
     }
 }
-pub trait ConstantAssignments<F: FieldExt>: Assignments<F> {
+pub trait ConstantAssignments<F: PrimeField>: Assignments<F> {
     fn add_constant(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -368,7 +370,7 @@ pub trait ConstantAssignments<F: FieldExt>: Assignments<F> {
         self.assign(ctx, ColumnID::A, &Scaled::add(w0))
     }
 }
-trait ComplexAssignements<F: FieldExt> {
+trait ComplexAssignements<F: PrimeField> {
     fn select(
         &self,
         ctx: &mut RegionCtx<'_, F>,

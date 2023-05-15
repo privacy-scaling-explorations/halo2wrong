@@ -1,27 +1,29 @@
-use super::{Assignments, AssignmentsInternal, ColumnID, ComplexAssignements, ConstantAssignments};
 use crate::{
     maingate::{
+        assignments::{
+            Assignments, AssignmentsInternal, ColumnID, ComplexAssignements, ConstantAssignments,
+        },
         config::ExtendedGate,
         operations::{ComplexOperation, ConstantOperation},
     },
     Composable, RegionCtx, Scaled, SecondDegreeScaled, Term, Witness,
 };
-use halo2::{
-    halo2curves::FieldExt,
+use halo2_proofs::{
+    halo2curves::ff::PrimeField,
     plonk::{Advice, Column, Error, Fixed},
 };
 
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> AssignmentsInternal<F>
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> AssignmentsInternal<F>
     for ExtendedGate<F, LOOKUP_WIDTH>
 {
     fn enable_scaled_mul(&self, ctx: &mut RegionCtx<'_, F>, factor: F) -> Result<(), Error> {
         ctx.assign_fixed(|| "", self.s_mul, factor).map(|_| ())
     }
     fn enable_next(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.s_next, F::one()).map(|_| ())
+        ctx.assign_fixed(|| "", self.s_next, F::ONE).map(|_| ())
     }
     fn disable_next(&self, ctx: &mut RegionCtx<'_, F>) -> Result<(), Error> {
-        ctx.assign_fixed(|| "", self.s_next, F::zero()).map(|_| ())
+        ctx.assign_fixed(|| "", self.s_next, F::ZERO).map(|_| ())
     }
     fn set_constant(&self, ctx: &mut RegionCtx<'_, F>, constant: F) -> Result<(), Error> {
         ctx.assign_fixed(|| "", self.constant, constant).map(|_| ())
@@ -38,18 +40,18 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> AssignmentsInternal<F>
         self.disable_constant(ctx)?;
         self.disable_mul(ctx)?;
         self.disable_next(ctx)?;
-        ctx.assign_fixed(|| "", self.sa, F::zero())?;
-        ctx.assign_fixed(|| "", self.sb, F::zero())?;
-        ctx.assign_fixed(|| "", self.sc, F::zero())?;
+        ctx.assign_fixed(|| "", self.sa, F::ZERO)?;
+        ctx.assign_fixed(|| "", self.sb, F::ZERO)?;
+        ctx.assign_fixed(|| "", self.sc, F::ZERO)?;
         Ok(())
     }
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> Assignments<F> for ExtendedGate<F, LOOKUP_WIDTH> {}
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> ConstantAssignments<F>
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> Assignments<F> for ExtendedGate<F, LOOKUP_WIDTH> {}
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> ConstantAssignments<F>
     for ExtendedGate<F, LOOKUP_WIDTH>
 {
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
     pub(crate) fn assign_constant_op(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -111,7 +113,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ExtendedGate<F, LOOKUP_WIDTH> {
         }
     }
 }
-impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
+impl<F: PrimeField, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
     for ExtendedGate<F, LOOKUP_WIDTH>
 {
     fn select(
@@ -126,7 +128,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
         // * first row
         // -c*w1 + w1 - res = tmp
         // tmp = c * w0
-        self.enable_scaled_mul(ctx, -F::one())?;
+        self.enable_scaled_mul(ctx, -F::ONE)?;
         self.enable_next(ctx)?;
         self.disable_constant(ctx)?;
         self.assign(ctx, ColumnID::A, &Scaled::add(w1))?;
@@ -137,7 +139,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
         // c * w0 = -tmp
         // find the temp witenss
         let c_w0 = cond.value() * w0.value();
-        let c_w0 = Scaled::no_copy(c_w0, -F::one());
+        let c_w0 = Scaled::no_copy(c_w0, -F::ONE);
         self.enable_mul(ctx)?;
         self.disable_next(ctx)?;
         self.disable_constant(ctx)?;
@@ -192,7 +194,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
                 (result.neg(), constant)
             } else {
                 self.disable_constant(ctx)?;
-                (Scaled::no_copy(remaining, -F::one()), F::zero())
+                (Scaled::no_copy(remaining, -F::ONE), F::ZERO)
             };
             self.assign(ctx, ColumnID::C, &t)?;
             // update remaining value
@@ -201,9 +203,8 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
             if i == number_of_chunks - 1 {
                 self.disable_next(ctx)?;
                 #[cfg(feature = "sanity-check")]
-                remaining.map(|remaining_should_be_zero| {
-                    assert_eq!(remaining_should_be_zero, F::zero())
-                });
+                remaining
+                    .map(|remaining_should_be_zero| assert_eq!(remaining_should_be_zero, F::ZERO));
             } else {
                 self.enable_next(ctx)?;
             }
@@ -245,7 +246,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
                 (result.neg(), constant)
             } else {
                 self.disable_constant(ctx)?;
-                (Scaled::no_copy(remaining, -F::one()), F::zero())
+                (Scaled::no_copy(remaining, -F::ONE), F::ZERO)
             };
             self.assign(ctx, ColumnID::C, &t)?;
             // update remaining value
@@ -260,7 +261,7 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
                     self.disable_next(ctx)?;
                     #[cfg(feature = "sanity-check")]
                     remaining.map(|remaining_should_be_zero| {
-                        assert_eq!(remaining_should_be_zero, F::zero())
+                        assert_eq!(remaining_should_be_zero, F::ZERO)
                     });
                 }
             } else {
@@ -272,8 +273,8 @@ impl<F: FieldExt, const LOOKUP_WIDTH: usize> ComplexAssignements<F>
             self.compose(
                 ctx,
                 &first_degree_terms,
-                &Scaled::no_copy(remaining, F::one()),
-                F::zero(),
+                &Scaled::no_copy(remaining, F::ONE),
+                F::ZERO,
             )?;
         }
         Ok(())
