@@ -384,6 +384,7 @@ impl<F: PrimeField> RangeChip<F> {
 #[cfg(test)]
 mod tests {
 
+    use halo2wrong::halo2::arithmetic::Field;
     use halo2wrong::halo2::circuit::Value;
     use halo2wrong::RegionCtx;
 
@@ -519,8 +520,9 @@ mod tests {
         let inputs = (2..20)
             .map(|number_of_limbs| {
                 let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
+                let value = Fp::from(2).pow(&[bit_len as u64, 0, 0, 0]) - Fp::one();
                 Input {
-                    value: Value::known(Fp::from_u128((1 << bit_len) - 1)),
+                    value: Value::known(value),
                     limb_bit_len: LIMB_BIT_LEN,
                     bit_len,
                 }
