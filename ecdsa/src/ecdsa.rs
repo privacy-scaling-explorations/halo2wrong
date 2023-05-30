@@ -14,7 +14,7 @@ use maingate::{MainGateConfig, RangeConfig};
 #[derive(Clone, Debug)]
 pub struct EcdsaConfig {
     main_gate_config: MainGateConfig,
-    range_config: RangeConfig,
+    pub range_config: RangeConfig,
 }
 
 impl EcdsaConfig {
