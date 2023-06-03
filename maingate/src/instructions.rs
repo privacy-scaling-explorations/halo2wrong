@@ -330,6 +330,35 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
             .swap_remove(2))
     }
 
+    /// Assigns new value equal to `1` if `c1 ^ c0 = 1`,
+    /// equal to `0` if `c1 ^ c0 = 0`
+    // `new_assigned_value + 2 * c1 * c2 - c1 - c2 = 0`.
+    fn xor(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        c1: &AssignedCondition<F>,
+        c2: &AssignedCondition<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
+        // Find the new witness
+        let c = c1
+            .value()
+            .zip(c2.value())
+            .map(|(c1, c2)| *c1 + *c2 - (F::ONE + F::ONE) * *c1 * *c2);
+
+        Ok(self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_sub(c1),
+                    Term::assigned_to_sub(c2),
+                    Term::unassigned_to_add(c),
+                ],
+                F::ZERO,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2))
+    }
+
     /// Assigns new value that is logic inverse of the given assigned value.
     fn not(
         &self,
