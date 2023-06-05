@@ -231,7 +231,7 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
     Rns<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
     /// Calculates [`Rns`] `base_aux`.
-    /// Calculates base auxillary value wich must be equal to `wrong_modulus`
+    /// Calculates base auxillary value which must be equal to `wrong_modulus`
     /// and all limbs of it must be higher than dense limb value. This value
     /// is used in operations like subtractions in order to avoid negative
     /// when values when working with `big_uint`.
