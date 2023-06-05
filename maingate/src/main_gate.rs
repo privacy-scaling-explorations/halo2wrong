@@ -81,7 +81,8 @@ pub struct MainGateConfig {
     pub(crate) s_mul_cd: Column<Fixed>,
 
     pub(crate) s_constant: Column<Fixed>,
-    pub(crate) instance: Column<Instance>,
+    /// column for public input
+    pub instance: Column<Instance>,
 }
 
 impl MainGateConfig {
