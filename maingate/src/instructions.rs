@@ -400,7 +400,7 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
                 [
                     Term::assigned_to_mul(b),
                     Term::unassigned_to_mul(c),
-                    Term::assigned_to_add(a),
+                    Term::assigned_to_sub(a),
                 ],
                 F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),

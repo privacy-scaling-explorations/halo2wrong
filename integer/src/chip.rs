@@ -403,6 +403,7 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
         ctx: &mut RegionCtx<'_, N>,
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<(), Error> {
+        let a = &self.reduce_if_limb_values_exceeds_reduced(ctx, a)?;
         let a = &self.reduce_if_max_operand_value_exceeds(ctx, a)?;
         let main_gate = self.main_gate();
         for limb in a.limbs() {
