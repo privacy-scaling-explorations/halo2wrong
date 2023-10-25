@@ -444,7 +444,8 @@ impl<W: FieldExt, N: FieldExt, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB:
         for i in 1..NUMBER_OF_LIMBS {
             main_gate.assert_zero(ctx, a.limb(i))?;
         }
-        main_gate.assert_bit(ctx, a.limb(0))
+        let _ = main_gate.assert_bit(ctx, a.limb(0))?;
+        Ok(())
     }
 
     fn select(

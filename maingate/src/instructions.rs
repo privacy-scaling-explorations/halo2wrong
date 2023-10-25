@@ -213,7 +213,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         &self,
         ctx: &mut RegionCtx<'_, F>,
         bit: Value<F>,
-    ) -> Result<AssignedValue<F>, Error> {
+    ) -> Result<AssignedCondition<F>, Error> {
         let mut assigned = self.apply(
             ctx,
             [
@@ -236,8 +236,8 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
     fn assert_bit(
         &self,
         ctx: &mut RegionCtx<'_, F>,
-        bit: &AssignedCondition<F>,
-    ) -> Result<(), Error> {
+        bit: &AssignedValue<F>,
+    ) -> Result<AssignedCondition<F>, Error> {
         let assigned = self.apply(
             ctx,
             [
@@ -252,7 +252,7 @@ pub trait MainGateInstructions<F: FieldExt, const WIDTH: usize>: Chip<F> {
         ctx.constrain_equal(assigned[0].cell(), assigned[1].cell())?;
         ctx.constrain_equal(assigned[1].cell(), assigned[2].cell())?;
 
-        Ok(())
+        Ok(bit.clone())
     }
 
     /// Enforces one of given two values is `1`
