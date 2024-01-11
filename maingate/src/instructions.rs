@@ -12,7 +12,7 @@ use crate::{
 };
 use halo2wrong::{
     curves::ff::PrimeField,
-    utils::{big_to_fe, decompose, fe_to_big, power_of_two},
+    utils::{decompose, power_of_two},
     RegionCtx,
 };
 use std::iter;
@@ -961,38 +961,6 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         to_be_assigned: F,
         cond: &AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
-
-    /// Assignes new value equals to `1` if first bit of `a` is `1` or assigns
-    /// `0` if first bit of `a` is `0`
-    fn sign(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        a: &AssignedValue<F>,
-    ) -> Result<AssignedCondition<F>, Error> {
-        let w: Value<(F, F)> = a.value().map(|value| {
-            use num_bigint::BigUint;
-            use num_traits::{One, Zero};
-            let value = &fe_to_big(*value);
-            let half = big_to_fe(value / 2usize);
-            let sign = ((value & BigUint::one() != BigUint::zero()) as u64).into();
-            (sign, half)
-        });
-
-        let sign = self.assign_bit(ctx, w.map(|w| w.0))?;
-
-        self.apply(
-            ctx,
-            [
-                Term::Unassigned(w.map(|w| w.1), F::from(2)),
-                Term::Assigned(&sign, F::ONE),
-                Term::Assigned(a, -F::ONE),
-            ],
-            F::ZERO,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?;
-
-        Ok(sign)
-    }
 
     /// Assigns array values of bit values which is equal to decomposition of
     /// given assigned value

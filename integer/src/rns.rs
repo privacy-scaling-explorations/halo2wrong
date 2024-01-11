@@ -618,12 +618,15 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
             self.max_most_significant_operand_limb.bits() as usize % self.bit_len_lookup;
         let max_most_significant_reduced_limb_size =
             self.max_most_significant_reduced_limb.bits() as usize % self.bit_len_lookup;
+        // For sign function
+        let sign_aux = self.bit_len_lookup - 1;
         vec![
             self.mul_v_bit_len % self.bit_len_lookup,
             self.red_v_bit_len % self.bit_len_lookup,
             max_most_significant_mul_quotient_limb_size,
             max_most_significant_operand_limb_size,
             max_most_significant_reduced_limb_size,
+            sign_aux,
         ]
     }
 }
