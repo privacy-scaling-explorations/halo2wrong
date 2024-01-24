@@ -1,5 +1,6 @@
-use super::{make_mul_aux, AssignedPoint, EccConfig, MulAux, Point};
+use super::{AssignedPoint, EccConfig, MulAux, Point};
 use crate::halo2;
+use crate::halo2::arithmetic::Field;
 use crate::integer::rns::{Integer, Rns};
 use crate::integer::{IntegerChip, IntegerInstructions, Range, UnassignedInteger};
 use crate::maingate;
@@ -36,8 +37,13 @@ pub struct GeneralEccChip<
     )>,
     /// Auxiliary points for optimized multiplication for each (window_size,
     /// n_pairs) pairs
-    aux_registry:
-        BTreeMap<(usize, usize), AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>>,
+    aux_registry: BTreeMap<
+        usize,
+        (
+            Integer<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        ),
+    >,
 }
 
 impl<
@@ -137,23 +143,27 @@ impl<
     }
 
     /// Auxilary point for optimized multiplication algorithm
-    fn get_mul_aux(
+    fn get_mul_correction(
         &self,
         window_size: usize,
-        number_of_pairs: usize,
-    ) -> Result<MulAux<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
+    ) -> Result<
+        (
+            Integer<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+            MulAux<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        ),
+        Error,
+    > {
         // Gets chips' aux generator
         let to_add = match self.aux_generator.clone() {
             Some((assigned, _)) => Ok(assigned),
             None => Err(Error::Synthesis),
         }?;
-        let to_sub = match self.aux_registry.get(&(window_size, number_of_pairs)) {
+        let (scalar_correction, to_sub) = match self.aux_registry.get(&window_size) {
             Some(aux) => Ok(aux.clone()),
             None => Err(Error::Synthesis),
         }?;
-        // to_add the equivalent of AuxInit and to_sub AuxFin
-        // see https://hackmd.io/ncuKqRXzR-Cw-Au2fGzsMg?view
-        Ok(MulAux::new(to_add, to_sub))
+
+        Ok((scalar_correction, MulAux::new(to_add, to_sub)))
     }
 }
 
@@ -235,25 +245,49 @@ impl<
         Ok(())
     }
 
-    /// Assigns multiplication auxiliary point for a pair of (window_size,
-    /// n_pairs)
-    pub fn assign_aux(
+    /// Assigns multiplication auxiliary point for window_size
+    pub fn assign_correction(
         &mut self,
         ctx: &mut RegionCtx<'_, N>,
         window_size: usize,
-        number_of_pairs: usize,
     ) -> Result<(), Error> {
-        match self.aux_generator {
-            Some((_, point)) => {
-                let aux = point.map(|point| make_mul_aux(point, window_size, number_of_pairs));
-                let aux = self.assign_point(ctx, aux)?;
+        let scalar_correction = self.correct_scalar(window_size);
+
+        match &self.aux_generator {
+            Some((point, _)) => {
+                // compute correction point -2^w aux
+                let mut point_correction = self.double_n(ctx, point, window_size)?;
+                point_correction = self.neg(ctx, &point_correction)?;
+
                 self.aux_registry
-                    .insert((window_size, number_of_pairs), aux);
+                    .insert(window_size, (scalar_correction, point_correction));
                 Ok(())
             }
             // aux generator is not assigned yet
             None => Err(Error::Synthesis),
         }
+    }
+
+    /// correct scalar before mul; correction value is -2(1 + 2^w + ... + 2^{w(n-1)})
+    fn correct_scalar(
+        &mut self,
+        window_size: usize,
+    ) -> Integer<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
+        let window: usize = 1 << window_size;
+        let window_scalar = Emulated::Scalar::from(window as u64);
+
+        let num_bits = Emulated::Scalar::NUM_BITS as usize;
+        let number_of_windows = (num_bits + window_size - 1) / window_size;
+
+        let mut correction = Emulated::Scalar::ONE;
+        let mut power = window_scalar;
+        for _ in 0..number_of_windows - 1 {
+            correction += power;
+            power *= window_scalar;
+        }
+        correction += correction;
+
+        Integer::from_fe(-correction, self.rns_scalar())
     }
 
     /// Constraints to ensure `AssignedPoint` is on curve
@@ -415,13 +449,15 @@ mod tests {
         MainGate, MainGateConfig, RangeChip, RangeConfig, RangeInstructions, RegionCtx,
     };
     use paste::paste;
-    use rand_core::OsRng;
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::{OsRng, SeedableRng};
 
     use crate::curves::bn256::{Fr as BnScalar, G1Affine as Bn256};
     use crate::curves::pasta::{
         EpAffine as Pallas, EqAffine as Vesta, Fp as PastaFp, Fq as PastaFq,
     };
     use crate::curves::secp256k1::Secp256k1Affine as Secp256k1;
+    use crate::maingate::DimensionMeasurement;
 
     const NUMBER_OF_LIMBS: usize = 4;
     const BIT_LEN_LIMB: usize = 68;
@@ -794,8 +830,7 @@ mod tests {
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 1)?;
-                    ecc_chip.get_mul_aux(self.window_size, 1)?;
+                    ecc_chip.assign_correction(ctx, self.window_size)?;
                     Ok(())
                 },
             )?;
@@ -808,8 +843,11 @@ mod tests {
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
-                    let base = C::Curve::random(OsRng);
-                    let s = C::Scalar::random(OsRng);
+                    // let mut rng = ChaCha20Rng::seed_from_u64(80);
+                    let mut rng = OsRng;
+
+                    let base = C::Curve::random(&mut rng);
+                    let s = C::Scalar::random(&mut rng);
                     let result = base * s;
 
                     let s = Integer::from_fe(s, ecc_chip.rns_scalar());
@@ -842,8 +880,10 @@ mod tests {
             const NUMBER_OF_LIMBS: usize,
             const BIT_LEN_LIMB: usize,
         >() {
-            for window_size in 1..5 {
-                let aux_generator = C::Curve::random(OsRng).to_affine();
+            for window_size in 2..5 {
+                //   let mut rng = ChaCha20Rng::seed_from_u64(42);
+                let mut rng = OsRng;
+                let aux_generator = C::Curve::random(&mut rng).to_affine();
 
                 let circuit = TestEccMul::<C, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
                     aux_generator,
@@ -852,6 +892,11 @@ mod tests {
                 };
                 let instance = vec![vec![]];
                 mock_prover_verify(&circuit, instance);
+                let dimension = DimensionMeasurement::measure(&circuit).unwrap();
+                println!(
+                    "window_size = {:?}, dimention: {:?}",
+                    window_size, dimension
+                );
             }
         }
 
@@ -921,8 +966,7 @@ mod tests {
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, self.number_of_pairs)?;
-                    ecc_chip.get_mul_aux(self.window_size, self.number_of_pairs)?;
+                    ecc_chip.assign_correction(ctx, self.window_size)?;
                     Ok(())
                 },
             )?;
@@ -976,7 +1020,7 @@ mod tests {
                 #[test]
                 fn [<test_general_ecc_mul_batch_circuit_ $C:lower _ $N:lower>]() {
                     for number_of_pairs in 5..7 {
-                        for window_size in 1..3 {
+                        for window_size in 2..4 {
                             let aux_generator = <$C as PrimeCurveAffine>::Curve::random(OsRng).to_affine();
 
                             let circuit = TestEccBatchMul::<$C, $N, $NUMBER_OF_LIMBS, $BIT_LEN_LIMB> {

@@ -248,7 +248,7 @@ mod tests {
                     let ctx = &mut RegionCtx::new(region, offset);
 
                     ecc_chip.assign_aux_generator(ctx, Value::known(self.aux_generator))?;
-                    ecc_chip.assign_aux(ctx, self.window_size, 2)?;
+                    ecc_chip.assign_correction(ctx, self.window_size)?;
                     Ok(())
                 },
             )?;
