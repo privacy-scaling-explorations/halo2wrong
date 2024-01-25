@@ -885,14 +885,22 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedCondition<F>,
         b: &AssignedCondition<F>,
-    ) -> Result<(), Error> {
-        self.apply(
-            ctx,
-            [Term::assigned_to_mul(a), Term::assigned_to_mul(b)],
-            F::ZERO,
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?;
-        Ok(())
+    ) -> Result<AssignedCondition<F>, Error> {
+        // result + ab - 1 =0
+        let result = a.value().zip(b.value()).map(|(a, b)| F::ONE - *a * b);
+        let result = self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(a),
+                    Term::assigned_to_mul(b),
+                    Term::unassigned_to_add(result),
+                ],
+                -F::ONE,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2);
+        Ok(result)
     }
 
     /// Assigns a new witness `r` as:
