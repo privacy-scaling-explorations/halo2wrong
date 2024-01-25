@@ -1522,4 +1522,91 @@ mod tests {
         };
         assert_eq!(prover.verify(), Ok(()));
     }
+
+    #[derive(Default)]
+    struct TestCircuitLogicOps<F: PrimeField> {
+        _marker: PhantomData<F>,
+    }
+
+    impl<F: PrimeField> Circuit<F> for TestCircuitLogicOps<F> {
+        type Config = TestCircuitConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "circuit-params")]
+        type Params = ();
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let main_gate_config = MainGate::<F>::configure(meta);
+            TestCircuitConfig { main_gate_config }
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            let main_gate = MainGate::<F> {
+                config: config.main_gate_config,
+                _marker: PhantomData,
+            };
+
+            layouter.assign_region(
+                || "region 0",
+                |region| {
+                    let offset = 0;
+                    let ctx = &mut RegionCtx::new(region, offset);
+
+                    let zero = &main_gate.assign_constant(ctx, F::ZERO)?;
+                    let one = &main_gate.assign_constant(ctx, F::ONE)?;
+
+                    let xor_io = [
+                        [zero, zero, zero],
+                        [zero, one, one],
+                        [one, zero, one],
+                        [one, one, zero],
+                    ];
+
+                    let nand_io = [
+                        [zero, zero, one],
+                        [zero, one, one],
+                        [one, zero, one],
+                        [one, one, zero],
+                    ];
+
+                    for io in xor_io.iter() {
+                        let out_xor = main_gate.xor(ctx, io[0], io[1])?;
+                        main_gate.assert_equal(ctx, &out_xor, io[2])?;
+                    }
+
+                    // for io in nand_io.iter() {
+                    //     let out_nand = main_gate.xor(ctx, io[0], io[1])?;
+                    //     main_gate.assert_equal(ctx, &out_nand, io[2])?;
+                    // }
+
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_logic_ops() {
+        const K: u32 = 8;
+
+        let circuit = TestCircuitLogicOps::<Fp> {
+            _marker: PhantomData::<Fp>,
+        };
+        let public_inputs = vec![vec![]];
+        let prover = match MockProver::run(K, &circuit, public_inputs) {
+            Ok(prover) => prover,
+            Err(e) => panic!("{:#?}", e),
+        };
+
+        assert_eq!(prover.verify(), Ok(()));
+    }
 }
