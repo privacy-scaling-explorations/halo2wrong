@@ -330,9 +330,8 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
             .swap_remove(2))
     }
 
-    /// Assigns new value equal to `1` if `c1 ^ c0 = 1`,
-    /// equal to `0` if `c1 ^ c0 = 0`
-    // `new_assigned_value + 2 * c1 * c2 - c1 - c2 = 0`.
+    /// Returns c0 ^ c1.
+    ///  Enforcing `result + 2 * c1 * c2 - c1 - c2 = 0`.
     fn xor(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -340,23 +339,27 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
-        let c = c1
+        let result = c1
             .value()
             .zip(c2.value())
             .map(|(c1, c2)| *c1 + *c2 - (F::ONE + F::ONE) * *c1 * *c2);
 
-        Ok(self
+        // The original constraint: `result + 2 * c1 * c2 - c1 - c2 = 0`.
+        // requires scaling the multiplication by 2, but in this implementation
+        // it is easier to scale other terms by 1/2.
+        let result = self
             .apply(
                 ctx,
                 [
-                    Term::assigned_to_sub(c1),
-                    Term::assigned_to_sub(c2),
-                    Term::unassigned_to_add(c),
+                    Term::Assigned(c1, -F::TWO_INV),
+                    Term::Assigned(c2, -F::TWO_INV),
+                    Term::Unassigned(result, F::TWO_INV),
                 ],
                 F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
-            .swap_remove(2))
+            .swap_remove(2);
+        Ok(result)
     }
 
     /// Assigns new value that is logic inverse of the given assigned value.

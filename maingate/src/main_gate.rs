@@ -1581,10 +1581,10 @@ mod tests {
                         main_gate.assert_equal(ctx, &out_xor, io[2])?;
                     }
 
-                    // for io in nand_io.iter() {
-                    //     let out_nand = main_gate.xor(ctx, io[0], io[1])?;
-                    //     main_gate.assert_equal(ctx, &out_nand, io[2])?;
-                    // }
+                    for io in nand_io.iter() {
+                        let out_nand = main_gate.nand(ctx, io[0], io[1])?;
+                        main_gate.assert_equal(ctx, &out_nand, io[2])?;
+                    }
 
                     Ok(())
                 },
