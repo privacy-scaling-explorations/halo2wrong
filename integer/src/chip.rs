@@ -642,12 +642,12 @@ mod tests {
         pub(crate) fn rand_in_remainder_range(
             &self,
         ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let el = OsRng.gen_biguint(self.rns.max_remainder.bits() as u64);
+            let el = OsRng.gen_biguint(self.rns.max_remainder.bits());
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
         pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let el = OsRng.gen_biguint(self.rns.max_operand.bits() as u64);
+            let el = OsRng.gen_biguint(self.rns.max_operand.bits());
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
