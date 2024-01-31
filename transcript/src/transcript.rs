@@ -276,7 +276,7 @@ mod tests {
                             ctx,
                             &self.spec,
                             ecc_chip.clone(),
-                            LimbRepresentation::default(),
+                            LimbRepresentation,
                         )?;
 
                     for e in self.inputs.as_ref().transpose_vec(self.n) {

@@ -1000,7 +1000,7 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
 
         let terms = bits
             .iter()
-            .zip(bases.into_iter())
+            .zip(bases)
             .map(|(bit, base)| Term::Assigned(bit, base))
             .collect::<Vec<_>>();
         let result = self.compose(ctx, &terms, F::ZERO)?;
