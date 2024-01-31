@@ -72,7 +72,7 @@ pub fn mock_prover_verify<F: FromUniformBytes<64> + Ord, C: Circuit<F>>(
     let prover = MockProver::run(dimension.k(), circuit, instance)
         .unwrap_or_else(|err| panic!("{:#?}", err));
     assert_eq!(
-        prover.verify_at_rows_par(dimension.advice_range(), dimension.advice_range()),
+        prover.verify_at_rows(dimension.advice_range(), dimension.advice_range()),
         Ok(())
     )
 }
