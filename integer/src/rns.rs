@@ -237,7 +237,7 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
     /// when values when working with `big_uint`.
     fn calculate_base_aux() -> [big_uint; NUMBER_OF_LIMBS] {
         let two = N::from(2);
-        let r = &fe_to_big(two.pow(&[BIT_LEN_LIMB as u64, 0, 0, 0]));
+        let r = &fe_to_big(two.pow([BIT_LEN_LIMB as u64]));
         let wrong_modulus = modulus::<W>();
         let wrong_modulus: Vec<N> = decompose_big(wrong_modulus, NUMBER_OF_LIMBS, BIT_LEN_LIMB);
 
@@ -536,14 +536,14 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
 
         // Right shifts field element by `u * BIT_LEN_LIMB` bits
         let right_shifters = (0..NUMBER_OF_LIMBS)
-            .map(|i| two_inv.pow(&[(i * BIT_LEN_LIMB) as u64, 0, 0, 0]))
+            .map(|i| two_inv.pow([(i * BIT_LEN_LIMB) as u64]))
             .collect::<Vec<N>>()
             .try_into()
             .unwrap();
 
         // Left shifts field element by `u * BIT_LEN_LIMB` bits
         let left_shifters = (0..NUMBER_OF_LIMBS)
-            .map(|i| two.pow(&[(i * BIT_LEN_LIMB) as u64, 0, 0, 0]))
+            .map(|i| two.pow([(i * BIT_LEN_LIMB) as u64]))
             .collect::<Vec<N>>()
             .try_into()
             .unwrap();
@@ -618,12 +618,15 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
             self.max_most_significant_operand_limb.bits() as usize % self.bit_len_lookup;
         let max_most_significant_reduced_limb_size =
             self.max_most_significant_reduced_limb.bits() as usize % self.bit_len_lookup;
+        // For sign function
+        let sign_aux = self.bit_len_lookup - 1;
         vec![
             self.mul_v_bit_len % self.bit_len_lookup,
             self.red_v_bit_len % self.bit_len_lookup,
             max_most_significant_mul_quotient_limb_size,
             max_most_significant_operand_limb_size,
             max_most_significant_reduced_limb_size,
+            sign_aux,
         ]
     }
 }

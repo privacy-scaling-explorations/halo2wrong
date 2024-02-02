@@ -220,7 +220,7 @@ impl<F: PrimeField> RangeChip<F> {
                         base_len += 1;
                     }
                     let bases = (0..base_len)
-                        .map(|i| F::from(2).pow(&[(bit_len * i) as u64, 0, 0, 0]))
+                        .map(|i| F::from(2).pow([(bit_len * i) as u64]))
                         .collect();
                     Some((bit_len, bases))
                 }
@@ -526,7 +526,7 @@ mod tests {
         let mut inputs: Vec<_> = (2..20)
             .map(|number_of_limbs| {
                 let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
-                let value = Fp::from(2).pow(&[bit_len as u64, 0, 0, 0]) - Fp::one();
+                let value = Fp::from(2).pow([bit_len as u64]) - Fp::one();
                 Input {
                     value: Value::known(value),
                     limb_bit_len: LIMB_BIT_LEN,

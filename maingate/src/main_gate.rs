@@ -1524,11 +1524,11 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct TestCircuitSign<F: PrimeField> {
+    struct TestCircuitLogicOps<F: PrimeField> {
         _marker: PhantomData<F>,
     }
 
-    impl<F: PrimeField> Circuit<F> for TestCircuitSign<F> {
+    impl<F: PrimeField> Circuit<F> for TestCircuitLogicOps<F> {
         type Config = TestCircuitConfig;
         type FloorPlanner = SimpleFloorPlanner;
         #[cfg(feature = "circuit-params")]
@@ -1559,15 +1559,32 @@ mod tests {
                     let offset = 0;
                     let ctx = &mut RegionCtx::new(region, offset);
 
-                    let a = F::from(20u64);
-                    let assigned = main_gate.assign_value(ctx, Value::known(a))?;
-                    let assigned_sign = main_gate.sign(ctx, &assigned)?;
-                    main_gate.assert_zero(ctx, &assigned_sign)?;
+                    let zero = &main_gate.assign_constant(ctx, F::ZERO)?;
+                    let one = &main_gate.assign_constant(ctx, F::ONE)?;
 
-                    let a = F::from(21u64);
-                    let assigned = main_gate.assign_value(ctx, Value::known(a))?;
-                    let assigned_sign = main_gate.sign(ctx, &assigned)?;
-                    main_gate.assert_one(ctx, &assigned_sign)?;
+                    let xor_io = [
+                        [zero, zero, zero],
+                        [zero, one, one],
+                        [one, zero, one],
+                        [one, one, zero],
+                    ];
+
+                    let nand_io = [
+                        [zero, zero, one],
+                        [zero, one, one],
+                        [one, zero, one],
+                        [one, one, zero],
+                    ];
+
+                    for io in xor_io.iter() {
+                        let out_xor = main_gate.xor(ctx, io[0], io[1])?;
+                        main_gate.assert_equal(ctx, &out_xor, io[2])?;
+                    }
+
+                    for io in nand_io.iter() {
+                        let out_nand = main_gate.nand(ctx, io[0], io[1])?;
+                        main_gate.assert_equal(ctx, &out_nand, io[2])?;
+                    }
 
                     Ok(())
                 },
@@ -1578,9 +1595,10 @@ mod tests {
     }
 
     #[test]
-    fn test_main_gate_sign() {
-        const K: u32 = 10;
-        let circuit = TestCircuitSign::<Fp> {
+    fn test_logic_ops() {
+        const K: u32 = 8;
+
+        let circuit = TestCircuitLogicOps::<Fp> {
             _marker: PhantomData::<Fp>,
         };
         let public_inputs = vec![vec![]];
@@ -1588,6 +1606,7 @@ mod tests {
             Ok(prover) => prover,
             Err(e) => panic!("{:#?}", e),
         };
+
         assert_eq!(prover.verify(), Ok(()));
     }
 }

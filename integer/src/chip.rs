@@ -5,7 +5,11 @@ use crate::instructions::{IntegerInstructions, Range};
 use crate::rns::{Common, Integer, Rns};
 use halo2::halo2curves::ff::PrimeField;
 use halo2::plonk::Error;
-use maingate::{halo2, AssignedCondition, AssignedValue, MainGateInstructions, RegionCtx};
+use maingate::halo2::circuit::Value;
+use maingate::{
+    halo2, AssignedCondition, AssignedValue, CombinationOptionCommon, MainGateInstructions,
+    RangeInstructions, RegionCtx, Term,
+};
 use maingate::{MainGate, MainGateConfig};
 use maingate::{RangeChip, RangeConfig};
 
@@ -516,7 +520,45 @@ impl<W: PrimeField, N: PrimeField, const NUMBER_OF_LIMBS: usize, const BIT_LEN_L
         a: &AssignedInteger<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
     ) -> Result<AssignedCondition<N>, Error> {
         self.assert_in_field(ctx, a)?;
-        self.main_gate().sign(ctx, a.limb(0))
+
+        // Assignes new value equals to `1` if least significant bit of `a` is `1` or assigns
+        // `0` if lsb of `a` is `0`.
+        let w: Value<(N, N)> = a.limb(0).value().map(|value| {
+            use maingate::{big_to_fe, fe_to_big};
+            use num_bigint::BigUint;
+            use num_traits::{One, Zero};
+            let value = &fe_to_big(*value);
+            let half = big_to_fe(value / 2usize);
+            let sign = ((value & BigUint::one() != BigUint::zero()) as u64).into();
+            (sign, half)
+        });
+
+        let sign = self.main_gate.assign_bit(ctx, w.map(|w| w.0))?;
+
+        let half_a = self
+            .main_gate
+            .apply(
+                ctx,
+                [
+                    Term::Unassigned(w.map(|w| w.1), N::from(2)),
+                    Term::Assigned(&sign, N::ONE),
+                    Term::Assigned(a.limb(0), -N::ONE),
+                ],
+                N::ZERO,
+                CombinationOptionCommon::OneLinerAdd.into(),
+            )?
+            .swap_remove(0);
+
+        // Enforce half_a in [0, (LIMB_MAX_VAL / 2) )
+        let assigned = self.range_chip.decompose(
+            ctx,
+            half_a.value_field().evaluate(),
+            Self::sublimb_bit_len(),
+            BIT_LEN_LIMB - 1,
+        )?;
+        self.main_gate.assert_equal(ctx, &assigned.0, &half_a)?;
+
+        Ok(sign)
     }
 }
 
@@ -600,12 +642,12 @@ mod tests {
         pub(crate) fn rand_in_remainder_range(
             &self,
         ) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let el = OsRng.gen_biguint(self.rns.max_remainder.bits() as u64);
+            let el = OsRng.gen_biguint(self.rns.max_remainder.bits());
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 
         pub(crate) fn rand_in_operand_range(&self) -> Integer<W, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
-            let el = OsRng.gen_biguint(self.rns.max_operand.bits() as u64);
+            let el = OsRng.gen_biguint(self.rns.max_operand.bits());
             Integer::from_big(el, Rc::clone(&self.rns))
         }
 

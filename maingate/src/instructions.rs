@@ -12,7 +12,7 @@ use crate::{
 };
 use halo2wrong::{
     curves::ff::PrimeField,
-    utils::{big_to_fe, decompose, fe_to_big, power_of_two},
+    utils::{decompose, power_of_two},
     RegionCtx,
 };
 use std::iter;
@@ -330,9 +330,8 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
             .swap_remove(2))
     }
 
-    /// Assigns new value equal to `1` if `c1 ^ c0 = 1`,
-    /// equal to `0` if `c1 ^ c0 = 0`
-    // `new_assigned_value + 2 * c1 * c2 - c1 - c2 = 0`.
+    /// Returns c0 ^ c1.
+    ///  Enforcing `result + 2 * c1 * c2 - c1 - c2 = 0`.
     fn xor(
         &self,
         ctx: &mut RegionCtx<'_, F>,
@@ -340,23 +339,27 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         c2: &AssignedCondition<F>,
     ) -> Result<AssignedCondition<F>, Error> {
         // Find the new witness
-        let c = c1
+        let result = c1
             .value()
             .zip(c2.value())
             .map(|(c1, c2)| *c1 + *c2 - (F::ONE + F::ONE) * *c1 * *c2);
 
-        Ok(self
+        // The original constraint: `result + 2 * c1 * c2 - c1 - c2 = 0`.
+        // requires scaling the multiplication by 2, but in this implementation
+        // it is easier to scale other terms by 1/2.
+        let result = self
             .apply(
                 ctx,
                 [
-                    Term::assigned_to_sub(c1),
-                    Term::assigned_to_sub(c2),
-                    Term::unassigned_to_add(c),
+                    Term::Assigned(c1, -F::TWO_INV),
+                    Term::Assigned(c2, -F::TWO_INV),
+                    Term::Unassigned(result, F::TWO_INV),
                 ],
                 F::ZERO,
                 CombinationOptionCommon::OneLinerMul.into(),
             )?
-            .swap_remove(2))
+            .swap_remove(2);
+        Ok(result)
     }
 
     /// Assigns new value that is logic inverse of the given assigned value.
@@ -885,14 +888,22 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         ctx: &mut RegionCtx<'_, F>,
         a: &AssignedCondition<F>,
         b: &AssignedCondition<F>,
-    ) -> Result<(), Error> {
-        self.apply(
-            ctx,
-            [Term::assigned_to_mul(a), Term::assigned_to_mul(b)],
-            F::ZERO,
-            CombinationOptionCommon::OneLinerMul.into(),
-        )?;
-        Ok(())
+    ) -> Result<AssignedCondition<F>, Error> {
+        // result + ab - 1 =0
+        let result = a.value().zip(b.value()).map(|(a, b)| F::ONE - *a * b);
+        let result = self
+            .apply(
+                ctx,
+                [
+                    Term::assigned_to_mul(a),
+                    Term::assigned_to_mul(b),
+                    Term::unassigned_to_add(result),
+                ],
+                -F::ONE,
+                CombinationOptionCommon::OneLinerMul.into(),
+            )?
+            .swap_remove(2);
+        Ok(result)
     }
 
     /// Assigns a new witness `r` as:
@@ -962,38 +973,6 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
         cond: &AssignedCondition<F>,
     ) -> Result<AssignedValue<F>, Error>;
 
-    /// Assignes new value equals to `1` if first bit of `a` is `1` or assigns
-    /// `0` if first bit of `a` is `0`
-    fn sign(
-        &self,
-        ctx: &mut RegionCtx<'_, F>,
-        a: &AssignedValue<F>,
-    ) -> Result<AssignedCondition<F>, Error> {
-        let w: Value<(F, F)> = a.value().map(|value| {
-            use num_bigint::BigUint;
-            use num_traits::{One, Zero};
-            let value = &fe_to_big(*value);
-            let half = big_to_fe(value / 2usize);
-            let sign = ((value & BigUint::one() != BigUint::zero()) as u64).into();
-            (sign, half)
-        });
-
-        let sign = self.assign_bit(ctx, w.map(|w| w.0))?;
-
-        self.apply(
-            ctx,
-            [
-                Term::Unassigned(w.map(|w| w.1), F::from(2)),
-                Term::Assigned(&sign, F::ONE),
-                Term::Assigned(a, -F::ONE),
-            ],
-            F::ZERO,
-            CombinationOptionCommon::OneLinerAdd.into(),
-        )?;
-
-        Ok(sign)
-    }
-
     /// Assigns array values of bit values which is equal to decomposition of
     /// given assigned value
     fn to_bits(
@@ -1021,7 +1000,7 @@ pub trait MainGateInstructions<F: PrimeField, const WIDTH: usize>: Chip<F> {
 
         let terms = bits
             .iter()
-            .zip(bases.into_iter())
+            .zip(bases)
             .map(|(bit, base)| Term::Assigned(bit, base))
             .collect::<Vec<_>>();
         let result = self.compose(ctx, &terms, F::ZERO)?;
