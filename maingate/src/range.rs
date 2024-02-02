@@ -108,9 +108,11 @@ impl<F: PrimeField> RangeInstructions<F> for RangeChip<F> {
             .map(|unassigned| decompose(unassigned, number_of_limbs, limb_bit_len))
             .transpose_vec(number_of_limbs);
 
+        let bases = self.bases(limb_bit_len);
+        assert!(decomposed.len() <= bases.len());
         let terms: Vec<Term<F>> = decomposed
             .into_iter()
-            .zip(self.bases(limb_bit_len))
+            .zip(bases)
             .map(|(limb, base)| Term::Unassigned(limb, *base))
             .collect();
 
@@ -213,7 +215,11 @@ impl<F: PrimeField> RangeChip<F> {
                 if bit_len == 0 {
                     None
                 } else {
-                    let bases = (0..F::NUM_BITS as usize / bit_len)
+                    let mut base_len = F::NUM_BITS as usize / bit_len;
+                    if F::NUM_BITS as usize % bit_len != 0 {
+                        base_len += 1;
+                    }
+                    let bases = (0..base_len)
                         .map(|i| F::from(2).pow([(bit_len * i) as u64]))
                         .collect();
                     Some((bit_len, bases))
@@ -383,10 +389,10 @@ impl<F: PrimeField> RangeChip<F> {
 
 #[cfg(test)]
 mod tests {
-
     use halo2wrong::halo2::arithmetic::Field;
     use halo2wrong::halo2::circuit::Value;
     use halo2wrong::RegionCtx;
+    use rand_core::OsRng;
 
     use super::{RangeChip, RangeConfig, RangeInstructions};
     use crate::curves::{ff::PrimeField, pasta::Fp};
@@ -445,7 +451,7 @@ mod tests {
         }
 
         fn overflow_bit_lens() -> Vec<usize> {
-            vec![3]
+            vec![3, 7]
         }
     }
 
@@ -517,7 +523,7 @@ mod tests {
         const OVERFLOW_BIT_LEN: usize = 3;
         let k: u32 = (LIMB_BIT_LEN + 1) as u32;
 
-        let inputs = (2..20)
+        let mut inputs: Vec<_> = (2..20)
             .map(|number_of_limbs| {
                 let bit_len = LIMB_BIT_LEN * number_of_limbs + OVERFLOW_BIT_LEN;
                 let value = Fp::from(2).pow([bit_len as u64]) - Fp::one();
@@ -528,6 +534,13 @@ mod tests {
                 }
             })
             .collect();
+
+        let mut rng = OsRng;
+        inputs.push(Input {
+            bit_len: Fp::NUM_BITS as usize,
+            limb_bit_len: LIMB_BIT_LEN,
+            value: Value::known(Fp::random(&mut rng)),
+        });
 
         let circuit = TestCircuit::<Fp> { inputs };
         let public_inputs = vec![vec![]];
