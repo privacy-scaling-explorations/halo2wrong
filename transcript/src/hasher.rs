@@ -34,7 +34,7 @@ impl<
 {
     // Constructs new hasher chip with assigned initial state
     pub fn new(
-        // TODO: we can remove initial state assingment in construction
+        // TODO: we can remove initial state assignment in construction
         ctx: &mut RegionCtx<'_, F>,
         spec: &Spec<F, T, RATE>,
         main_gate_config: &MainGateConfig,
