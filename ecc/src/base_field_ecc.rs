@@ -15,7 +15,7 @@ use std::rc::Rc;
 mod add;
 mod mul;
 
-/// Constaints elliptic curve operations such as assigment, addition and
+/// Constaints elliptic curve operations such as assignment, addition and
 /// multiplication. Elliptic curves constrained here is the same curve in the
 /// proof system where base field is the non native field.
 #[derive(Debug, Clone)]
@@ -70,7 +70,7 @@ impl<C: CurveAffine, const NUMBER_OF_LIMBS: usize, const BIT_LEN_LIMB: usize>
     ) -> Point<C::Base, C::Scalar, NUMBER_OF_LIMBS, BIT_LEN_LIMB> {
         let coords = point.coordinates();
         // disallow point of infinity
-        // it will not pass assing point enforcement
+        // it will not pass assign point enforcement
         let coords = coords.unwrap();
 
         let x = Integer::from_fe(*coords.x(), self.rns());
