@@ -14,58 +14,43 @@ impl<
         const BIT_LEN_LIMB: usize,
     > GeneralEccChip<Emulated, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>
 {
-    /// Pads scalar up to the next window_size mul
-    fn pad(
-        &self,
-        region: &mut RegionCtx<'_, N>,
-        bits: &mut Vec<AssignedCondition<N>>,
-        window_size: usize,
-    ) -> Result<(), Error> {
-        assert_eq!(bits.len(), Emulated::ScalarExt::NUM_BITS as usize);
-
-        // TODO: This is a tmp workaround. Instead of padding with zeros we can use a
-        // shorter ending window.
-        let padding_offset = (window_size - (bits.len() % window_size)) % window_size;
-        let zeros: Vec<AssignedCondition<N>> = (0..padding_offset)
-            .map(|_| self.main_gate().assign_constant(region, N::ZERO))
-            .collect::<Result<_, Error>>()?;
-        bits.extend(zeros);
-        bits.reverse();
-
-        Ok(())
-    }
-
     /// Splits the bit representation of a scalar into windows
     fn window(bits: Vec<AssignedCondition<N>>, window_size: usize) -> Windowed<N> {
-        assert_eq!(bits.len() % window_size, 0);
-        let number_of_windows = bits.len() / window_size;
-        Windowed(
-            (0..number_of_windows)
-                .map(|i| {
-                    let mut selector: Vec<AssignedCondition<N>> = (0..window_size)
-                        .map(|j| bits[i * window_size + j].clone())
-                        .collect();
-                    selector.reverse();
-                    Selector(selector)
-                })
-                .collect(),
-        )
+        let last = bits.len() % window_size;
+        let num = bits.len() / window_size;
+
+        let mut windows: Vec<_> = (0..num)
+            .map(|i| {
+                let k = i * window_size;
+                Selector(bits[k..k + window_size].to_vec())
+            })
+            .collect();
+
+        if last != 0 {
+            let last_start = bits.len() - last;
+            windows.push(Selector(bits[last_start..].to_vec()));
+        }
+
+        windows.reverse();
+
+        Windowed(windows)
     }
 
     /// Constructs table for efficient multiplication algorithm
     /// The table contains precomputed point values that allow to trade
     /// additions for selections
+    /// [2]P, [3]P, ..., [2^w + 1]P
     fn make_incremental_table(
         &self,
-        region: &mut RegionCtx<'_, N>,
-        aux: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
+        ctx: &mut RegionCtx<'_, N>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
     ) -> Result<Table<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
         let table_size = 1 << window_size;
-        let mut table = vec![aux.clone()];
+        let double = self.double(ctx, point)?;
+        let mut table = vec![double];
         for i in 0..(table_size - 1) {
-            table.push(self.add(region, &table[i], point)?);
+            table.push(self.add(ctx, &table[i], point)?);
         }
         Ok(Table(table))
     }
@@ -96,33 +81,55 @@ impl<
     /// Performed with the sliding-window algorithm
     pub fn mul(
         &self,
-        region: &mut RegionCtx<'_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         point: &AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         scalar: &AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         window_size: usize,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        assert!(window_size > 0);
-        let aux = self.get_mul_aux(window_size, 1)?;
+        assert!(window_size > 1);
+        let num_bits = Emulated::Scalar::NUM_BITS as usize;
+        let number_of_windows = (num_bits + window_size - 1) / window_size;
+        let mut last = num_bits % window_size;
+        if last == 0 {
+            last = window_size;
+        }
+        let window_last: usize = 1 << last;
 
         let scalar_chip = self.scalar_field_chip();
-        let decomposed = &mut scalar_chip.decompose(region, scalar)?;
-        self.pad(region, decomposed, window_size)?;
-        let windowed = Self::window(decomposed.to_vec(), window_size);
-        let table = &self.make_incremental_table(region, &aux.to_add, point, window_size)?;
 
-        let mut acc = self.select_multi(region, &windowed.0[0], table)?;
-        acc = self.double_n(region, &acc, window_size)?;
+        let (scalar_correction, aux) = self.get_mul_correction(window_size)?;
+        let scalar_adjusted = &scalar_chip.add_constant(ctx, scalar, &scalar_correction)?;
+        let scalar_reduced = &scalar_chip.reduce(ctx, scalar_adjusted)?;
+        let decomposed = scalar_chip.decompose(ctx, scalar_reduced)?;
+        let windowed = Self::window(decomposed, window_size);
 
-        let to_add = self.select_multi(region, &windowed.0[1], table)?;
-        acc = self.add(region, &acc, &to_add)?;
+        let table = &self.make_incremental_table(ctx, point, window_size)?;
+        let last_table = &Table(table.0[0..window_last].to_vec());
+        let mut acc = self.select_multi(ctx, &windowed.0[0], last_table)?;
 
-        for selector in windowed.0.iter().skip(2) {
-            acc = self.double_n(region, &acc, window_size - 1)?;
-            let to_add = self.select_multi(region, selector, table)?;
-            acc = self.ladder(region, &acc, &to_add)?;
+        acc = self.double_n(ctx, &acc, window_size)?;
+        let q = self.select_multi(ctx, &windowed.0[1], table)?;
+        acc = self._add_incomplete_unsafe(ctx, &acc, &q)?;
+
+        for i in 2..number_of_windows - 2 {
+            acc = self.double_n(ctx, &acc, window_size - 1)?;
+            let q = self.select_multi(ctx, &windowed.0[i], table)?;
+            acc = self._ladder_incomplete(ctx, &acc, &q)?;
         }
 
-        self.add(region, &acc, &aux.to_sub)
+        // The last two rows use auxiliary generator
+        // aux_1 = (2^w aux_2 + aux_generator) + Q_1
+        // aux_0 = 2^w aux_1 + Q_0 - 2^w aux_generator
+        acc = self.double_n(ctx, &acc, window_size)?;
+        acc = self.add(ctx, &acc, &aux.to_add)?;
+        let q1 = self.select_multi(ctx, &windowed.0[number_of_windows - 2], table)?;
+        acc = self.add(ctx, &acc, &q1)?;
+
+        acc = self.double_n(ctx, &acc, window_size)?;
+        let q0 = self.select_multi(ctx, &windowed.0[number_of_windows - 1], table)?;
+        acc = self.add(ctx, &acc, &q0)?;
+
+        self.add(ctx, &acc, &aux.to_sub)
     }
 
     /// Computes multi-product
@@ -134,68 +141,82 @@ impl<
     #[allow(clippy::type_complexity)]
     pub fn mul_batch_1d_horizontal(
         &self,
-        region: &mut RegionCtx<'_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         pairs: Vec<(
             AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
             AssignedInteger<Emulated::Scalar, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>,
         )>,
         window_size: usize,
     ) -> Result<AssignedPoint<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>, Error> {
-        assert!(window_size > 0);
+        assert!(window_size > 1);
         assert!(!pairs.is_empty());
-        let aux = self.get_mul_aux(window_size, pairs.len())?;
+
+        let num_bits = Emulated::Scalar::NUM_BITS as usize;
+        let mut last = num_bits % window_size;
+        if last == 0 {
+            last = window_size;
+        }
+        let window_last: usize = 1 << last;
 
         let scalar_chip = self.scalar_field_chip();
+        let (scalar_correction, aux) = self.get_mul_correction(window_size)?;
+
         // 1. Decompose scalars in bits
-        let mut decomposed_scalars: Vec<Vec<AssignedCondition<N>>> = pairs
+        let decomposed_scalars: Vec<Vec<AssignedCondition<N>>> = pairs
             .iter()
-            .map(|(_, scalar)| scalar_chip.decompose(region, scalar))
+            .map(|(_, scalar)| {
+                let scalar_adjusted = &scalar_chip.add_constant(ctx, scalar, &scalar_correction)?;
+                let scalar_reduced = &scalar_chip.reduce(ctx, scalar_adjusted)?;
+                scalar_chip.decompose(ctx, scalar_reduced)
+            })
             .collect::<Result<_, Error>>()?;
 
-        // 2. Pad scalars bit representations
-        for decomposed in decomposed_scalars.iter_mut() {
-            self.pad(region, decomposed, window_size)?;
-        }
-
-        // 3. Split scalar bits into windows
+        // 2. Split scalar bits into windows
         let windowed_scalars: Vec<Windowed<N>> = decomposed_scalars
             .into_iter()
             .map(|decomposed| Self::window(decomposed, window_size))
             .collect();
         let number_of_windows = windowed_scalars[0].0.len();
 
-        let mut binary_aux = aux.to_add.clone();
         let tables: Vec<Table<Emulated::Base, N, NUMBER_OF_LIMBS, BIT_LEN_LIMB>> = pairs
             .iter()
-            .enumerate()
-            .map(|(i, (point, _))| {
-                let table = self.make_incremental_table(region, &binary_aux, point, window_size);
-                if i != pairs.len() - 1 {
-                    binary_aux = self.double(region, &binary_aux)?;
-                }
-                table
-            })
+            .map(|(point, _)| self.make_incremental_table(ctx, point, window_size))
             .collect::<Result<_, Error>>()?;
 
-        // preparation for the first round
-        // initialize accumulator
-        let mut acc = self.select_multi(region, &windowed_scalars[0].0[0], &tables[0])?;
+        let last_table = &Table(tables[0].0[0..window_last].to_vec());
+        let mut acc = self.select_multi(ctx, &windowed_scalars[0].0[0], last_table)?;
         // add first contributions other point scalar
         for (table, windowed) in tables.iter().skip(1).zip(windowed_scalars.iter().skip(1)) {
+            let last_table = &Table(table.0[0..window_last].to_vec());
             let selector = &windowed.0[0];
-            let to_add = self.select_multi(region, selector, table)?;
-            acc = self.add(region, &acc, &to_add)?;
+            let q = self.select_multi(ctx, selector, last_table)?;
+            acc = self.add(ctx, &acc, &q)?;
         }
 
-        for i in 1..number_of_windows {
-            acc = self.double_n(region, &acc, window_size)?;
+        for i in 1..number_of_windows - 2 {
+            acc = self.double_n(ctx, &acc, window_size)?;
             for (table, windowed) in tables.iter().zip(windowed_scalars.iter()) {
                 let selector = &windowed.0[i];
-                let to_add = self.select_multi(region, selector, table)?;
-                acc = self.add(region, &acc, &to_add)?;
+                let q = self.select_multi(ctx, selector, table)?;
+                acc = self.add(ctx, &acc, &q)?;
             }
         }
 
-        self.add(region, &acc, &aux.to_sub)
+        acc = self.double_n(ctx, &acc, window_size)?;
+        acc = self.add(ctx, &acc, &aux.to_add)?;
+        for (table, windowed) in tables.iter().zip(windowed_scalars.iter()) {
+            let selector = &windowed.0[number_of_windows - 2];
+            let q = self.select_multi(ctx, selector, table)?;
+            acc = self.add(ctx, &acc, &q)?;
+        }
+
+        acc = self.double_n(ctx, &acc, window_size)?;
+        for (table, windowed) in tables.iter().zip(windowed_scalars.iter()) {
+            let selector = &windowed.0[number_of_windows - 1];
+            let q = self.select_multi(ctx, selector, table)?;
+            acc = self.add(ctx, &acc, &q)?;
+        }
+
+        self.add(ctx, &acc, &aux.to_sub)
     }
 }
