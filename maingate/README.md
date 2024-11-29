@@ -1,7 +1,7 @@
 
 # `maingate`
 
-`maingate` implements various standart like plonk arithmetic gates for halo2 backend. `MainGateInstructions` trait has many primitives such as arithemtic operations, assignments, assertions and branching instructions.
+`maingate` implements various standard like plonk arithmetic gates for halo2 backend. `MainGateInstructions` trait has many primitives such as arithmetic operations, assignments, assertions and branching instructions.
 
 ## Main Gate
 
