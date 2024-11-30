@@ -1,3 +1,5 @@
+**Active and maintained version of this project is available at https://github.com/kilic/tetris**
+
 # halo2wrong
 
 `halo2wrong` consist of a simple PLONK gate and non native arithmetic based applications. Any crate here may use either [zcash/halo2](https://github.com/zcash/halo2) or [privacy-scaling-explorations/halo2](https://github.com/privacy-scaling-explorations/halo2) which is a fork of original halo2 library that replaces commitment scheme from IPA to KZG.
